@@ -1,0 +1,20 @@
+# Snippet for the active RPi Caddyfile at:
+#   /home/kevin/DockerCompose/caddy/Caddyfile
+#
+# HTTPS block goes inside the existing *.sisihome.org { } site block.
+# HTTP fallback block goes below the wildcard block.
+# After editing the active mounted Caddyfile, restart Caddy:
+#   docker restart caddy
+
+@kevin host kevin.sisihome.org
+handle @kevin {
+    reverse_proxy 100.83.112.20:3023
+}
+
+http://kevin.sisihome {
+    reverse_proxy 100.83.112.20:3023
+}
+
+http://kevin.sisihome.org {
+    reverse_proxy 100.83.112.20:3023
+}

@@ -81,7 +81,7 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
     const ideas = await listIdeas(config, 8)
     const keyStatus = await getKeyStatus(config)
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-    response.end(renderPage(report, ideas, Boolean(config.ai?.enabled), keyStatus))
+    response.end(renderPage(report, ideas, Boolean(config.ai?.enabled), keyStatus, isLoopbackAddress(request.socket.remoteAddress ?? '')))
     return
   }
 
@@ -115,7 +115,13 @@ async function readBody(request: IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString('utf8')
 }
 
-function renderPage(report: ObservationReport, ideas: IdeaRecord[], aiEnabled: boolean, keyStatus: KeyStatusSummary): string {
+function renderPage(
+  report: ObservationReport,
+  ideas: IdeaRecord[],
+  aiEnabled: boolean,
+  keyStatus: KeyStatusSummary,
+  canManageKeys: boolean,
+): string {
   const dirtyRepos = report.repositories.filter((repo) => repo.dirty).length
   const missingRuleFiles = report.ruleSources.reduce((sum, source) => sum + source.missingFiles.length, 0)
 
@@ -174,16 +180,7 @@ function renderPage(report: ObservationReport, ideas: IdeaRecord[], aiEnabled: b
     <div class="card"><div class="label">缺少規則檔</div><div class="value">${missingRuleFiles}</div></div>
   </div>
 
-  <section>
-    <h2>Gemini Key 匯入</h2>
-    <p class="muted">目前可用 ${keyStatus.totalAvailable} 把；本地儲存 ${keyStatus.storedCount} 把${keyStatus.storedSuffixes.length > 0 ? ` (${escapeHtml(keyStatus.storedSuffixes.join(', '))})` : ''}，環境變數 ${keyStatus.envCount} 把${keyStatus.envSuffixes.length > 0 ? ` (${escapeHtml(keyStatus.envSuffixes.join(', '))})` : ''}。只接受 Gemini API key，不會顯示完整 key。</p>
-    <form id="key-form">
-      <textarea id="key-text" autocomplete="off" spellcheck="false" placeholder="貼上 Gemini API keys，可用逗號或換行，也可貼 GEMINI_API_KEY=... 或 export GEMINI_API_KEY=..."></textarea>
-      <label><input id="key-replace" type="checkbox">取代既有本地 key</label><br>
-      <button type="submit">匯入 Key</button><button id="key-clear" class="secondary" type="button">清除本地 Key</button>
-    </form>
-    <div id="key-result" class="muted"></div>
-  </section>
+  ${renderKeySection(keyStatus, canManageKeys)}
 
   <section>
     <h2>想法接手</h2>
@@ -220,7 +217,8 @@ function renderPage(report: ObservationReport, ideas: IdeaRecord[], aiEnabled: b
   </section>
 </main>
 <script>
-  document.getElementById('key-form').addEventListener('submit', async (event) => {
+  const keyForm = document.getElementById('key-form');
+  if (keyForm) keyForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     const rawText = document.getElementById('key-text').value;
     const replace = document.getElementById('key-replace').checked;
@@ -241,7 +239,8 @@ function renderPage(report: ObservationReport, ideas: IdeaRecord[], aiEnabled: b
     setTimeout(() => location.reload(), 700);
   });
 
-  document.getElementById('key-clear').addEventListener('click', async () => {
+  const keyClear = document.getElementById('key-clear');
+  if (keyClear) keyClear.addEventListener('click', async () => {
     const result = document.getElementById('key-result');
     result.textContent = '清除中...';
     const response = await fetch('/api/keys', { method: 'DELETE' });
@@ -275,6 +274,28 @@ function renderPage(report: ObservationReport, ideas: IdeaRecord[], aiEnabled: b
 </script>
 </body>
 </html>`
+}
+
+function renderKeySection(keyStatus: KeyStatusSummary, canManageKeys: boolean): string {
+  const statusText = `目前可用 ${keyStatus.totalAvailable} 把；本地儲存 ${keyStatus.storedCount} 把${keyStatus.storedSuffixes.length > 0 ? ` (${escapeHtml(keyStatus.storedSuffixes.join(', '))})` : ''}，環境變數 ${keyStatus.envCount} 把${keyStatus.envSuffixes.length > 0 ? ` (${escapeHtml(keyStatus.envSuffixes.join(', '))})` : ''}。只接受 Gemini API key，不會顯示完整 key。`
+  if (!canManageKeys) {
+    return `<section>
+    <h2>Gemini Key 狀態</h2>
+    <p class="muted">${statusText}</p>
+    <p class="muted">Key 匯入與清除只允許 loopback 來源；請在 kevinhome 本機或未來的認證 admin path 管理 key，不要透過網域頁面貼上 secrets。</p>
+  </section>`
+  }
+
+  return `<section>
+    <h2>Gemini Key 匯入</h2>
+    <p class="muted">${statusText}</p>
+    <form id="key-form">
+      <textarea id="key-text" autocomplete="off" spellcheck="false" placeholder="貼上 Gemini API keys，可用逗號或換行，也可貼 GEMINI_API_KEY=... 或 export GEMINI_API_KEY=..."></textarea>
+      <label><input id="key-replace" type="checkbox">取代既有本地 key</label><br>
+      <button type="submit">匯入 Key</button><button id="key-clear" class="secondary" type="button">清除本地 Key</button>
+    </form>
+    <div id="key-result" class="muted"></div>
+  </section>`
 }
 
 function renderIdea(idea: IdeaRecord): string {

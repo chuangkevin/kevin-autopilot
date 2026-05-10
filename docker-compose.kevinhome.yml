@@ -1,14 +1,25 @@
+name: kevin-autopilot
+
 services:
   kevin-autopilot:
-    build: .
+    image: ${DOCKERHUB_USERNAME:-kevin950805}/kevin-autopilot:${IMAGE_TAG:-latest}
     container_name: kevin-autopilot
     restart: unless-stopped
     environment:
       KEVIN_AUTOPILOT_CONFIG: /config/kevinhome.json
+      PORT: "3023"
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+    ports:
+      - "${TAILSCALE_BIND_ADDR:-100.83.112.20}:${KEVIN_AUTOPILOT_HOST_PORT:-3023}:3023"
     volumes:
       - ./config/kevinhome.example.json:/config/kevinhome.json:ro
       - ./data:/data
       - D:/GitClone/_HomeProject/homelab-docs:/rules/homelab-docs:ro
       - D:/GitClone/_HomeProject:/repos/homeproject:ro
-    command: ["node", "dist/index.js", "observe"]
+    command: ["node", "dist/index.js", "web"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3023/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5

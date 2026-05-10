@@ -61,6 +61,17 @@
       "healthCheck": {
         "enabled": false
       }
+    },
+    {
+      "name": "Kevin Autopilot",
+      "domain": "kevin.sisihome.org",
+      "host": "kevinhome",
+      "port": 3023,
+      "source": "homelab-docs/CLAUDE.md",
+      "repository": "kevin-autopilot",
+      "healthCheck": {
+        "enabled": false
+      }
     }
   ]
 }

@@ -64,7 +64,12 @@ superpowers / multi-agent handoff summary for each accepted idea. Kevin can past
 keys through the dashboard; Autopilot stores them only under ignored local
 `data/keys.json` and shows only masked suffixes in API/UI responses.
 
-Version 0.4 should turn accepted ideas into project handoff plans: Kevin writes
+Version 0.4 adds kevinhome CI/CD and private Tailnet domain routing at
+`https://kevin.sisihome.org`. The deployed dashboard runs in Docker Web mode on
+`100.83.112.20:3023`; RPi Caddy only terminates TLS and reverse-proxies to that
+desktop Tailscale port.
+
+Version 0.5 should turn accepted ideas into project handoff plans: Kevin writes
 rough thoughts, Autopilot asks only the missing product or safety questions, then
 prepares the project plan, repo/setup steps, architecture, specs, implementation
 tasks, and verification checklist.
@@ -115,8 +120,33 @@ child agents, create repos, deploy, or modify target repositories.
 
 ## Status
 
-v0.3 prototype started. See `docs/` for architecture, safety, and OpenCode
+v0.4 prototype started. See `docs/` for architecture, safety, and OpenCode
 workflow.
+
+## Deployment
+
+Kevinhome deployment follows the HomeProject desktop-runner pattern used by
+`greed-island`, `frame-processor`, and `media-processor`:
+
+1. `CI` runs `npm ci`, `npm run build`, and `npm test` on `main`.
+2. `Build and Push Docker Image` publishes `kevin950805/kevin-autopilot:<sha>`
+   and `:latest` for `linux/amd64`.
+3. `Deploy Kevinhome` runs on the repo self-hosted runner labelled
+   `kevin-autopilot-prod`, pulls the commit image, starts
+   `docker-compose.kevinhome.yml`, and verifies `/health` reports the expected
+   app version.
+
+Runtime target:
+
+- URL: `https://kevin.sisihome.org`
+- Host: `kevinhome` / `100.83.112.20`
+- Port: `3023`
+- Compose: `docker-compose.kevinhome.yml`
+- Data: ignored local `data/`
+
+Key management writes stay loopback-only inside the Node app. The routed domain
+is for dashboard/idea intake; key import should be done from the local host or a
+future authenticated admin path.
 
 ## Run Observer Locally
 
@@ -129,10 +159,13 @@ $env:KEVIN_AUTOPILOT_CONFIG="$PWD\config\kevinhome.windows.example.json"
 npm run observe
 ```
 
-Run the Dockerized `kevinhome` observer once:
+Run the Dockerized `kevinhome` Web dashboard locally:
 
 ```powershell
-docker compose -f docker-compose.kevinhome.yml run --rm kevin-autopilot
+$env:IMAGE_TAG="local"
+docker build -t kevin950805/kevin-autopilot:local .
+docker compose -f docker-compose.kevinhome.yml up -d --pull never --no-build
+curl http://100.83.112.20:3023/health
 ```
 
 Reports are written to `data/`, which is intentionally ignored by git.

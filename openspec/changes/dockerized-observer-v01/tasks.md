@@ -11,3 +11,5 @@
 9. [x] Add v0.2 idea intake with ai-core-backed thinking and deterministic fallback.
 10. [x] Add v0.3 app-owned Gemini key import with masked API/UI status.
 11. [x] Add read-only superpowers and multi-agent handoff metadata for ideas.
+12. [x] Add v0.4 CI, Docker publish, and kevinhome deploy workflows.
+13. [x] Configure `kevin.sisihome.org` routing metadata for the dashboard.

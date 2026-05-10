@@ -1,0 +1,70 @@
+name: Build and Push Docker Image
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME || 'kevin950805' }}
+  IMAGE_NAME: kevin-autopilot
+  IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    if: >
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Validate Docker Hub credentials
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -z "${DOCKERHUB_USERNAME}" ]; then
+            echo "::error::Missing DOCKERHUB_USERNAME"
+            exit 1
+          fi
+          if [ -z "${DOCKERHUB_TOKEN}" ]; then
+            echo "::error::Missing DOCKERHUB_TOKEN"
+            exit 1
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+            ${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha,scope=kevin-autopilot
+          cache-to: type=gha,scope=kevin-autopilot,mode=max
+          provenance: false
+
+      - name: Summary
+        run: |
+          echo "## Docker Image Published" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Image: \`${DOCKERHUB_USERNAME}/${IMAGE_NAME}:${IMAGE_TAG}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Latest alias: \`${DOCKERHUB_USERNAME}/${IMAGE_NAME}:latest\`" >> "$GITHUB_STEP_SUMMARY"

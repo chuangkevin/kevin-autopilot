@@ -131,3 +131,29 @@ multi-agent question-answer handoff for each idea.
 - WHEN Autopilot classifies and stores the idea
 - THEN the idea record includes `using-superpowers` plus relevant workflow skills
   and Kevin persona, safety reviewer, and spec planner Q&A metadata.
+
+### Requirement: Kevinhome CI/CD Deployment
+
+Kevin Autopilot SHALL deploy to `kevinhome` through the HomeProject desktop
+self-hosted runner pattern and expose the dashboard at `kevin.sisihome.org`.
+
+#### Scenario: Main branch release
+
+- GIVEN changes are pushed to `main`
+- WHEN CI succeeds
+- THEN GitHub Actions builds and pushes a `linux/amd64` Docker image for
+  `kevin950805/kevin-autopilot`.
+
+#### Scenario: Desktop deployment
+
+- GIVEN the Docker image is published
+- WHEN the deploy workflow runs on the `kevin-autopilot-prod` self-hosted runner
+- THEN it pulls the commit image on `kevinhome`, starts Web mode on port `3023`,
+  and verifies `/health` reports the expected version.
+
+#### Scenario: Private domain routing
+
+- GIVEN RPi Caddy receives `kevin.sisihome.org`
+- WHEN the request is routed
+- THEN Caddy reverse-proxies to `100.83.112.20:3023` without exposing the service
+  outside the existing private Tailscale `sisihome.org` model.
