@@ -36,7 +36,12 @@ test('web server exposes health and idea intake', async () => {
 
     const health = await fetch(`${baseUrl}/health`)
     assert.equal(health.status, 200)
+    assert.equal(health.headers.get('cache-control'), 'no-store, max-age=0')
     assert.equal((await health.json()).environment, 'test')
+
+    const page = await fetch(`${baseUrl}/`)
+    assert.equal(page.status, 200)
+    assert.equal(page.headers.get('cache-control'), 'no-store, max-age=0')
 
     const idea = await fetch(`${baseUrl}/api/ideas`, {
       method: 'POST',

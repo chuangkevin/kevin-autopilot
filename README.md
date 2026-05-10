@@ -75,6 +75,9 @@ OpenSpec draft, architecture notes, implementation tasks, verification checklist
 bounded prompt, open questions, and approval gates without creating repos,
 deploying, or modifying target projects.
 
+Version 0.5.1 adds no-store cache headers to the dashboard and JSON APIs so the
+deployed page refreshes to the current application version immediately.
+
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.
 

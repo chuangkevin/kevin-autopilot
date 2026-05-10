@@ -8,6 +8,11 @@ import { APP_VERSION } from './version.js'
 
 const DEFAULT_PORT = 3023
 const MAX_REQUEST_BODY_BYTES = 64 * 1024
+const NO_STORE_HEADERS = {
+  'cache-control': 'no-store, max-age=0',
+  pragma: 'no-cache',
+  expires: '0',
+}
 
 export async function startWebServer(config: AutopilotConfig): Promise<void> {
   const port = Number(process.env.PORT ?? DEFAULT_PORT)
@@ -80,7 +85,7 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
   if (url.pathname === '/') {
     const ideas = await listIdeas(config, 8)
     const keyStatus = await getKeyStatus(config)
-    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', ...NO_STORE_HEADERS })
     response.end(renderPage(report, ideas, Boolean(config.ai?.enabled), keyStatus, isLoopbackAddress(request.socket.remoteAddress ?? '')))
     return
   }
@@ -100,7 +105,7 @@ export function isLoopbackAddress(address: string): boolean {
 }
 
 function writeJson(response: ServerResponse, body: unknown, statusCode = 200): void {
-  response.writeHead(statusCode, { 'content-type': 'application/json; charset=utf-8' })
+  response.writeHead(statusCode, { 'content-type': 'application/json; charset=utf-8', ...NO_STORE_HEADERS })
   response.end(`${JSON.stringify(body, null, 2)}\n`)
 }
 
