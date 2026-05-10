@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import { createIdea, listIdeas } from './ideas.js'
@@ -13,6 +14,7 @@ const NO_STORE_HEADERS = {
   pragma: 'no-cache',
   expires: '0',
 }
+const KEY_IMPORT_TOKEN_ENV = 'AUTOPILOT_KEY_IMPORT_TOKEN'
 
 export async function startWebServer(config: AutopilotConfig): Promise<void> {
   const port = Number(process.env.PORT ?? DEFAULT_PORT)
@@ -62,7 +64,10 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
   }
 
   if (url.pathname === '/api/keys/import' && request.method === 'POST') {
-    assertLocalRequest(request)
+    if (!getKeyManagementAccess(request).allowed) {
+      writeText(response, `Key management writes require loopback access or ${KEY_IMPORT_TOKEN_ENV}`, 403)
+      return
+    }
     const body = JSON.parse(await readBody(request)) as { rawText?: unknown; replace?: unknown }
     const summary = await importGeminiKeys(config, typeof body.rawText === 'string' ? body.rawText : '', body.replace === true)
     writeJson(response, summary, 201)
@@ -70,7 +75,10 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
   }
 
   if (url.pathname === '/api/keys' && request.method === 'DELETE') {
-    assertLocalRequest(request)
+    if (!getKeyManagementAccess(request).allowed) {
+      writeText(response, `Key management writes require loopback access or ${KEY_IMPORT_TOKEN_ENV}`, 403)
+      return
+    }
     writeJson(response, await clearStoredGeminiKeys(config))
     return
   }
@@ -86,7 +94,7 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
     const ideas = await listIdeas(config, 8)
     const keyStatus = await getKeyStatus(config)
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', ...NO_STORE_HEADERS })
-    response.end(renderPage(report, ideas, Boolean(config.ai?.enabled), keyStatus, isLoopbackAddress(request.socket.remoteAddress ?? '')))
+    response.end(renderPage(report, ideas, Boolean(config.ai?.enabled), keyStatus, getKeyManagementAccess(request)))
     return
   }
 
@@ -94,19 +102,57 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
   response.end('Not found')
 }
 
-function assertLocalRequest(request: IncomingMessage): void {
-  const address = request.socket.remoteAddress ?? ''
-  if (isLoopbackAddress(address)) return
-  throw new Error('Key management writes are only allowed from loopback clients')
-}
-
 export function isLoopbackAddress(address: string): boolean {
   return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1'
+}
+
+export function isKeyManagementAllowed(address: string, providedToken?: string, configuredToken = process.env[KEY_IMPORT_TOKEN_ENV]): boolean {
+  if (isLoopbackAddress(address)) return true
+  return hasValidKeyImportToken(providedToken, configuredToken)
+}
+
+function getKeyManagementAccess(request: IncomingMessage): { allowed: boolean; remoteAuthAvailable: boolean } {
+  return getKeyManagementAccessForValues(request.socket.remoteAddress ?? '', getProvidedToken(request), process.env[KEY_IMPORT_TOKEN_ENV])
+}
+
+export function getKeyManagementAccessForValues(address: string, providedToken?: string, configuredToken = process.env[KEY_IMPORT_TOKEN_ENV]): { allowed: boolean; remoteAuthAvailable: boolean } {
+  return {
+    allowed: isKeyManagementAllowed(address, providedToken, configuredToken),
+    remoteAuthAvailable: hasConfiguredKeyImportToken(configuredToken),
+  }
+}
+
+function getProvidedToken(request: IncomingMessage): string | undefined {
+  const headerToken = getSingleHeader(request.headers['x-autopilot-admin-token'])
+  if (headerToken) return headerToken
+  const authorization = getSingleHeader(request.headers.authorization)
+  return authorization?.match(/^Bearer\s+(.+)$/i)?.[1]
+}
+
+function getSingleHeader(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value
+}
+
+function hasConfiguredKeyImportToken(configuredToken: string | undefined): configuredToken is string {
+  return typeof configuredToken === 'string' && configuredToken.trim().length >= 12
+}
+
+function hasValidKeyImportToken(providedToken: string | undefined, configuredToken: string | undefined): boolean {
+  if (!hasConfiguredKeyImportToken(configuredToken) || typeof providedToken !== 'string') return false
+  const expectedToken = configuredToken.trim()
+  const expected = Buffer.from(expectedToken)
+  const actual = Buffer.from(providedToken.trim())
+  return expected.length === actual.length && timingSafeEqual(expected, actual)
 }
 
 function writeJson(response: ServerResponse, body: unknown, statusCode = 200): void {
   response.writeHead(statusCode, { 'content-type': 'application/json; charset=utf-8', ...NO_STORE_HEADERS })
   response.end(`${JSON.stringify(body, null, 2)}\n`)
+}
+
+function writeText(response: ServerResponse, body: string, statusCode = 200): void {
+  response.writeHead(statusCode, { 'content-type': 'text/plain; charset=utf-8', ...NO_STORE_HEADERS })
+  response.end(`${body}\n`)
 }
 
 async function readBody(request: IncomingMessage): Promise<string> {
@@ -125,7 +171,7 @@ function renderPage(
   ideas: IdeaRecord[],
   aiEnabled: boolean,
   keyStatus: KeyStatusSummary,
-  canManageKeys: boolean,
+  keyAccess: { allowed: boolean; remoteAuthAvailable: boolean },
 ): string {
   const dirtyRepos = report.repositories.filter((repo) => repo.dirty).length
   const missingRuleFiles = report.ruleSources.reduce((sum, source) => sum + source.missingFiles.length, 0)
@@ -185,7 +231,7 @@ function renderPage(
     <div class="card"><div class="label">缺少規則檔</div><div class="value">${missingRuleFiles}</div></div>
   </div>
 
-  ${renderKeySection(keyStatus, canManageKeys)}
+  ${renderKeySection(keyStatus, keyAccess)}
 
   <section>
     <h2>想法接手</h2>
@@ -222,16 +268,19 @@ function renderPage(
   </section>
 </main>
 <script>
+  let autopilotAdminToken = '';
   const keyForm = document.getElementById('key-form');
   if (keyForm) keyForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     const rawText = document.getElementById('key-text').value;
     const replace = document.getElementById('key-replace').checked;
+    const adminToken = document.getElementById('key-admin-token')?.value ?? autopilotAdminToken;
     const result = document.getElementById('key-result');
     result.textContent = '匯入中...';
+    if (adminToken) autopilotAdminToken = adminToken;
     const response = await fetch('/api/keys/import', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-autopilot-admin-token': adminToken },
       body: JSON.stringify({ rawText, replace })
     });
     if (!response.ok) {
@@ -247,8 +296,10 @@ function renderPage(
   const keyClear = document.getElementById('key-clear');
   if (keyClear) keyClear.addEventListener('click', async () => {
     const result = document.getElementById('key-result');
+    const adminToken = document.getElementById('key-admin-token')?.value ?? autopilotAdminToken;
     result.textContent = '清除中...';
-    const response = await fetch('/api/keys', { method: 'DELETE' });
+    if (adminToken) autopilotAdminToken = adminToken;
+    const response = await fetch('/api/keys', { method: 'DELETE', headers: { 'x-autopilot-admin-token': adminToken } });
     if (!response.ok) {
       result.textContent = await response.text();
       return;
@@ -281,20 +332,27 @@ function renderPage(
 </html>`
 }
 
-function renderKeySection(keyStatus: KeyStatusSummary, canManageKeys: boolean): string {
+function renderKeySection(keyStatus: KeyStatusSummary, keyAccess: { allowed: boolean; remoteAuthAvailable: boolean }): string {
   const statusText = `目前可用 ${keyStatus.totalAvailable} 把；本地儲存 ${keyStatus.storedCount} 把${keyStatus.storedSuffixes.length > 0 ? ` (${escapeHtml(keyStatus.storedSuffixes.join(', '))})` : ''}，環境變數 ${keyStatus.envCount} 把${keyStatus.envSuffixes.length > 0 ? ` (${escapeHtml(keyStatus.envSuffixes.join(', '))})` : ''}。只接受 Gemini API key，不會顯示完整 key。`
-  if (!canManageKeys) {
+  if (!keyAccess.allowed && !keyAccess.remoteAuthAvailable) {
     return `<section>
     <h2>Gemini Key 狀態</h2>
     <p class="muted">${statusText}</p>
-    <p class="muted">Key 匯入與清除只允許 loopback 來源；請在 kevinhome 本機或未來的認證 admin path 管理 key，不要透過網域頁面貼上 secrets。</p>
+    <p class="muted">遠端 key 匯入尚未啟用。請先在部署環境設定 ${KEY_IMPORT_TOKEN_ENV}，domain 才會顯示受 token 保護的匯入欄位。</p>
   </section>`
   }
+
+  const tokenInput = keyAccess.allowed ? '' : `<input id="key-admin-token" type="password" autocomplete="current-password" placeholder="Admin token" style="width:100%;box-sizing:border-box;border-radius:14px;border:1px solid rgba(148,163,184,0.28);background:rgba(15,23,42,0.86);color:#e5eefc;padding:12px;margin-bottom:10px;font:inherit;">`
+  const helpText = keyAccess.allowed
+    ? '目前來源可直接管理 key。'
+    : `遠端匯入已啟用；請先輸入 ${KEY_IMPORT_TOKEN_ENV} token。token 只存在目前頁面的 JS 記憶體，不會寫入 Autopilot records。`
 
   return `<section>
     <h2>Gemini Key 匯入</h2>
     <p class="muted">${statusText}</p>
+    <p class="muted">${escapeHtml(helpText)}</p>
     <form id="key-form">
+      ${tokenInput}
       <textarea id="key-text" autocomplete="off" spellcheck="false" placeholder="貼上 Gemini API keys，可用逗號或換行，也可貼 GEMINI_API_KEY=... 或 export GEMINI_API_KEY=..."></textarea>
       <label><input id="key-replace" type="checkbox">取代既有本地 key</label><br>
       <button type="submit">匯入 Key</button><button id="key-clear" class="secondary" type="button">清除本地 Key</button>

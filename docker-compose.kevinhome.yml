@@ -8,6 +8,7 @@ services:
     environment:
       KEVIN_AUTOPILOT_CONFIG: /config/kevinhome.json
       PORT: "3023"
+      AUTOPILOT_KEY_IMPORT_TOKEN: ${AUTOPILOT_KEY_IMPORT_TOKEN:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
     ports:

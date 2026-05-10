@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createWebServer, isLoopbackAddress } from './web.js'
+import { createWebServer, getKeyManagementAccessForValues, isKeyManagementAllowed, isLoopbackAddress } from './web.js'
 import type { AutopilotConfig } from './types.js'
 
 const GEMINI_KEY = `AIzaSy${'C'.repeat(33)}`
@@ -15,6 +15,28 @@ test('isLoopbackAddress rejects non-loopback clients for key writes', () => {
   assert.equal(isLoopbackAddress('::ffff:127.0.0.1'), true)
   assert.equal(isLoopbackAddress('192.168.1.10'), false)
   assert.equal(isLoopbackAddress('10.0.0.8'), false)
+})
+
+test('isKeyManagementAllowed accepts configured remote admin token', () => {
+  assert.equal(isKeyManagementAllowed('192.168.1.10', undefined, 'long-enough-token'), false)
+  assert.equal(isKeyManagementAllowed('192.168.1.10', 'wrong-token', 'long-enough-token'), false)
+  assert.equal(isKeyManagementAllowed('192.168.1.10', 'long-enough-token', 'long-enough-token'), true)
+  assert.equal(isKeyManagementAllowed('192.168.1.10', 'short', 'short'), false)
+})
+
+test('getKeyManagementAccessForValues reports remote token availability and denial', () => {
+  assert.deepEqual(getKeyManagementAccessForValues('192.168.1.10', undefined, undefined), {
+    allowed: false,
+    remoteAuthAvailable: false,
+  })
+  assert.deepEqual(getKeyManagementAccessForValues('192.168.1.10', 'wrong-token', 'long-enough-token'), {
+    allowed: false,
+    remoteAuthAvailable: true,
+  })
+  assert.deepEqual(getKeyManagementAccessForValues('192.168.1.10', 'long-enough-token', 'long-enough-token'), {
+    allowed: true,
+    remoteAuthAvailable: true,
+  })
 })
 
 test('web server exposes health and idea intake', async () => {

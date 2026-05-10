@@ -11,8 +11,9 @@ or configured/mounted rule-source paths, then common HomeProject roots only as a
 fallback during local development.
 
 Kevin approved the v0.1 Dockerized observer, v0.2 idea-intake prototype, v0.3
-key import / agent handoff metadata, v0.4 kevinhome deployment, and v0.5
-read-only project handoff plan work.
+key import / agent handoff metadata, v0.4 kevinhome deployment, v0.5
+read-only project handoff plan work, and v0.5.2 token-protected remote key
+management.
 Keep these versions read-only: they may observe, classify, report, and store
 Autopilot-owned reports/idea records, but they must not modify target repos,
 create repos, deploy, commit/push other projects, or perform destructive actions

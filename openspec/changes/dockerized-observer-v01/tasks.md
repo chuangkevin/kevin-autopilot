@@ -15,3 +15,4 @@
 13. [x] Configure `kevin.sisihome.org` routing metadata for the dashboard.
 14. [x] Add v0.5 read-only project handoff plans for stored ideas.
 15. [x] Add no-store headers for dashboard/API refresh correctness.
+16. [x] Add token-protected remote key import for the private domain.

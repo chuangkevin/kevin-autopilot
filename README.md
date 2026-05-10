@@ -78,6 +78,11 @@ deploying, or modifying target projects.
 Version 0.5.1 adds no-store cache headers to the dashboard and JSON APIs so the
 deployed page refreshes to the current application version immediately.
 
+Version 0.5.2 adds token-protected remote Gemini key management for the private
+domain. Loopback clients can still manage keys directly; remote clients only see
+the import UI when `AUTOPILOT_KEY_IMPORT_TOKEN` is configured, and writes must
+send that token in `x-autopilot-admin-token`.
+
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.
 
@@ -168,9 +173,10 @@ Runtime target:
 - Compose: `docker-compose.kevinhome.yml`
 - Data: ignored local `data/`
 
-Key management writes stay loopback-only inside the Node app. The routed domain
-is for dashboard/idea intake; key import should be done from the local host or a
-future authenticated admin path.
+Key management writes are loopback-only unless `AUTOPILOT_KEY_IMPORT_TOKEN` is
+set in the deployment environment. When configured, the routed domain displays a
+password field and sends the token as `x-autopilot-admin-token`; Autopilot stores
+only Gemini keys under ignored `data/keys.json`, never the admin token.
 
 ## Run Observer Locally
 
