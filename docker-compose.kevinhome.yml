@@ -1,0 +1,14 @@
+services:
+  kevin-autopilot:
+    build: .
+    container_name: kevin-autopilot
+    restart: unless-stopped
+    environment:
+      KEVIN_AUTOPILOT_CONFIG: /config/kevinhome.json
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    volumes:
+      - ./config/kevinhome.example.json:/config/kevinhome.json:ro
+      - ./data:/data
+      - D:/GitClone/_HomeProject/homelab-docs:/rules/homelab-docs:ro
+      - D:/GitClone/_HomeProject:/repos/homeproject:ro
+    command: ["node", "dist/index.js", "observe"]

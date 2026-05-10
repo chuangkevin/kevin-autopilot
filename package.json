@@ -1,0 +1,23 @@
+{
+  "name": "kevin-autopilot",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "observe": "node dist/index.js observe",
+    "web": "node dist/index.js web",
+    "test": "node --test dist/**/*.test.js"
+  },
+  "dependencies": {
+    "@kevinsisi/ai-core": "git+https://github.com/kevinsisi/ai-core.git#f42e3f4ceb14886604bd0c7f248071018c85ff82"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

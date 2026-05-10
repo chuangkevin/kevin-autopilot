@@ -3,5 +3,6 @@
 !.env.example
 node_modules/
 dist/
+data/
 .turbo/
 .ai-review/pre-commit-review.json

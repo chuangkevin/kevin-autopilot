@@ -5,6 +5,17 @@
 v0.1 is read-only planning mode. It may scan, classify, and report. It must not
 modify files, commit, push, deploy, or run destructive commands.
 
+Docker deployment does not expand permissions. Mounted repositories and rule
+sources should be read-only by default. The only writable location in v0.1 should
+be Autopilot's own data volume for SQLite state and generated reports.
+
+## Rule Source Safety
+
+The assistant may load `homelab-docs` and user-selected rule sources from
+configured paths or mounts. It must record which sources affected a decision so
+reports can be audited across environments. It must not assume one local path is
+canonical.
+
 ## Allowed Without Approval In Future Automation
 
 Only after v0.1 is validated, future versions may auto-run low-risk tasks:
@@ -26,6 +37,25 @@ Only after v0.1 is validated, future versions may auto-run low-risk tasks:
 7. API contract changes.
 8. Existing user habit changes.
 
+9. Adding a new rule source that can change action permissions.
+10. Enabling a new service health check that reaches a production endpoint.
+11. Creating a new repository.
+12. Choosing or changing a deployment target.
+13. Starting implementation from a raw idea.
+14. Creating or modifying OpenSpec for a new product direction.
+
+## Idea Handoff Safety
+
+Idea handoff mode must default to planning. A raw idea from Kevin can trigger
+analysis, clarification, architecture drafting, and OpenSpec proposal, but it
+must not create repos, write product code, deploy, or commit until the approval
+state for that step is explicit and recorded.
+
+AI thinking via `@kevinsisi/ai-core` is advisory in v0.2. If AI fails, times out,
+or returns invalid JSON, the raw idea must still be preserved and classified with
+the deterministic fallback. The UI/report must show whether the result came from
+ai-core or fallback.
+
 ## Always Forbidden Unless Explicitly Requested
 
 1. Force push.
@@ -43,3 +73,6 @@ Every proposed or completed task must include:
 3. Risk level.
 4. Verification plan or evidence.
 5. What was not done.
+
+For service observation reports, also include source provenance: which docs,
+repos, configured services, and allowed endpoints were inspected.

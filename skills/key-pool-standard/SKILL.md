@@ -7,7 +7,7 @@ description: Use whenever building or reviewing a Gemini integration, AI key poo
 
 All AI agent systems in the HomeProject ecosystem must implement this standard.
 Reference implementation example: `kevinsisi/project-bridge` → `src/geminiKeys.ts` + `src/geminiRetry.ts`
-Analysis doc: `D:\GitClone\_HomeProject\key-pool-analysis.md`
+Analysis doc: `<HOMEPROJECT_ROOT>/key-pool-analysis.md`
 
 ## Checklist
 

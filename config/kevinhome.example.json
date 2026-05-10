@@ -1,0 +1,279 @@
+{
+  "environment": "kevinhome",
+  "dataDir": "/data",
+  "ai": {
+    "enabled": true,
+    "provider": "gemini",
+    "model": "gemini-2.5-flash",
+    "timeoutMs": 20000
+  },
+  "ruleSources": [
+    {
+      "name": "homelab-docs",
+      "path": "/rules/homelab-docs",
+      "required": true,
+      "entryFiles": [
+        "AGENTS.md",
+        "AGENT_RULES.md",
+        "kevin-ai-persona/PERSONA.md"
+      ]
+    }
+  ],
+  "repositories": [
+    {
+      "name": "kevin-autopilot",
+      "path": "/repos/homeproject/kevin-autopilot"
+    },
+    {
+      "name": "homelab-docs",
+      "path": "/repos/homeproject/homelab-docs"
+    }
+  ],
+  "services": [
+    {
+      "name": "Portainer",
+      "domain": "portainer.sisihome.org",
+      "host": "rpi",
+      "port": 9000,
+      "source": "homelab-docs/CLAUDE.md",
+      "healthCheck": {
+        "enabled": false
+      }
+    },
+    {
+      "name": "AI Lunch Mind",
+      "domain": "lunch.sisihome.org/ai_lunch",
+      "host": "rpi",
+      "port": 9113,
+      "source": "homelab-docs/CLAUDE.md",
+      "repository": "ai-lunch-mind",
+      "healthCheck": {
+        "enabled": false
+      }
+    },
+    {
+      "name": "Home Media",
+      "domain": "radio.sisihome.org",
+      "host": "rpi",
+      "port": 3123,
+      "source": "homelab-docs/CLAUDE.md",
+      "repository": "home-media",
+      "healthCheck": {
+        "enabled": false
+      }
+    },
+    {
+      "name": "Code Server",
+      "domain": "code.sisihome.org",
+      "host": "rpi",
+      "port": 2123,
+      "source": "homelab-docs/CLAUDE.md",
+      "healthCheck": {
+        "enabled": false
+      }
+    },
+    {
+      "name": "Readflix Frontend",
+      "domain": "readflix.sisihome.org",
+      "host": "rpi",
+      "port": 7123,
+      "source": "homelab-docs/CLAUDE.md",
+      "healthCheck": {
+        "enabled": false
+      }
+    },
+    {
+      "name": "App Portal Frontend",
+      "domain": "portal.sisihome.org",
+      "host": "rpi",
+      "port": 1123,
+      "source": "homelab-docs/CLAUDE.md",
+      "repository": "docker-app-portal",
+      "healthCheck": {
+        "enabled": false
+      }
+    },
+    {
+      "name": "Wish List Frontend",
+      "domain": "wishlist.sisihome.org",
+      "host": "rpi",
+      "port": 1124,
+      "source": "homelab-docs/CLAUDE.md",
+      "healthCheck": {
+        "enabled": false
+      }
+    },
+    {
+      "name": "Onshape Measure",
+      "domain": "onshape.sisihome.org",
+      "host": "homedocker",
+      "port": 6123,
+      "source": "homelab-docs/CLAUDE.md",
+      "repository": "onshape-skill",
+      "healthCheck": {
+        "enabled": false
+      }
+    },
+    {
+      "name": "Project Bridge",
+      "domain": "designbridge.sisihome.org",
+      "host": "rpi",
+      "port": 5123,
+      "source": "homelab-docs/CLAUDE.md",
+      "repository": "project-bridge",
+      "healthCheck": {
+        "enabled": false
+      }
+    },
+    {
+      "name": "Digital Photo Frame",
+      "domain": "photo.sisihome.org",
+      "host": "rpi",
+      "port": 4123,
+      "source": "homelab-docs/CLAUDE.md",
+      "repository": "digital-photo-frame",
+      "healthCheck": {
+        "enabled": false
+      }
+    },
+    {
+      "name": "Open Data Bus",
+      "domain": "bus.sisihome.org",
+      "host": "rpi",
+      "port": 55422,
+      "source": "homelab-docs/CLAUDE.md",
+      "repository": "open-Data-Service",
+      "healthCheck": {
+        "enabled": false
+      }
+    },
+    {
+      "name": "WordPress Blog",
+      "domain": "blog.sisihome.org",
+      "host": "rpi",
+      "port": 5566,
+      "source": "homelab-docs/CLAUDE.md",
+      "healthCheck": {
+        "enabled": false
+      }
+    },
+    {
+      "name": "Pi-hole Admin",
+      "domain": "pihole.sisihome.org",
+      "host": "rpi",
+      "port": 8053,
+      "source": "homelab-docs/CLAUDE.md",
+      "healthCheck": {
+        "enabled": false
+      }
+    },
+    {
+      "name": "AI Agents",
+      "domain": "agents.sisihome.org",
+      "host": "rpi",
+      "port": 55144,
+      "source": "homelab-docs/CLAUDE.md",
+      "healthCheck": {
+        "enabled": false
+      }
+    },
+    {
+      "name": "Auto Spec Test",
+      "domain": "autospec.sisihome.org",
+      "host": "rpi",
+      "port": 8223,
+      "source": "homelab-docs/CLAUDE.md",
+      "repository": "auto-spec-test",
+      "healthCheck": {
+        "enabled": false
+      }
+    },
+    {
+      "name": "GitHub Dashboard",
+      "domain": "github.sisihome.org",
+      "host": "rpi",
+      "port": 8323,
+      "source": "homelab-docs/CLAUDE.md",
+      "repository": "repo-dashboard",
+      "healthCheck": {
+        "enabled": false
+      }
+    },
+    {
+      "name": "Sheet-to-Car Prod",
+      "domain": "car.sisihome.org",
+      "host": "rpi",
+      "port": 5223,
+      "source": "homelab-docs/CLAUDE.md",
+      "repository": "sheet-to-car",
+      "healthCheck": {
+        "enabled": false
+      }
+    },
+    {
+      "name": "Sheet-to-Car Dev/Test",
+      "domain": "carsmeet.sisihome.org",
+      "host": "amd64-manjaro",
+      "port": 5224,
+      "source": "homelab-docs/CLAUDE.md",
+      "repository": "sheet-to-car",
+      "healthCheck": {
+        "enabled": false
+      }
+    },
+    {
+      "name": "Mind Diary",
+      "domain": "diary.sisihome.org",
+      "host": "rpi",
+      "port": 8823,
+      "source": "homelab-docs/CLAUDE.md",
+      "repository": "mind-diary",
+      "healthCheck": {
+        "enabled": false
+      }
+    },
+    {
+      "name": "Key Manager",
+      "domain": "key.sisihome.org",
+      "host": "rpi",
+      "port": 7823,
+      "source": "homelab-docs/CLAUDE.md",
+      "repository": "key-manager",
+      "healthCheck": {
+        "enabled": false
+      }
+    },
+    {
+      "name": "OpenCode Web",
+      "domain": "opencode.sisihome.org",
+      "host": "kevinhome",
+      "port": 9223,
+      "source": "homelab-docs/CLAUDE.md",
+      "healthCheck": {
+        "enabled": false
+      }
+    },
+    {
+      "name": "Greed Island",
+      "domain": "hunter.sisihome.org",
+      "host": "kevinhome",
+      "port": 8100,
+      "source": "homelab-docs/CLAUDE.md",
+      "repository": "greed-island",
+      "healthCheck": {
+        "enabled": false
+      }
+    },
+    {
+      "name": "Frame Processor",
+      "domain": "frame.sisihome.org",
+      "host": "kevinhome",
+      "port": 18533,
+      "source": "homelab-docs/CLAUDE.md",
+      "repository": "frame-processor",
+      "healthCheck": {
+        "enabled": false
+      }
+    }
+  ]
+}

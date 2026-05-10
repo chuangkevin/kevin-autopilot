@@ -1,0 +1,66 @@
+{
+  "environment": "kevinhome-windows-local",
+  "dataDir": "./data",
+  "ai": {
+    "enabled": true,
+    "provider": "gemini",
+    "model": "gemini-2.5-flash",
+    "timeoutMs": 20000
+  },
+  "ruleSources": [
+    {
+      "name": "homelab-docs",
+      "path": "../homelab-docs",
+      "required": true,
+      "entryFiles": [
+        "AGENTS.md",
+        "AGENT_RULES.md",
+        "kevin-ai-persona/PERSONA.md"
+      ]
+    }
+  ],
+  "repositories": [
+    {
+      "name": "kevin-autopilot",
+      "path": "."
+    },
+    {
+      "name": "homelab-docs",
+      "path": "../homelab-docs"
+    }
+  ],
+  "services": [
+    {
+      "name": "OpenCode Web",
+      "domain": "opencode.sisihome.org",
+      "host": "kevinhome",
+      "port": 9223,
+      "source": "homelab-docs/CLAUDE.md",
+      "healthCheck": {
+        "enabled": false
+      }
+    },
+    {
+      "name": "Greed Island",
+      "domain": "hunter.sisihome.org",
+      "host": "kevinhome",
+      "port": 8100,
+      "source": "homelab-docs/CLAUDE.md",
+      "repository": "greed-island",
+      "healthCheck": {
+        "enabled": false
+      }
+    },
+    {
+      "name": "Frame Processor",
+      "domain": "frame.sisihome.org",
+      "host": "kevinhome",
+      "port": 18533,
+      "source": "homelab-docs/CLAUDE.md",
+      "repository": "frame-processor",
+      "healthCheck": {
+        "enabled": false
+      }
+    }
+  ]
+}
