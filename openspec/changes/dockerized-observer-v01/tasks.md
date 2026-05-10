@@ -9,3 +9,5 @@
 7. [x] Build the smallest runnable observer prototype.
 8. [x] Verify the prototype can generate a report from read-only config.
 9. [x] Add v0.2 idea intake with ai-core-backed thinking and deterministic fallback.
+10. [x] Add v0.3 app-owned Gemini key import with masked API/UI status.
+11. [x] Add read-only superpowers and multi-agent handoff metadata for ideas.

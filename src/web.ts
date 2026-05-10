@@ -1,8 +1,9 @@
 import { createServer } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import { createIdea, listIdeas } from './ideas.js'
+import { clearStoredGeminiKeys, getKeyStatus, importGeminiKeys } from './keys.js'
 import { observe } from './observer.js'
-import type { AutopilotConfig, IdeaRecord, ObservationReport } from './types.js'
+import type { AutopilotConfig, IdeaRecord, KeyStatusSummary, ObservationReport } from './types.js'
 import { APP_VERSION } from './version.js'
 
 const DEFAULT_PORT = 3023
@@ -50,6 +51,25 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
     return
   }
 
+  if (url.pathname === '/api/keys/status' && request.method === 'GET') {
+    writeJson(response, await getKeyStatus(config))
+    return
+  }
+
+  if (url.pathname === '/api/keys/import' && request.method === 'POST') {
+    assertLocalRequest(request)
+    const body = JSON.parse(await readBody(request)) as { rawText?: unknown; replace?: unknown }
+    const summary = await importGeminiKeys(config, typeof body.rawText === 'string' ? body.rawText : '', body.replace === true)
+    writeJson(response, summary, 201)
+    return
+  }
+
+  if (url.pathname === '/api/keys' && request.method === 'DELETE') {
+    assertLocalRequest(request)
+    writeJson(response, await clearStoredGeminiKeys(config))
+    return
+  }
+
   const report = await observe(config)
 
   if (url.pathname === '/api/report') {
@@ -59,13 +79,24 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
 
   if (url.pathname === '/') {
     const ideas = await listIdeas(config, 8)
+    const keyStatus = await getKeyStatus(config)
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-    response.end(renderPage(report, ideas, Boolean(config.ai?.enabled)))
+    response.end(renderPage(report, ideas, Boolean(config.ai?.enabled), keyStatus))
     return
   }
 
   response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
   response.end('Not found')
+}
+
+function assertLocalRequest(request: IncomingMessage): void {
+  const address = request.socket.remoteAddress ?? ''
+  if (isLoopbackAddress(address)) return
+  throw new Error('Key management writes are only allowed from loopback clients')
+}
+
+export function isLoopbackAddress(address: string): boolean {
+  return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1'
 }
 
 function writeJson(response: ServerResponse, body: unknown, statusCode = 200): void {
@@ -84,7 +115,7 @@ async function readBody(request: IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString('utf8')
 }
 
-function renderPage(report: ObservationReport, ideas: IdeaRecord[], aiEnabled: boolean): string {
+function renderPage(report: ObservationReport, ideas: IdeaRecord[], aiEnabled: boolean, keyStatus: KeyStatusSummary): string {
   const dirtyRepos = report.repositories.filter((repo) => repo.dirty).length
   const missingRuleFiles = report.ruleSources.reduce((sum, source) => sum + source.missingFiles.length, 0)
 
@@ -115,7 +146,10 @@ function renderPage(report: ObservationReport, ideas: IdeaRecord[], aiEnabled: b
     .ok { background: rgba(34,197,94,0.14); color: #bbf7d0; }
     .muted { color: #93a4bd; }
     textarea { width: 100%; min-height: 118px; box-sizing: border-box; resize: vertical; border-radius: 14px; border: 1px solid rgba(148,163,184,0.28); background: rgba(15,23,42,0.86); color: #e5eefc; padding: 14px; font: inherit; font-size: 16px; line-height: 1.5; }
+    label { display: inline-flex; gap: 8px; align-items: center; color: #cbd5e1; margin-top: 10px; font-size: 14px; }
+    input[type="checkbox"] { width: 16px; height: 16px; }
     button { margin-top: 10px; border: 0; border-radius: 999px; background: #60a5fa; color: #06111f; font-weight: 700; padding: 10px 16px; cursor: pointer; }
+    button.secondary { background: rgba(148,163,184,0.2); color: #e5eefc; margin-left: 8px; }
     .idea { border-top: 1px solid rgba(148,163,184,0.16); padding: 12px 0; }
     .idea:first-child { border-top: 0; }
     .idea-title { font-weight: 700; }
@@ -139,6 +173,17 @@ function renderPage(report: ObservationReport, ideas: IdeaRecord[], aiEnabled: b
     <div class="card"><div class="label">Dirty repos</div><div class="value">${dirtyRepos}</div></div>
     <div class="card"><div class="label">缺少規則檔</div><div class="value">${missingRuleFiles}</div></div>
   </div>
+
+  <section>
+    <h2>Gemini Key 匯入</h2>
+    <p class="muted">目前可用 ${keyStatus.totalAvailable} 把；本地儲存 ${keyStatus.storedCount} 把${keyStatus.storedSuffixes.length > 0 ? ` (${escapeHtml(keyStatus.storedSuffixes.join(', '))})` : ''}，環境變數 ${keyStatus.envCount} 把${keyStatus.envSuffixes.length > 0 ? ` (${escapeHtml(keyStatus.envSuffixes.join(', '))})` : ''}。只接受 Gemini API key，不會顯示完整 key。</p>
+    <form id="key-form">
+      <textarea id="key-text" autocomplete="off" spellcheck="false" placeholder="貼上 Gemini API keys，可用逗號或換行，也可貼 GEMINI_API_KEY=... 或 export GEMINI_API_KEY=..."></textarea>
+      <label><input id="key-replace" type="checkbox">取代既有本地 key</label><br>
+      <button type="submit">匯入 Key</button><button id="key-clear" class="secondary" type="button">清除本地 Key</button>
+    </form>
+    <div id="key-result" class="muted"></div>
+  </section>
 
   <section>
     <h2>想法接手</h2>
@@ -175,6 +220,40 @@ function renderPage(report: ObservationReport, ideas: IdeaRecord[], aiEnabled: b
   </section>
 </main>
 <script>
+  document.getElementById('key-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const rawText = document.getElementById('key-text').value;
+    const replace = document.getElementById('key-replace').checked;
+    const result = document.getElementById('key-result');
+    result.textContent = '匯入中...';
+    const response = await fetch('/api/keys/import', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rawText, replace })
+    });
+    if (!response.ok) {
+      result.textContent = await response.text();
+      return;
+    }
+    const summary = await response.json();
+    result.textContent = '已匯入 ' + summary.imported + ' 把，忽略 ' + summary.ignored + ' 筆；目前本地 ' + summary.status.storedCount + ' 把。';
+    document.getElementById('key-text').value = '';
+    setTimeout(() => location.reload(), 700);
+  });
+
+  document.getElementById('key-clear').addEventListener('click', async () => {
+    const result = document.getElementById('key-result');
+    result.textContent = '清除中...';
+    const response = await fetch('/api/keys', { method: 'DELETE' });
+    if (!response.ok) {
+      result.textContent = await response.text();
+      return;
+    }
+    const status = await response.json();
+    result.textContent = '已清除本地 key；目前可用 ' + status.totalAvailable + ' 把。';
+    setTimeout(() => location.reload(), 700);
+  });
+
   document.getElementById('idea-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     const rawText = document.getElementById('idea-text').value;
@@ -199,10 +278,12 @@ function renderPage(report: ObservationReport, ideas: IdeaRecord[], aiEnabled: b
 }
 
 function renderIdea(idea: IdeaRecord): string {
+  const handoff = idea.agentHandoff
   return `<div class="idea">
     <div class="idea-title">${escapeHtml(idea.title)}</div>
     <div class="idea-meta">${escapeHtml(idea.createdAt)} · ${escapeHtml(idea.classification)} · ${escapeHtml(idea.thinking.mode)}${idea.approvalRequired ? ' · requires approval' : ''}</div>
     <div class="muted">${escapeHtml(idea.reasons[0] ?? '無分類原因')}</div>
+    ${handoff ? `<div class="idea-meta">Superpowers: ${escapeHtml(handoff.superpowers.join(', '))} · ${escapeHtml(handoff.decision)}</div>` : ''}
   </div>`
 }
 

@@ -1,6 +1,6 @@
 import { GeminiClient, KeyPool } from '@kevinsisi/ai-core'
-import type { ApiKey, StorageAdapter } from '@kevinsisi/ai-core'
-import type { AiConfig, IdeaClassification, IdeaRecord } from './types.js'
+import { FileKeyStorageAdapter, hasGeminiKeys } from './keys.js'
+import type { AutopilotConfig, IdeaClassification, IdeaRecord } from './types.js'
 
 export interface IdeaAnalysisResult {
   title: string
@@ -10,61 +10,19 @@ export interface IdeaAnalysisResult {
   approvalRequired: boolean
 }
 
-class EnvKeyStorageAdapter implements StorageAdapter {
-  private readonly keys: ApiKey[]
-
-  constructor(rawKeys: string[]) {
-    this.keys = rawKeys.map((key, index) => ({
-      id: index + 1,
-      key,
-      isActive: true,
-      cooldownUntil: 0,
-      leaseUntil: 0,
-      leaseToken: null,
-      usageCount: 0,
-    }))
-  }
-
-  async getKeys(): Promise<ApiKey[]> {
-    return this.keys.map((key) => ({ ...key }))
-  }
-
-  async acquireLease(keyId: number, leaseUntil: number, leaseToken: string, now: number): Promise<boolean> {
-    const key = this.keys.find((item) => item.id === keyId)
-    if (!key || !key.isActive || key.cooldownUntil > now || key.leaseUntil > now) return false
-    key.leaseUntil = leaseUntil
-    key.leaseToken = leaseToken
-    return true
-  }
-
-  async renewLease(keyId: number, leaseUntil: number, leaseToken: string): Promise<boolean> {
-    const key = this.keys.find((item) => item.id === keyId)
-    if (!key || key.leaseToken !== leaseToken) return false
-    key.leaseUntil = leaseUntil
-    return true
-  }
-
-  async updateKey(updatedKey: ApiKey, expectedLeaseToken?: string | null): Promise<void> {
-    const index = this.keys.findIndex((item) => item.id === updatedKey.id)
-    if (index < 0) return
-    if (expectedLeaseToken !== undefined && this.keys[index]?.leaseToken !== expectedLeaseToken) return
-    this.keys[index] = { ...updatedKey }
-  }
+export async function isAiThinkingAvailable(config: AutopilotConfig): Promise<boolean> {
+  return Boolean(config.ai?.enabled && config.ai.provider === 'gemini' && (await hasGeminiKeys(config)))
 }
 
-export function isAiThinkingAvailable(config?: AiConfig): boolean {
-  return Boolean(config?.enabled && config.provider === 'gemini' && getGeminiKeys().length > 0)
-}
-
-export async function analyzeIdeaWithAiCore(config: AiConfig, rawText: string): Promise<IdeaAnalysisResult> {
-  if (!isAiThinkingAvailable(config)) {
+export async function analyzeIdeaWithAiCore(config: AutopilotConfig, rawText: string): Promise<IdeaAnalysisResult> {
+  if (!(await isAiThinkingAvailable(config)) || !config.ai) {
     throw new Error('AI thinking is disabled or no Gemini API key is configured')
   }
 
-  const client = new GeminiClient(new KeyPool(new EnvKeyStorageAdapter(getGeminiKeys())), { maxRetries: 2 })
+  const client = new GeminiClient(new KeyPool(new FileKeyStorageAdapter(config)), { maxRetries: 2 })
   const response = await withTimeout(
     client.generateContent({
-      model: config.model,
+      model: config.ai.model,
       maxOutputTokens: 900,
       systemInstruction:
         '你是 Kevin Autopilot 的想法接手引擎。保留 Kevin 的原始意圖，依照使用者體驗、穩定性、可驗證性排序。只輸出 JSON，不要 Markdown。分類只能是 explore、plan、prototype、blocked。任何 repo creation、deployment、production、secret、data deletion、API contract change 都必須 approvalRequired=true。',
@@ -80,13 +38,17 @@ export async function analyzeIdeaWithAiCore(config: AiConfig, rawText: string): 
         },
       }),
     }),
-    config.timeoutMs ?? 20_000,
+    config.ai.timeoutMs ?? 20_000,
   )
 
   return parseIdeaAnalysis(response.text)
 }
 
-export function applyAiAnalysis(record: Omit<IdeaRecord, 'thinking'>, analysis: IdeaAnalysisResult, model: string): IdeaRecord {
+export function applyAiAnalysis(
+  record: Omit<IdeaRecord, 'thinking' | 'agentHandoff'>,
+  analysis: IdeaAnalysisResult,
+  model: string,
+): Omit<IdeaRecord, 'agentHandoff'> {
   return {
     ...record,
     title: analysis.title || record.title,
@@ -128,12 +90,6 @@ function extractJson(text: string): string {
 function stringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return value.filter((item): item is string => typeof item === 'string').slice(0, 8)
-}
-
-function getGeminiKeys(): string[] {
-  return [process.env.GEMINI_API_KEY, process.env.GOOGLE_API_KEY]
-    .filter((key): key is string => Boolean(key && key.trim().length > 0))
-    .map((key) => key.trim())
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {

@@ -59,7 +59,12 @@ Version 0.1 observes and reports:
 Version 0.2 adds idea intake and AI thinking through `@kevinsisi/ai-core`, but it
 still does not execute implementation automatically.
 
-Version 0.3 should turn accepted ideas into project handoff plans: Kevin writes
+Version 0.3 adds app-owned Gemini key import and records the first read-only
+superpowers / multi-agent handoff summary for each accepted idea. Kevin can paste
+keys through the dashboard; Autopilot stores them only under ignored local
+`data/keys.json` and shows only masked suffixes in API/UI responses.
+
+Version 0.4 should turn accepted ideas into project handoff plans: Kevin writes
 rough thoughts, Autopilot asks only the missing product or safety questions, then
 prepares the project plan, repo/setup steps, architecture, specs, implementation
 tasks, and verification checklist.
@@ -75,14 +80,20 @@ tasks, and verification checklist.
 
 ## AI Thinking
 
-v0.2 uses `@kevinsisi/ai-core` for idea analysis when AI is configured. The
+v0.2+ uses `@kevinsisi/ai-core` for idea analysis when AI is configured. The
 dependency is pinned to verified commit
 `f42e3f4ceb14886604bd0c7f248071018c85ff82`. The first integration uses Gemini
 through ai-core's `GeminiClient` and `KeyPool`, with a deterministic fallback
 when no key is configured or the AI call fails.
 
-Configuration uses environment variables for keys; do not write keys into config
-files:
+Key precedence is app-owned local key store first, then environment fallback.
+The dashboard supports batch paste using comma/newline, `KEY=VALUE`, and
+`export KEY=VALUE` formats. API/UI status only returns counts and the last four
+characters; full key values are never returned. Do not write keys into config
+files or `.env` files.
+
+When AI is enabled, imported keys are probed with a minimal Gemini request before
+being accepted. Set `ai.validateImportedKeys=false` only for offline local tests.
 
 ```powershell
 $env:GEMINI_API_KEY="<local key>"
@@ -95,9 +106,16 @@ Known limitation: ai-core's current `GenerateParams` API does not expose Gemini
 parser validation. This should move into ai-core before relying on structured AI
 decisions for higher-risk automation.
 
+## Agent Handoff
+
+Each idea record includes a read-only handoff summary that records the selected
+superpowers workflow and a small Kevin persona / safety reviewer / spec planner
+question-answer exchange. This is metadata for planning only; it does not run
+child agents, create repos, deploy, or modify target repositories.
+
 ## Status
 
-v0.2 prototype started. See `docs/` for architecture, safety, and OpenCode
+v0.3 prototype started. See `docs/` for architecture, safety, and OpenCode
 workflow.
 
 ## Run Observer Locally

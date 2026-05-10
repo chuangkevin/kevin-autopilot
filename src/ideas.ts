@@ -1,5 +1,6 @@
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { createAgentHandoff } from './agents.js'
 import { analyzeIdeaWithAiCore, applyAiAnalysis } from './ai.js'
 import type { AutopilotConfig, IdeaClassification, IdeaRecord } from './types.js'
 
@@ -19,7 +20,7 @@ export async function createIdea(config: AutopilotConfig, rawText: string): Prom
   }
 
   const now = new Date()
-  const baseRecord: Omit<IdeaRecord, 'thinking'> = {
+  const baseRecord: Omit<IdeaRecord, 'thinking' | 'agentHandoff'> = {
     id: makeIdeaId(now),
     createdAt: now.toISOString(),
     environment: config.environment,
@@ -28,7 +29,11 @@ export async function createIdea(config: AutopilotConfig, rawText: string): Prom
     ...classifyIdea(normalizedText),
   }
 
-  const record = await thinkAboutIdea(config, baseRecord, normalizedText)
+  const thoughtRecord = await thinkAboutIdea(config, baseRecord, normalizedText)
+  const record: IdeaRecord = {
+    ...thoughtRecord,
+    agentHandoff: createAgentHandoff(thoughtRecord),
+  }
 
   await saveIdea(config, record)
   return record
@@ -36,9 +41,9 @@ export async function createIdea(config: AutopilotConfig, rawText: string): Prom
 
 async function thinkAboutIdea(
   config: AutopilotConfig,
-  baseRecord: Omit<IdeaRecord, 'thinking'>,
+  baseRecord: Omit<IdeaRecord, 'thinking' | 'agentHandoff'>,
   normalizedText: string,
-): Promise<IdeaRecord> {
+): Promise<Omit<IdeaRecord, 'agentHandoff'>> {
   if (!config.ai?.enabled) {
     return {
       ...baseRecord,
@@ -47,7 +52,7 @@ async function thinkAboutIdea(
   }
 
   try {
-    const analysis = await analyzeIdeaWithAiCore(config.ai, normalizedText)
+    const analysis = await analyzeIdeaWithAiCore(config, normalizedText)
     return applyAiAnalysis(baseRecord, analysis, config.ai.model)
   } catch (error) {
     return {

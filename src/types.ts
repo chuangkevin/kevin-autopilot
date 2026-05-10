@@ -12,6 +12,7 @@ export interface AiConfig {
   provider: 'gemini'
   model: string
   timeoutMs?: number
+  validateImportedKeys?: boolean
 }
 
 export interface RuleSourceConfig {
@@ -106,7 +107,21 @@ export interface IdeaRecord {
   reasons: string[]
   suggestedNextSteps: string[]
   approvalRequired: boolean
+  agentHandoff?: AgentHandoffSummary
   thinking: IdeaThinkingSummary
+}
+
+export interface AgentHandoffSummary {
+  superpowers: string[]
+  agents: AgentQuestionAnswer[]
+  decision: string
+}
+
+export interface AgentQuestionAnswer {
+  from: 'kevin-persona' | 'safety-reviewer' | 'spec-planner'
+  to: 'kevin-persona' | 'safety-reviewer' | 'spec-planner'
+  question: string
+  answer: string
 }
 
 export interface IdeaThinkingSummary {
@@ -114,4 +129,20 @@ export interface IdeaThinkingSummary {
   model?: string
   success: boolean
   error?: string
+}
+
+export interface KeyStatusSummary {
+  storedCount: number
+  envCount: number
+  totalAvailable: number
+  storedSuffixes: string[]
+  envSuffixes: string[]
+}
+
+export interface KeyImportSummary {
+  imported: number
+  ignored: number
+  totalStored: number
+  replace: boolean
+  status: KeyStatusSummary
 }

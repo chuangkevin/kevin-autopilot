@@ -100,3 +100,34 @@ unavailable or invalid.
 - WHEN Kevin submits an idea
 - THEN Autopilot uses ai-core to classify the idea, stores the result, and marks
   the thinking mode as `ai-core`.
+
+### Requirement: App-Owned Gemini Key Import
+
+Kevin Autopilot SHALL allow Kevin to import Gemini API keys through the dashboard
+without writing keys into config files or `.env` files.
+
+#### Scenario: Batch key paste
+
+- GIVEN Kevin pastes Gemini keys separated by commas, newlines, `KEY=VALUE`, or
+  `export KEY=VALUE` formats
+- WHEN Autopilot imports the keys
+- THEN it validates keys with Gemini when AI is enabled, stores valid unique keys
+  in Autopilot-owned local data, and returns only counts plus masked suffixes.
+
+#### Scenario: AI thinking key precedence
+
+- GIVEN stored keys exist under Autopilot-owned data
+- WHEN AI thinking runs
+- THEN Autopilot uses the stored key pool before falling back to environment keys.
+
+### Requirement: Read-Only Superpowers Agent Handoff
+
+Kevin Autopilot SHALL record the selected superpowers workflow and a minimal
+multi-agent question-answer handoff for each idea.
+
+#### Scenario: Idea is stored
+
+- GIVEN Kevin submits an idea
+- WHEN Autopilot classifies and stores the idea
+- THEN the idea record includes `using-superpowers` plus relevant workflow skills
+  and Kevin persona, safety reviewer, and spec planner Q&A metadata.
