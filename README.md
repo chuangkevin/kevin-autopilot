@@ -129,8 +129,9 @@ Kevinhome deployment follows the HomeProject desktop-runner pattern used by
 `greed-island`, `frame-processor`, and `media-processor`:
 
 1. `CI` runs `npm ci`, `npm run build`, and `npm test` on `main`.
-2. `Build and Push Docker Image` publishes `kevin950805/kevin-autopilot:<sha>`
-   and `:latest` for `linux/amd64`.
+2. `Build and Push Docker Image` publishes
+   `ghcr.io/chuangkevin/kevin-autopilot:<sha>` and `:latest` for `linux/amd64`
+   using the built-in GitHub token.
 3. `Deploy Kevinhome` runs on the repo self-hosted runner labelled
    `kevin-autopilot-prod`, pulls the commit image, starts
    `docker-compose.kevinhome.yml`, and verifies `/health` reports the expected
@@ -163,7 +164,7 @@ Run the Dockerized `kevinhome` Web dashboard locally:
 
 ```powershell
 $env:IMAGE_TAG="local"
-docker build -t kevin950805/kevin-autopilot:local .
+docker build -t ghcr.io/chuangkevin/kevin-autopilot:local .
 docker compose -f docker-compose.kevinhome.yml up -d --pull never --no-build
 curl http://100.83.112.20:3023/health
 ```

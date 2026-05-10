@@ -2,7 +2,7 @@ name: kevin-autopilot
 
 services:
   kevin-autopilot:
-    image: ${DOCKERHUB_USERNAME:-kevin950805}/kevin-autopilot:${IMAGE_TAG:-latest}
+    image: ${IMAGE_NAME:-ghcr.io/chuangkevin/kevin-autopilot}:${IMAGE_TAG:-latest}
     container_name: kevin-autopilot
     restart: unless-stopped
     environment:
