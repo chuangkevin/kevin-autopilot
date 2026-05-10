@@ -10,7 +10,9 @@ Do not assume one machine-specific HomeProject path. Prefer `OPENCODE_DIRECTORY`
 or configured/mounted rule-source paths, then common HomeProject roots only as a
 fallback during local development.
 
-Kevin approved the v0.1 Dockerized observer and v0.2 idea-intake prototype work.
+Kevin approved the v0.1 Dockerized observer, v0.2 idea-intake prototype, v0.3
+key import / agent handoff metadata, v0.4 kevinhome deployment, and v0.5
+read-only project handoff plan work.
 Keep these versions read-only: they may observe, classify, report, and store
 Autopilot-owned reports/idea records, but they must not modify target repos,
 create repos, deploy, commit/push other projects, or perform destructive actions
@@ -19,7 +21,7 @@ without a later explicit approval gate.
 Safety rules:
 
 1. Do not read or edit secrets, `.env*`, credential JSON, or service-account
-   files.
+   files, except for Autopilot-owned managed key storage under ignored `data/`.
 2. Do not implement autonomous destructive actions.
 3. Do not deploy.
 4. Keep v0.1 read-only unless Kevin explicitly expands scope.

@@ -44,7 +44,9 @@ test('web server exposes health and idea intake', async () => {
       body: JSON.stringify({ rawText: 'Plan repo architecture spec and tests' }),
     })
     assert.equal(idea.status, 201)
-    assert.equal((await idea.json()).classification, 'plan')
+    const ideaBody = await idea.json()
+    assert.equal(ideaBody.classification, 'plan')
+    assert.equal(ideaBody.projectHandoff.mode, 'read-only-project-handoff')
 
     const keyImport = await fetch(`${baseUrl}/api/keys/import`, {
       method: 'POST',

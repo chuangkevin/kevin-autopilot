@@ -69,10 +69,14 @@ Version 0.4 adds kevinhome CI/CD and private Tailnet domain routing at
 `100.83.112.20:3023`; RPi Caddy only terminates TLS and reverse-proxies to that
 desktop Tailscale port.
 
-Version 0.5 should turn accepted ideas into project handoff plans: Kevin writes
-rough thoughts, Autopilot asks only the missing product or safety questions, then
-prepares the project plan, repo/setup steps, architecture, specs, implementation
-tasks, and verification checklist.
+Version 0.5 turns accepted ideas into read-only project handoff plans. Kevin
+writes rough thoughts; Autopilot stores a repo name candidate, project objective,
+OpenSpec draft, architecture notes, implementation tasks, verification checklist,
+bounded prompt, open questions, and approval gates without creating repos,
+deploying, or modifying target projects.
+
+Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
+single pending handoff action and Autopilot can resume it deterministically.
 
 ## Non-Goals For v0.1
 
@@ -118,9 +122,25 @@ superpowers workflow and a small Kevin persona / safety reviewer / spec planner
 question-answer exchange. This is metadata for planning only; it does not run
 child agents, create repos, deploy, or modify target repositories.
 
+## Project Handoff Plans
+
+Each idea record also includes `projectHandoff`, a deterministic read-only plan
+for turning a rough idea into a reviewable project start. The plan includes:
+
+1. Candidate project and repo names.
+2. First artifact recommendation, such as a problem brief or OpenSpec proposal.
+3. Open questions that should be answered before implementation.
+4. Approval gates for repo creation, deployment, secrets, production, and
+   destructive actions.
+5. Architecture notes, OpenSpec requirement draft, implementation tasks,
+   verification checklist, and a bounded OpenCode prompt.
+
+This remains planning metadata only. It does not create repositories, deploy,
+edit target repos, read unmanaged secrets, or commit/push other projects.
+
 ## Status
 
-v0.4 prototype started. See `docs/` for architecture, safety, and OpenCode
+v0.5 prototype started. See `docs/` for architecture, safety, and OpenCode
 workflow.
 
 ## Deployment

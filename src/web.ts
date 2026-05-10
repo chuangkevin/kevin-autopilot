@@ -300,11 +300,13 @@ function renderKeySection(keyStatus: KeyStatusSummary, canManageKeys: boolean): 
 
 function renderIdea(idea: IdeaRecord): string {
   const handoff = idea.agentHandoff
+  const projectHandoff = idea.projectHandoff
   return `<div class="idea">
     <div class="idea-title">${escapeHtml(idea.title)}</div>
     <div class="idea-meta">${escapeHtml(idea.createdAt)} · ${escapeHtml(idea.classification)} · ${escapeHtml(idea.thinking.mode)}${idea.approvalRequired ? ' · requires approval' : ''}</div>
     <div class="muted">${escapeHtml(idea.reasons[0] ?? '無分類原因')}</div>
     ${handoff ? `<div class="idea-meta">Superpowers: ${escapeHtml(handoff.superpowers.join(', '))} · ${escapeHtml(handoff.decision)}</div>` : ''}
+    ${projectHandoff ? `<div class="idea-meta">Handoff: ${escapeHtml(projectHandoff.repoName)} · ${escapeHtml(projectHandoff.firstArtifact)} · gates ${projectHandoff.approvalGates.length}</div>` : ''}
   </div>`
 }
 

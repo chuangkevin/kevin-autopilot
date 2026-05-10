@@ -108,7 +108,30 @@ export interface IdeaRecord {
   suggestedNextSteps: string[]
   approvalRequired: boolean
   agentHandoff?: AgentHandoffSummary
+  projectHandoff?: ProjectHandoffPlan
   thinking: IdeaThinkingSummary
+}
+
+export interface ProjectHandoffPlan {
+  mode: 'read-only-project-handoff'
+  projectName: string
+  repoName: string
+  objective: string
+  recommendedState: IdeaClassification
+  firstArtifact: string
+  openQuestions: string[]
+  approvalGates: string[]
+  architectureNotes: string[]
+  specDraft: HandoffSpecDraft
+  implementationTasks: string[]
+  verificationChecklist: string[]
+  boundedPrompt: string
+}
+
+export interface HandoffSpecDraft {
+  changeId: string
+  requirements: string[]
+  nonGoals: string[]
 }
 
 export interface AgentHandoffSummary {

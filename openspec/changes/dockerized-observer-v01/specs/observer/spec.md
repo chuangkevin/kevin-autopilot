@@ -142,7 +142,7 @@ self-hosted runner pattern and expose the dashboard at `kevin.sisihome.org`.
 - GIVEN changes are pushed to `main`
 - WHEN CI succeeds
 - THEN GitHub Actions builds and pushes a `linux/amd64` Docker image for
-  `kevin950805/kevin-autopilot`.
+  `ghcr.io/chuangkevin/kevin-autopilot`.
 
 #### Scenario: Desktop deployment
 
@@ -157,3 +157,26 @@ self-hosted runner pattern and expose the dashboard at `kevin.sisihome.org`.
 - WHEN the request is routed
 - THEN Caddy reverse-proxies to `100.83.112.20:3023` without exposing the service
   outside the existing private Tailscale `sisihome.org` model.
+
+### Requirement: Read-Only Project Handoff Plan
+
+Kevin Autopilot SHALL turn each stored idea into a read-only project handoff plan
+without creating repositories, deploying, modifying target repositories, reading
+unmanaged secrets, or committing/pushing other projects.
+
+#### Scenario: Idea is accepted
+
+- GIVEN Kevin submits a raw idea
+- WHEN Autopilot stores the idea record
+- THEN the record includes a `projectHandoff` with candidate project/repo names,
+  objective, first artifact, open questions, approval gates, architecture notes,
+  OpenSpec draft, implementation tasks, verification checklist, and bounded
+  OpenCode prompt.
+
+#### Scenario: Risky idea is blocked
+
+- GIVEN the idea includes production, secret, deployment, or destructive action
+  terms
+- WHEN Autopilot creates the handoff plan
+- THEN the first artifact is a risk review and approval checklist, and the plan
+  keeps all mutating work behind explicit approval gates.

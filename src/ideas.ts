@@ -2,6 +2,7 @@ import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createAgentHandoff } from './agents.js'
 import { analyzeIdeaWithAiCore, applyAiAnalysis } from './ai.js'
+import { createProjectHandoffPlan } from './handoff.js'
 import type { AutopilotConfig, IdeaClassification, IdeaRecord } from './types.js'
 
 const MAX_IDEA_LENGTH = 8000
@@ -33,6 +34,7 @@ export async function createIdea(config: AutopilotConfig, rawText: string): Prom
   const record: IdeaRecord = {
     ...thoughtRecord,
     agentHandoff: createAgentHandoff(thoughtRecord),
+    projectHandoff: createProjectHandoffPlan(thoughtRecord),
   }
 
   await saveIdea(config, record)

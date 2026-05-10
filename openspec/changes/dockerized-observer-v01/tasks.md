@@ -13,3 +13,4 @@
 11. [x] Add read-only superpowers and multi-agent handoff metadata for ideas.
 12. [x] Add v0.4 CI, Docker publish, and kevinhome deploy workflows.
 13. [x] Configure `kevin.sisihome.org` routing metadata for the dashboard.
+14. [x] Add v0.5 read-only project handoff plans for stored ideas.

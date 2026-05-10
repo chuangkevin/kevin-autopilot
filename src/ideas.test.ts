@@ -21,10 +21,13 @@ test('createIdea stores and classifies planning ideas', async () => {
     assert.equal(idea.classification, 'plan')
     assert.equal(idea.approvalRequired, true)
     assert.equal(idea.thinking.mode, 'deterministic-fallback')
+    assert.equal(idea.projectHandoff?.mode, 'read-only-project-handoff')
+    assert.ok(idea.projectHandoff?.implementationTasks.includes('撰寫 OpenSpec proposal'))
 
     const ideas = await listIdeas(config)
     assert.equal(ideas.length, 1)
     assert.equal(ideas[0]?.id, idea.id)
+    assert.equal(ideas[0]?.projectHandoff?.repoName, idea.projectHandoff?.repoName)
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -45,6 +48,7 @@ test('createIdea blocks risky deployment ideas', async () => {
     assert.equal(idea.classification, 'blocked')
     assert.equal(idea.approvalRequired, true)
     assert.equal(idea.thinking.mode, 'deterministic-fallback')
+    assert.equal(idea.projectHandoff?.firstArtifact, 'risk review + approval checklist')
   } finally {
     await rm(root, { recursive: true, force: true })
   }
