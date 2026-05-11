@@ -13,6 +13,7 @@ const NO_STORE_HEADERS = {
   pragma: 'no-cache',
   expires: '0',
 }
+const DISPLAY_TIME_ZONE = 'Asia/Taipei'
 
 export async function startWebServer(config: AutopilotConfig): Promise<void> {
   const port = Number(process.env.PORT ?? DEFAULT_PORT)
@@ -195,7 +196,7 @@ function renderPage(
   <header>
     <div>
       <h1>Kevin Autopilot</h1>
-      <div class="version">v${escapeHtml(report.version)} · ${escapeHtml(report.environment)} · ${escapeHtml(report.generatedAt)}</div>
+      <div class="version">v${escapeHtml(report.version)} · ${escapeHtml(report.environment)} · ${escapeHtml(formatTaipeiTime(report.generatedAt))}</div>
       <a class="button" href="/settings">設定 Gemini Keys</a>
     </div>
     <div class="pill ok">Read-only observer</div>
@@ -295,7 +296,7 @@ function renderSettingsPage(report: ObservationReport, keyStatus: KeyStatusSumma
 <main>
   <header>
     <h1>Autopilot Settings</h1>
-    <div class="version">v${escapeHtml(report.version)} · ${escapeHtml(report.environment)} · DB-backed Gemini keys</div>
+    <div class="version">v${escapeHtml(report.version)} · ${escapeHtml(report.environment)} · ${escapeHtml(formatTaipeiTime(report.generatedAt))} · DB-backed Gemini keys</div>
     <a class="button" href="/">回 Dashboard</a>
   </header>
   ${renderKeySection(keyStatus)}
@@ -359,7 +360,7 @@ function renderIdea(idea: IdeaRecord): string {
   const projectHandoff = idea.projectHandoff
   return `<div class="idea">
     <div class="idea-title">${escapeHtml(idea.title)}</div>
-    <div class="idea-meta">${escapeHtml(idea.createdAt)} · ${escapeHtml(idea.classification)} · ${escapeHtml(idea.thinking.mode)}${idea.approvalRequired ? ' · requires approval' : ''}</div>
+    <div class="idea-meta">${escapeHtml(formatTaipeiTime(idea.createdAt))} · ${escapeHtml(idea.classification)} · ${escapeHtml(idea.thinking.mode)}${idea.approvalRequired ? ' · requires approval' : ''}</div>
     <div class="muted">${escapeHtml(idea.reasons[0] ?? '無分類原因')}</div>
     ${handoff ? `<div class="idea-meta">Superpowers: ${escapeHtml(handoff.superpowers.join(', '))} · ${escapeHtml(handoff.decision)}</div>` : ''}
     ${projectHandoff ? `<div class="idea-meta">Handoff: ${escapeHtml(projectHandoff.repoName)} · ${escapeHtml(projectHandoff.firstArtifact)} · gates ${projectHandoff.approvalGates.length}</div>` : ''}
@@ -368,4 +369,19 @@ function renderIdea(idea: IdeaRecord): string {
 
 function escapeHtml(value: string): string {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;')
+}
+
+export function formatTaipeiTime(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return `${new Intl.DateTimeFormat('zh-TW', {
+    timeZone: DISPLAY_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(date)} GMT+8`
 }

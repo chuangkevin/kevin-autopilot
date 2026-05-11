@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createWebServer, isTrustedSettingsAddress } from './web.js'
+import { createWebServer, formatTaipeiTime, isTrustedSettingsAddress } from './web.js'
 import type { AutopilotConfig } from './types.js'
 
 const GEMINI_KEY = `AIzaSy${'C'.repeat(33)}`
@@ -16,6 +16,10 @@ test('isTrustedSettingsAddress allows private and Tailscale networks only', () =
   assert.equal(isTrustedSettingsAddress('172.20.0.2'), true)
   assert.equal(isTrustedSettingsAddress('100.83.112.20'), true)
   assert.equal(isTrustedSettingsAddress('8.8.8.8'), false)
+})
+
+test('formatTaipeiTime displays GMT+8 time', () => {
+  assert.equal(formatTaipeiTime('2026-05-10T16:00:00.000Z'), '2026/05/11 00:00:00 GMT+8')
 })
 
 test('web server exposes health and idea intake', async () => {

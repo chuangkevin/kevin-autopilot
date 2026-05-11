@@ -88,6 +88,9 @@ Version 0.5.4 accepts key-manager copied key-pool text, including comment
 headers and mobile-wrapped Gemini keys, and tightens the dashboard/settings
 mobile layout so tables and long idea text no longer push the page sideways.
 
+Version 0.5.5 displays dashboard/settings timestamps in GMT+8 / Asia/Taipei and
+sets the kevinhome container timezone to `Asia/Taipei`.
+
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.
 
