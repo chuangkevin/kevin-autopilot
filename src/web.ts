@@ -3,7 +3,8 @@ import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import { createIdea, listIdeas } from './ideas.js'
 import { clearStoredGeminiKeys, getKeyStatus, importGeminiKeys } from './keys.js'
 import { observe } from './observer.js'
-import type { AutopilotConfig, IdeaRecord, KeyStatusSummary, ObservationReport } from './types.js'
+import { createSupplement, listSupplements } from './supplements.js'
+import type { AutopilotConfig, IdeaRecord, KeyStatusSummary, ObservationReport, UserSupplement } from './types.js'
 import { APP_VERSION } from './version.js'
 
 const DEFAULT_PORT = 3023
@@ -54,6 +55,28 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
     const body = JSON.parse(await readBody(request)) as { rawText?: unknown }
     const idea = await createIdea(config, typeof body.rawText === 'string' ? body.rawText : '')
     writeJson(response, idea, 201)
+    return
+  }
+
+  if (url.pathname === '/api/main-agent/supplements' && request.method === 'GET') {
+    writeJson(response, await listSupplements(config))
+    return
+  }
+
+  if (url.pathname === '/api/main-agent/supplements' && request.method === 'POST') {
+    if (!isTrustedSettingsRequest(request)) {
+      writeText(response, 'Main-agent supplements require loopback, private LAN, Docker, or Tailscale access', 403)
+      return
+    }
+    const body = JSON.parse(await readBody(request)) as { rawText?: unknown }
+    let supplement: UserSupplement
+    try {
+      supplement = await createSupplement(config, typeof body.rawText === 'string' ? body.rawText : '')
+    } catch (error) {
+      writeText(response, error instanceof Error ? error.message : String(error), 400)
+      return
+    }
+    writeJson(response, supplement, 201)
     return
   }
 
@@ -126,8 +149,24 @@ export function isTrustedSettingsAddress(address: string): boolean {
   return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127)
 }
 
+export function isTrustedSettingsSource(remoteAddress: string, forwardedFor?: string | string[], realIp?: string | string[]): boolean {
+  if (!isTrustedSettingsAddress(remoteAddress)) return false
+  const forwardedAddresses = [...headerAddresses(forwardedFor), ...headerAddresses(realIp)]
+  return forwardedAddresses.every(isTrustedSettingsAddress)
+}
+
 function isTrustedSettingsRequest(request: IncomingMessage): boolean {
-  return isTrustedSettingsAddress(request.socket.remoteAddress || '')
+  return isTrustedSettingsSource(
+    request.socket.remoteAddress || '',
+    request.headers['x-forwarded-for'],
+    request.headers['x-real-ip'],
+  )
+}
+
+function headerAddresses(value: string | string[] | undefined): string[] {
+  if (!value) return []
+  const values = Array.isArray(value) ? value : [value]
+  return values.flatMap((entry) => entry.split(',')).map((entry) => entry.trim()).filter(Boolean)
 }
 
 async function readBody(request: IncomingMessage): Promise<string> {
@@ -180,6 +219,18 @@ function renderPage(
     .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
     .step { border: 1px solid rgba(148,163,184,0.16); border-radius: 14px; padding: 12px; background: rgba(15,23,42,0.44); }
     .step strong { display: block; margin-bottom: 4px; }
+    .agent-board { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.85fr); gap: 14px; }
+    .agent-rounds, .agent-stack { display: grid; gap: 10px; align-content: start; }
+    .agent-round, .option, .checkpoint, .supplement { border: 1px solid rgba(245,158,11,0.2); border-left: 3px solid rgba(245,158,11,0.82); border-radius: 14px; padding: 12px; background: rgba(15,23,42,0.48); }
+    .agent-round strong, .option strong, .checkpoint strong, .supplement strong { display: block; margin-bottom: 4px; }
+    .agent-round .role, .option .tradeoff { color: #cbd5e1; font-size: 13px; }
+    .checkpoint { border-color: rgba(148,163,184,0.18); border-left-color: rgba(148,163,184,0.6); }
+    .checkpoint.completed { opacity: 0.72; }
+    .checkpoint.in_progress { border-left-color: #60a5fa; }
+    .checkpoint.pending { border-left-color: #f59e0b; }
+    .checkpoint.cancelled { opacity: 0.55; text-decoration: line-through; }
+    .recommendation { border-radius: 16px; padding: 14px; background: rgba(120,53,15,0.28); border: 1px solid rgba(245,158,11,0.28); }
+    .recommendation strong { display: block; margin-bottom: 6px; }
     .candidate-action { margin-top: 8px; color: #cbd5e1; font-size: 13px; }
     .copy-status { display: inline-block; margin-left: 8px; color: #bbf7d0; font-size: 13px; }
     .pill { display: inline-block; white-space: nowrap; border-radius: 999px; padding: 4px 9px; font-size: 12px; background: rgba(59,130,246,0.18); color: #bfdbfe; }
@@ -195,7 +246,7 @@ function renderPage(
     .idea:first-child { border-top: 0; }
     .idea-title { font-weight: 700; overflow-wrap: anywhere; }
     .idea-meta { color: #93a4bd; font-size: 13px; margin-top: 4px; overflow-wrap: anywhere; }
-    @media (max-width: 820px) { header { display: block; } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } table { font-size: 13px; } }
+    @media (max-width: 820px) { header { display: block; } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .agent-board { grid-template-columns: 1fr; } table { font-size: 13px; } }
     @media (max-width: 520px) { .grid { grid-template-columns: 1fr 1fr; } .value { font-size: 24px; } a.button, button { min-height: 44px; } }
   </style>
 </head>
@@ -218,6 +269,38 @@ function renderPage(
     <div class="card"><div class="label">觀察候選</div><div class="value">${report.candidates.length}</div></div>
     <div class="card"><div class="label">疑似 Bug</div><div class="value">${bugCandidates}</div></div>
   </div>
+
+  <section>
+    <h2>Kevin 子人格自問自答</h2>
+    <p class="muted">${escapeHtml(report.mainAgent.summary)}</p>
+    <div class="agent-board">
+      <div class="agent-rounds">
+        ${report.mainAgent.rounds.map(renderMainAgentRound).join('')}
+      </div>
+      <div class="agent-stack">
+        <div class="recommendation">
+          <strong>主 agent 決策：${escapeHtml(report.mainAgent.recommendation.decision)}</strong>
+          <div>${escapeHtml(report.mainAgent.recommendation.reason)}</div>
+          <div class="muted">下一步：${escapeHtml(report.mainAgent.recommendation.nextAction)}</div>
+        </div>
+        <div>
+          <h2>Active Task</h2>
+          <p class="muted">${escapeHtml(report.mainAgent.activeTask.objective)}<br>目前步驟：${escapeHtml(report.mainAgent.activeTask.currentStep)}</p>
+          ${report.mainAgent.activeTask.checkpoints.map(renderCheckpoint).join('')}
+        </div>
+        <div>
+          <h2>可行方案</h2>
+          ${report.mainAgent.feasibleOptions.map(renderFeasibleOption).join('')}
+        </div>
+      </div>
+    </div>
+    <form id="supplement-form">
+      <textarea id="supplement-text" placeholder="補充給下一輪推理，例如：先不要碰部署；優先看 dashboard 使用流程；這個 dirty repo 是我正在做的不要當成問題。"></textarea>
+      <button type="submit">補充給下一輪推理</button>
+    </form>
+    <div id="supplement-result" class="muted"></div>
+    ${report.supplements.length === 0 ? '<p class="muted">目前沒有補充。補充會存進 Autopilot 自己的 data/supplements，不會寫 target repos。</p>' : `<div class="agent-stack">${report.supplements.map(renderSupplement).join('')}</div>`}
+  </section>
 
   <section>
     <h2>這頁怎麼用</h2>
@@ -273,6 +356,26 @@ function renderPage(
   </section>
 </main>
 <script>
+  document.getElementById('supplement-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const rawText = document.getElementById('supplement-text').value;
+    const result = document.getElementById('supplement-result');
+    result.textContent = '儲存補充中...';
+    const response = await fetch('/api/main-agent/supplements', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rawText })
+    });
+    if (!response.ok) {
+      result.textContent = await response.text();
+      return;
+    }
+    const supplement = await response.json();
+    result.textContent = '已納入下一輪推理：' + supplement.summary;
+    document.getElementById('supplement-text').value = '';
+    setTimeout(() => location.reload(), 700);
+  });
+
   document.getElementById('idea-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     const rawText = document.getElementById('idea-text').value;
@@ -408,6 +511,40 @@ function renderKeySection(keyStatus: KeyStatusSummary): string {
     </form>
     <div id="key-result" class="muted"></div>
   </section>`
+}
+
+function renderMainAgentRound(round: ObservationReport['mainAgent']['rounds'][number]): string {
+  return `<div class="agent-round">
+    <strong>${escapeHtml(round.agent)}</strong>
+    <div class="role">${escapeHtml(round.role)}</div>
+    <div class="muted">觀察：${escapeHtml(round.observation)}</div>
+    <div>${escapeHtml(round.argument)}</div>
+    <div class="muted">輸出：${escapeHtml(round.output)}</div>
+  </div>`
+}
+
+function renderCheckpoint(checkpoint: ObservationReport['mainAgent']['activeTask']['checkpoints'][number]): string {
+  return `<div class="checkpoint ${escapeHtml(checkpoint.status)}">
+    <strong>${escapeHtml(checkpoint.content)}</strong>
+    <div class="muted">${escapeHtml(checkpoint.status)} · ${escapeHtml(checkpoint.priority)}</div>
+  </div>`
+}
+
+function renderFeasibleOption(option: ObservationReport['mainAgent']['feasibleOptions'][number]): string {
+  return `<div class="option">
+    <strong>${escapeHtml(option.label)}${option.approvalRequired ? ' · 需要 approval' : ''}</strong>
+    <div>${escapeHtml(option.why)}</div>
+    <div class="muted">第一步：${escapeHtml(option.firstStep)}</div>
+    <div class="tradeoff">取捨：${escapeHtml(option.tradeoff)}</div>
+  </div>`
+}
+
+function renderSupplement(supplement: ObservationReport['supplements'][number]): string {
+  return `<div class="supplement">
+    <strong>${escapeHtml(formatTaipeiTime(supplement.createdAt))}</strong>
+    <div>${escapeHtml(supplement.summary)}</div>
+    <div class="muted">來源：${escapeHtml(supplement.source)} · 套用：${escapeHtml(supplement.appliesTo)}</div>
+  </div>`
 }
 
 function renderIdea(idea: IdeaRecord): string {

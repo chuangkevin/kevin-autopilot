@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createWebServer, formatTaipeiTime, isTrustedSettingsAddress } from './web.js'
+import { createWebServer, formatTaipeiTime, isTrustedSettingsAddress, isTrustedSettingsSource } from './web.js'
 import type { AutopilotConfig } from './types.js'
 
 const GEMINI_KEY = `AIzaSy${'C'.repeat(33)}`
@@ -20,6 +20,15 @@ test('isTrustedSettingsAddress allows private and Tailscale networks only', () =
 
 test('formatTaipeiTime displays GMT+8 time', () => {
   assert.equal(formatTaipeiTime('2026-05-10T16:00:00.000Z'), '2026/05/11 00:00:00 GMT+8')
+})
+
+test('isTrustedSettingsAddress protects supplement writes', () => {
+  assert.equal(isTrustedSettingsAddress('8.8.8.8'), false)
+  assert.equal(isTrustedSettingsAddress('100.64.0.1'), true)
+  assert.equal(isTrustedSettingsSource('172.20.0.2', '8.8.8.8'), false)
+  assert.equal(isTrustedSettingsSource('172.20.0.2', '100.83.112.20'), true)
+  assert.equal(isTrustedSettingsSource('127.0.0.1', ['100.83.112.20, 192.168.1.5']), true)
+  assert.equal(isTrustedSettingsSource('127.0.0.1', undefined, '203.0.113.10'), false)
 })
 
 test('web server exposes health and idea intake', async () => {
@@ -51,6 +60,9 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(pageBody.includes('設定 Gemini Keys'), true)
     assert.equal(pageBody.includes('這頁怎麼用'), true)
     assert.equal(pageBody.includes('目前不會自動改專案'), true)
+    assert.equal(pageBody.includes('Kevin 子人格自問自答'), true)
+    assert.equal(pageBody.includes('補充給下一輪推理'), true)
+    assert.equal(pageBody.includes('Active Task'), true)
     assert.equal(pageBody.includes('Observation Backlog'), true)
     assert.equal(pageBody.includes('OpenCode prompt'), true)
     assert.equal(pageBody.includes('複製 Prompt'), true)
@@ -71,6 +83,34 @@ test('web server exposes health and idea intake', async () => {
     const ideaBody = await idea.json()
     assert.equal(ideaBody.classification, 'plan')
     assert.equal(ideaBody.projectHandoff.mode, 'read-only-project-handoff')
+
+    const supplement = await fetch(`${baseUrl}/api/main-agent/supplements`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rawText: '下一輪先看 dashboard UX，不要碰部署。' }),
+    })
+    assert.equal(supplement.status, 201)
+    const supplementBody = await supplement.json()
+    assert.equal(supplementBody.appliesTo, 'next_observation')
+    assert.equal(supplementBody.source, 'dashboard')
+
+    const supplements = await fetch(`${baseUrl}/api/main-agent/supplements`)
+    assert.equal(supplements.status, 200)
+    const supplementsBody = await supplements.json()
+    assert.equal(supplementsBody.length, 1)
+
+    const badSupplement = await fetch(`${baseUrl}/api/main-agent/supplements`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rawText: 'OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz123456' }),
+    })
+    assert.equal(badSupplement.status, 400)
+    assert.match(await badSupplement.text(), /secret value/i)
+
+    const report = await fetch(`${baseUrl}/api/report`)
+    const reportBody = await report.json()
+    assert.equal(reportBody.supplements.length, 1)
+    assert.equal(reportBody.mainAgent.activeTask.supplementCount, 1)
 
     const keyImport = await fetch(`${baseUrl}/api/keys/import`, {
       method: 'POST',

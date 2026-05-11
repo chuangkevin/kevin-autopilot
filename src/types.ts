@@ -86,7 +86,70 @@ export interface ObservationReport {
   repositories: RepositoryObservation[]
   services: ServiceObservation[]
   candidates: ObservationCandidate[]
+  supplements: UserSupplement[]
+  mainAgent: MainAgentBrief
   safety: SafetySummary
+}
+
+export interface UserSupplement {
+  id: string
+  createdAt: string
+  environment: string
+  rawText: string
+  summary: string
+  source: 'dashboard'
+  appliesTo: 'next_observation'
+}
+
+export interface MainAgentBrief {
+  mode: 'kevin-double-deterministic'
+  persona: 'Kevin 子人格主 agent'
+  superpowers: string[]
+  summary: string
+  activeTask: MainAgentTaskState
+  rounds: MainAgentRound[]
+  feasibleOptions: FeasibleOption[]
+  recommendation: MainAgentRecommendation
+}
+
+export interface MainAgentTaskState {
+  objective: string
+  currentStep: string
+  checkpoints: MainAgentCheckpoint[]
+  blockers: string[]
+  updatedAt: string
+  supplementCount: number
+}
+
+export interface MainAgentCheckpoint {
+  id: string
+  content: string
+  status: 'pending' | 'in_progress' | 'completed' | 'cancelled'
+  priority: 'high' | 'medium' | 'low'
+}
+
+export interface MainAgentRound {
+  agent: 'Kevin 子人格' | 'Kevin 補充' | '探索者' | '懷疑者' | '建造者'
+  role: string
+  observation: string
+  argument: string
+  output: string
+}
+
+export interface FeasibleOption {
+  label: string
+  why: string
+  firstStep: string
+  tradeoff: string
+  approvalRequired: boolean
+}
+
+export interface MainAgentRecommendation {
+  decision: string
+  reason: string
+  nextAction: string
+  candidateId?: string
+  approvalRequired: boolean
 }
 
 export type ObservationCandidateCategory =

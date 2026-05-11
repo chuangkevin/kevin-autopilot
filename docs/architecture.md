@@ -22,8 +22,28 @@ Kevin Autopilot
 ├─ OpenCode Prompt Builder
 ├─ Verification Planner
 ├─ Task Store
+├─ Main Agent State
+├─ User Supplement Store
 └─ Dashboard / Report
 ```
+
+## Agent Design References
+
+v0.5.9 is aligned with these local references:
+
+1. `homelab-docs/skills/agent-design/SKILL.md` and
+   `homelab-docs/docs/agent-architecture-checklist.md` for permission scopes,
+   active task state, interruption handling, and observable runtime state.
+2. `homelab-docs/opencode-agent-analysis.md` for the principle that UI should be
+   a projection of agent runtime state, not just a chat transcript.
+3. A local `ai-agents` SQLite store such as `<AI_AGENTS_ROOT>/ai_agents.db` for
+   the expert-profile pattern: named roles, system prompts, keyword metadata, and
+   conversation feedback.
+
+The first 0.5.9 implementation borrows the role/profile and feedback-state
+ideas without copying its DB schema into Autopilot. Autopilot's current main
+agent roles remain deterministic and read-only until a later scheduler/worker
+runtime is explicitly approved.
 
 ## Components
 
@@ -134,6 +154,11 @@ Turns context into candidate tasks. It should prefer:
 4. Small runnable prototypes.
 5. Documentation/behavior alignment.
 
+v0.5.9 exposes a deterministic Kevin sub-persona main agent on the dashboard. It
+does not execute tools by itself; it turns observation signals into visible
+self-Q&A rounds, feasible options, a recommendation, and an active task snapshot
+that can be audited without reading a chat transcript.
+
 ### AI Core Adapter
 
 Uses `@kevinsisi/ai-core` for AI-backed thinking. v0.2 uses Gemini through
@@ -205,6 +230,21 @@ target, architecture decision, OpenSpec change ID, and explicit approval state.
 
 Use SQLite in the first implementation. Store tasks, decisions, runs, approvals,
 and reports.
+
+### Main Agent State
+
+The main agent surface should externalize state instead of relying on chat
+memory. The v0.5.9 report includes objective, current step, checkpoints,
+blockers, update time, and supplement count. Later background execution should
+promote this into a persisted scheduler/worker record before it can edit repos or
+deploy.
+
+### User Supplement Store
+
+Kevin's mid-run supplements are app-owned data. v0.5.9 stores them under
+`data/supplements` and merges recent supplements into the next observation run.
+Supplements may influence ranking and context, but they do not grant new write,
+commit, push, deployment, secret, or destructive permissions.
 
 ### Docker Runtime
 

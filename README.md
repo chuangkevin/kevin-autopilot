@@ -117,6 +117,18 @@ Version 0.5.8 makes the dashboard usage explicit: the home page explains how to
 use Observation Backlog, clarifies that Autopilot does not auto-edit projects,
 and adds a copy button for each bounded OpenCode prompt.
 
+Version 0.5.9 turns the dashboard into a read-only Kevin sub-persona main agent
+surface. It shows deterministic self-Q&A rounds, an explicit active task state,
+feasible options, and a recommendation. Kevin can add mid-run supplements from
+the dashboard; these are stored only in Autopilot-owned `data/supplements` and
+are merged into the next observation cycle without writing target repositories.
+
+The v0.5.9 background boundary is deliberate: Autopilot may background-observe
+and prepare handoff artifacts, but it still does not background-execute repo
+edits, commits, pushes, deployments, or destructive actions. True background
+execution requires a later scheduler state, permission gate, interrupt classifier,
+pending action record, health surface, and explicit Kevin approval.
+
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.
 
@@ -187,8 +199,8 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
-v0.5 prototype started. See `docs/` for architecture, safety, and OpenCode
-workflow.
+v0.5.9 read-only main agent prototype started. See `docs/` for architecture,
+safety, and OpenCode workflow.
 
 ## Deployment
 

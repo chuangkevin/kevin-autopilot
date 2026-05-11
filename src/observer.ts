@@ -2,6 +2,7 @@ import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { basename, join } from 'node:path'
 import { runGit } from './git.js'
+import { listSupplements } from './supplements.js'
 import { APP_VERSION } from './version.js'
 import type {
   AutopilotConfig,
@@ -10,16 +11,20 @@ import type {
   RepositoryObservation,
   RuleSourceObservation,
   ServiceObservation,
+  MainAgentBrief,
+  UserSupplement,
 } from './types.js'
 
 const SKIPPED_SECRET_PATTERNS = ['.env', '.env.*', '*credential*.json', '*service-account*.json']
 
 export async function observe(config: AutopilotConfig): Promise<ObservationReport> {
-  const [ruleSources, repositories, services] = await Promise.all([
+  const [ruleSources, repositories, services, supplements] = await Promise.all([
     observeRuleSources(config),
     observeRepositories(config),
     observeServices(config),
+    listSupplements(config, 8),
   ])
+  const candidates = createObservationCandidates(ruleSources, repositories, services)
 
   return {
     generatedAt: new Date().toISOString(),
@@ -28,7 +33,9 @@ export async function observe(config: AutopilotConfig): Promise<ObservationRepor
     ruleSources,
     repositories,
     services,
-    candidates: createObservationCandidates(ruleSources, repositories, services),
+    candidates,
+    supplements,
+    mainAgent: createMainAgentBrief(candidates, repositories, services, ruleSources, supplements),
     safety: {
       mode: 'read-only',
       skippedSecretPatterns: SKIPPED_SECRET_PATTERNS,
@@ -36,6 +43,166 @@ export async function observe(config: AutopilotConfig): Promise<ObservationRepor
       deploymentActions: 'disabled',
     },
   }
+}
+
+function createMainAgentBrief(
+  candidates: ObservationCandidate[],
+  repositories: RepositoryObservation[],
+  services: ServiceObservation[],
+  ruleSources: RuleSourceObservation[],
+  supplements: UserSupplement[],
+): MainAgentBrief {
+  const bugCandidates = candidates.filter((candidate) => candidate.category === 'bug_watch' || candidate.category === 'bug_fix_candidate')
+  const dirtyRepos = repositories.filter((repo) => repo.dirty)
+  const missingRules = ruleSources.filter((source) => !source.exists || source.missingFiles.length > 0)
+  const failedServices = services.filter((service) => service.healthStatus === 'failed')
+  const topCandidate = selectTopCandidate(candidates)
+
+  const latestSupplement = supplements[0]
+  const supplementSummary = latestSupplement ? `Kevin 最新補充：「${latestSupplement.summary}」。` : 'Kevin 這輪沒有新增補充。'
+  const summary = topCandidate
+    ? `${supplementSummary} 我先處理「${topCandidate.title}」，因為它最符合使用者體驗、穩定與可驗證性的優先序。`
+    : `${supplementSummary} 這一輪沒有明顯候選項；保持觀察，不要硬找事情做。`
+
+  return {
+    mode: 'kevin-double-deterministic',
+    persona: 'Kevin 子人格主 agent',
+    superpowers: ['using-superpowers', 'root-cause-debugging', 'brainstorming', 'planning', 'verification-and-evidence'],
+    summary,
+    activeTask: createActiveTaskState(candidates, supplements, topCandidate),
+    rounds: [
+      {
+        agent: 'Kevin 子人格',
+        role: '產品工程腦',
+        observation: `這輪看到 ${candidates.length} 個候選項、${bugCandidates.length} 個疑似 bug、${dirtyRepos.length} 個 dirty repo。`,
+        argument: '先找會影響使用者、穩定性或後續驗證的事，不把清單當成果。',
+        output: topCandidate ? `優先候選：${topCandidate.title}` : '暫不主動開新工作，避免製造假待辦。',
+      },
+      {
+        agent: 'Kevin 補充',
+        role: 'Interrupt / requirement merge',
+        observation: supplements.length > 0 ? `目前有 ${supplements.length} 則 Autopilot-owned 補充。` : '目前沒有可合併的 Kevin 補充。',
+        argument: '中途補充不能只留在聊天紀錄，必須變成下一輪觀察可讀的結構化輸入。',
+        output: latestSupplement ? `下一輪推理納入：${latestSupplement.summary}` : '先維持既有觀察，不假裝 Kevin 已經補充需求。',
+      },
+      {
+        agent: '探索者',
+        role: 'Superpower explore',
+        observation: `規則來源異常 ${missingRules.length} 個，服務 health 失敗 ${failedServices.length} 個。`,
+        argument: '先釐清觀察訊號是否可信，再決定是否交給 OpenCode。',
+        output: topCandidate ? `最小探索步驟：${topCandidate.suggestedNextStep}` : '下一輪應擴充觀察來源，而不是直接修復。',
+      },
+      {
+        agent: '懷疑者',
+        role: 'QA / 風險審查',
+        observation: topCandidate ? `候選項風險：${topCandidate.risk}，approvalRequired=${topCandidate.approvalRequired}` : '沒有候選項可審查。',
+        argument: '所有觀察候選都還在 read-only 階段；不能讓 prompt 暗示可直接改 target repo。',
+        output: topCandidate?.approvalRequired ? '只允許產生 proposal，不能修改。' : '可先做 read-only 釐清，執行修復前仍需明確切換階段。',
+      },
+      {
+        agent: '建造者',
+        role: '可行方案整合',
+        observation: topCandidate ? `已有 bounded prompt 可複製給 OpenCode：${topCandidate.id}` : '目前只有觀察報告。',
+        argument: '下一步必須是可操作 artifact：prompt、驗證步驟、或 approval 問題。',
+        output: topCandidate ? '建議複製該候選項 prompt 給 OpenCode 做 read-only 釐清。' : '建議先增加更多安全訊號，例如 CI status 或允許的 health endpoint。',
+      },
+    ],
+    feasibleOptions: makeFeasibleOptions(topCandidate, candidates, supplements),
+    recommendation: {
+      decision: topCandidate ? 'prepare-read-only-handoff' : 'observe-only',
+      reason: topCandidate
+        ? '它是目前最小、最安全、最能產生證據的下一步；Kevin 補充只作為排序與脈絡，不會直接放大權限。'
+        : '沒有足夠訊號支持主動插手，硬做會變成垃圾自動化。',
+      nextAction: topCandidate ? `複製「${topCandidate.title}」的 OpenCode prompt。` : '保留觀察，下一步增加安全觀察來源或補充真實痛點。',
+      candidateId: topCandidate?.id,
+      approvalRequired: Boolean(topCandidate?.approvalRequired),
+    },
+  }
+}
+
+function createActiveTaskState(
+  candidates: ObservationCandidate[],
+  supplements: UserSupplement[],
+  topCandidate: ObservationCandidate | undefined,
+): MainAgentBrief['activeTask'] {
+  return {
+    objective: '把 read-only observation 轉成 Kevin 可決策的下一步，而不是自動動手。',
+    currentStep: topCandidate ? `準備候選項 ${topCandidate.id} 的 read-only handoff` : '等待更強觀察訊號或 Kevin 補充',
+    checkpoints: [
+      { id: 'collect-signals', content: '收集 rule source、repo、service 的 read-only 訊號', status: 'completed', priority: 'high' },
+      { id: 'merge-supplements', content: '合併 Kevin 補充到下一輪推理', status: supplements.length > 0 ? 'completed' : 'pending', priority: 'high' },
+      { id: 'rank-candidates', content: '依 UX、穩定、可驗證性排序候選項', status: candidates.length > 0 ? 'completed' : 'pending', priority: 'high' },
+      { id: 'handoff', content: '產生 bounded OpenCode prompt 或保持觀察', status: topCandidate ? 'completed' : 'pending', priority: 'medium' },
+    ],
+    blockers: [],
+    updatedAt: new Date().toISOString(),
+    supplementCount: supplements.length,
+  }
+}
+
+function selectTopCandidate(candidates: ObservationCandidate[]): ObservationCandidate | undefined {
+  const score = (candidate: ObservationCandidate): number => {
+    const categoryScore: Record<ObservationCandidate['category'], number> = {
+      bug_fix_candidate: 90,
+      bug_watch: 80,
+      needs_kevin_decision: 70,
+      improvement_candidate: 60,
+      prototype_candidate: 50,
+      blocked: 0,
+    }
+    const confidenceScore: Record<ObservationCandidate['confidence'], number> = {
+      confirmed: 20,
+      likely: 12,
+      suspected: 4,
+    }
+    const riskPenalty = candidate.risk === 'high' ? 25 : candidate.risk === 'medium' ? 12 : 0
+    const approvalPenalty = candidate.approvalRequired ? 8 : 0
+    return categoryScore[candidate.category] + confidenceScore[candidate.confidence] - riskPenalty - approvalPenalty
+  }
+
+  return [...candidates].sort((a, b) => score(b) - score(a))[0]
+}
+
+function makeFeasibleOptions(
+  topCandidate: ObservationCandidate | undefined,
+  candidates: ObservationCandidate[],
+  supplements: UserSupplement[],
+): MainAgentBrief['feasibleOptions'] {
+  if (!topCandidate) {
+    return [
+      {
+        label: '維持觀察',
+        why: supplements.length > 0 ? 'Kevin 已補充脈絡，但目前觀察訊號還不足以形成安全 handoff。' : '目前沒有足夠明確的 bug 或改善訊號。',
+        firstStep: '下一輪加入 CI status、允許的 health endpoint，或請 Kevin 補充真實卡點。',
+        tradeoff: '不會亂動，但主動性較低。',
+        approvalRequired: false,
+      },
+    ]
+  }
+
+  return [
+    {
+      label: '交給 OpenCode 釐清',
+      why: '最符合 read-only 邊界，又能取得下一步證據。',
+      firstStep: `複製候選項 ${topCandidate.id} 的 bounded prompt。`,
+      tradeoff: '需要人工貼到 OpenCode，尚未自動執行。',
+      approvalRequired: topCandidate.approvalRequired,
+    },
+    {
+      label: '先累積更多觀察',
+      why: supplements.length > 0 ? '可把 Kevin 補充當排序線索，但仍需要 read-only 證據避免誤判。' : '避免單一訊號誤判，特別是 suspected 類型。',
+      firstStep: '再跑一次 observe 或新增安全 health/CI 訊號。',
+      tradeoff: '比較穩，但推進較慢。',
+      approvalRequired: false,
+    },
+    {
+      label: '暫時忽略低價值項',
+      why: `目前共有 ${candidates.length} 個候選，應避免被低價值雜訊拖走。`,
+      firstStep: '只保留高信心 bug 或會影響穩定性的項目。',
+      tradeoff: '可能延後小改善。',
+      approvalRequired: false,
+    },
+  ]
 }
 
 function createObservationCandidates(
@@ -353,6 +520,8 @@ function renderMarkdown(report: ObservationReport): string {
     `- Mode: ${report.safety.mode}`,
     `- Mutating actions: ${report.safety.mutatingActions}`,
     `- Deployment actions: ${report.safety.deploymentActions}`,
+    `- Main agent: ${report.mainAgent.persona}`,
+    `- Main agent decision: ${report.mainAgent.recommendation.decision}`,
     '',
     '## Rule Sources',
     '',
@@ -384,6 +553,22 @@ function renderMarkdown(report: ObservationReport): string {
             (candidate) =>
               `- ${candidate.category} / ${candidate.confidence}: ${candidate.title} (${candidate.sourceName})\n  - Next: ${candidate.suggestedNextStep}`,
           )
+    ),
+    '',
+    '## Kevin Double Deliberation',
+    '',
+    `- Summary: ${report.mainAgent.summary}`,
+    `- Active task: ${report.mainAgent.activeTask.currentStep}`,
+    `- Supplements: ${report.supplements.length}`,
+    `- Recommendation: ${report.mainAgent.recommendation.nextAction}`,
+    ...report.mainAgent.rounds.map((round) => `- ${round.agent}（${round.role}）: ${round.output}`),
+    '',
+    '## Kevin Supplements',
+    '',
+    ...(
+      report.supplements.length === 0
+        ? ['- No Kevin supplements were stored for this run.']
+        : report.supplements.map((supplement) => `- ${supplement.createdAt}: ${supplement.summary}`)
     ),
     '',
     '## Not Done',

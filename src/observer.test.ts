@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { observe, writeReports } from './observer.js'
+import { createSupplement } from './supplements.js'
 import type { AutopilotConfig } from './types.js'
 
 test('observe records rule source provenance and disabled service checks', async () => {
@@ -41,11 +42,15 @@ test('observe records rule source provenance and disabled service checks', async
     assert.equal(report.services[0]?.healthStatus, 'disabled')
     assert.equal(report.candidates.some((candidate) => candidate.category === 'improvement_candidate'), true)
     assert.match(report.candidates[0]?.boundedPrompt ?? '', /Constraints:/)
+    assert.equal(report.supplements.length, 0)
+    assert.equal(report.mainAgent.activeTask.supplementCount, 0)
+    assert.equal(report.mainAgent.rounds.some((round) => round.agent === 'Kevin 補充'), true)
 
     const written = await writeReports(report, data)
     const markdown = await readFile(written.markdownPath, 'utf8')
     assert.match(markdown, /Kevin Autopilot Observation Report/)
     assert.match(markdown, /Observation Backlog/)
+    assert.match(markdown, /Kevin Double Deliberation/)
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -74,10 +79,14 @@ test('observe creates backlog candidates from repo and service signals', async (
       ],
     }
 
+    await createSupplement(config, '先不要碰部署，下一輪優先看 dashboard 使用流程。')
     const report = await observe(config)
     assert.equal(report.candidates.some((candidate) => candidate.category === 'improvement_candidate' && candidate.sourceName === 'missing-repo'), true)
     assert.equal(report.candidates.some((candidate) => candidate.category === 'bug_watch' && candidate.sourceName === 'Broken Service'), true)
     assert.equal(report.candidates.every((candidate) => candidate.boundedPrompt.includes('Required output:')), true)
+    assert.equal(report.supplements.length, 1)
+    assert.match(report.mainAgent.summary, /先不要碰部署/)
+    assert.equal(report.mainAgent.activeTask.supplementCount, 1)
   } finally {
     await rm(root, { recursive: true, force: true })
   }

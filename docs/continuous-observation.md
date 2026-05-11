@@ -43,6 +43,16 @@ This means Autopilot should produce useful artifacts, not only summaries:
 5. A durable backlog that survives across observation cycles.
 6. Clear approval questions only when the decision cannot be researched.
 
+v0.5.9 adds a visible Kevin sub-persona main agent loop to the dashboard. The
+loop is deterministic and read-only: it shows self-Q&A rounds, feasible options,
+an active task snapshot, and a recommendation based on current observations plus
+Kevin's stored supplements.
+
+Kevin can add a supplement during or between observation cycles. The supplement
+is stored as Autopilot-owned data and merged into the next cycle as context; it
+does not reset the main task, overwrite the observation backlog, or authorize
+repo edits.
+
 ## Observation Sources
 
 Start with read-only, low-risk signals:
@@ -128,6 +138,12 @@ The dashboard should add an `Observation` area with:
 v0.6 should still be planning-first. It may prepare OpenCode prompts and plans,
 but should not auto-edit projects until Kevin explicitly approves an automation
 mode for that category.
+
+Background observation is allowed when it stays read-only and records worker
+state. Background execution that mutates target repositories, commits, pushes,
+deploys, or changes service state is not allowed until the design includes
+scheduler state, permission gates, interrupt classification, pending action
+records, health/status surfaces, and explicit Kevin approval.
 
 Future automation can start with low-risk tasks only:
 

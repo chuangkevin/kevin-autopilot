@@ -5,6 +5,11 @@
 v0.1 is read-only planning mode. It may scan, classify, and report. It must not
 modify files, commit, push, deploy, or run destructive commands.
 
+v0.5.9 remains read-only even though the dashboard now shows a Kevin sub-persona
+main agent and accepts supplements. Supplements are written only to Autopilot's
+own data directory and may influence the next recommendation, but they do not
+grant permission to mutate target repositories or services.
+
 Docker deployment does not expand permissions. Mounted repositories and rule
 sources should be read-only by default. The only writable location in v0.1 should
 be Autopilot's own data volume for SQLite state and generated reports.
@@ -63,6 +68,14 @@ ai-core or fallback.
 3. Broad cleanup or recursive deletion.
 4. Reading or printing secrets.
 5. Silent production changes.
+
+## Background Execution Boundary
+
+Background observation and report generation may run in read-only mode. Any
+background execution that edits target repos, commits, pushes, deploys, changes
+service state, or performs destructive work requires a later explicit approval
+gate and a runtime design with persisted scheduler state, permission checks,
+interrupt classification, pending action records, and health/status reporting.
 
 ## Verification Standard
 
