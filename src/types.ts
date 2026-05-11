@@ -112,6 +112,7 @@ export interface ObservationCandidate {
   suggestedNextStep: string
   approvalRequired: boolean
   risk: 'low' | 'medium' | 'high'
+  boundedPrompt: string
 }
 
 export interface SafetySummary {

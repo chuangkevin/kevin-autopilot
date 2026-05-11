@@ -40,6 +40,7 @@ test('observe records rule source provenance and disabled service checks', async
     assert.deepEqual(report.ruleSources[0]?.missingFiles, ['.env'])
     assert.equal(report.services[0]?.healthStatus, 'disabled')
     assert.equal(report.candidates.some((candidate) => candidate.category === 'improvement_candidate'), true)
+    assert.match(report.candidates[0]?.boundedPrompt ?? '', /Constraints:/)
 
     const written = await writeReports(report, data)
     const markdown = await readFile(written.markdownPath, 'utf8')
@@ -76,6 +77,7 @@ test('observe creates backlog candidates from repo and service signals', async (
     const report = await observe(config)
     assert.equal(report.candidates.some((candidate) => candidate.category === 'improvement_candidate' && candidate.sourceName === 'missing-repo'), true)
     assert.equal(report.candidates.some((candidate) => candidate.category === 'bug_watch' && candidate.sourceName === 'Broken Service'), true)
+    assert.equal(report.candidates.every((candidate) => candidate.boundedPrompt.includes('Required output:')), true)
   } finally {
     await rm(root, { recursive: true, force: true })
   }

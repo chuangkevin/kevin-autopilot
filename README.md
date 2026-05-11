@@ -109,6 +109,10 @@ It turns rule-source, repository, and service signals into categorized candidate
 such as `bug_watch`, `improvement_candidate`, and `needs_kevin_decision` with
 evidence and suggested next steps.
 
+Version 0.5.7 adds bounded OpenCode prompts to each observation candidate so the
+dashboard can hand off safe, constrained investigation or planning work without
+automatically modifying target projects.
+
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.
 

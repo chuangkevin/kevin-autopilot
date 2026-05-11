@@ -43,7 +43,7 @@ function createObservationCandidates(
   repositories: RepositoryObservation[],
   services: ServiceObservation[],
 ): ObservationCandidate[] {
-  const candidates: ObservationCandidate[] = []
+  const candidates: Array<Omit<ObservationCandidate, 'boundedPrompt'>> = []
 
   for (const source of ruleSources) {
     if (!source.exists) {
@@ -168,7 +168,52 @@ function createObservationCandidates(
     }
   }
 
-  return candidates
+  return candidates.map(withBoundedPrompt)
+}
+
+function withBoundedPrompt(candidate: Omit<ObservationCandidate, 'boundedPrompt'>): ObservationCandidate {
+  return {
+    ...candidate,
+    boundedPrompt: createBoundedPrompt(candidate),
+  }
+}
+
+function createBoundedPrompt(candidate: Omit<ObservationCandidate, 'boundedPrompt'>): string {
+  const approvalLine = candidate.approvalRequired
+    ? '這個候選項需要 Kevin 決策；請先做 read-only 釐清與 proposal，不要直接修改。'
+    : '這個候選項目前不需要 Kevin 先決策；可先做 read-only 釐清與 proposal，但不得改檔、commit 或 push，除非 Kevin 另外批准。'
+
+  return [
+    '請先讀取 homelab-docs/AGENTS.md，並載入 homelab-docs/kevin-ai-persona/PERSONA.md。',
+    '',
+    `Observation candidate: ${candidate.title}`,
+    `Category: ${candidate.category}`,
+    `Confidence: ${candidate.confidence}`,
+    `Risk: ${candidate.risk}`,
+    `Source: ${candidate.sourceType} / ${candidate.sourceName}`,
+    '',
+    'Evidence:',
+    ...candidate.evidence.map((item) => `- ${item}`),
+    '',
+    `Expected behavior: ${candidate.expectedBehavior}`,
+    `Actual behavior: ${candidate.actualBehavior}`,
+    `Suggested next step: ${candidate.suggestedNextStep}`,
+    '',
+    'Constraints:',
+    '- 不得讀取或輸出 secrets、.env、credential、service-account。',
+    '- 不得部署、刪資料、重建資料、force push、hard reset。',
+    '- 不得修改 target repo、commit 或 push，除非 Kevin 另行批准這個候選項進入執行階段。',
+    '- 不得改 user flow、API contract、成本或既有使用者習慣，除非 Kevin 明確批准。',
+    '- 先用最小證據確認，不要猜。',
+    `- ${approvalLine}`,
+    '',
+    'Required output:',
+    '- 結論',
+    '- 證據',
+    '- 風險',
+    '- 建議下一步',
+    '- 哪些沒有做',
+  ].join('\n')
 }
 
 function candidateId(sourceType: string, sourceName: string, reason: string): string {
@@ -337,7 +382,7 @@ function renderMarkdown(report: ObservationReport): string {
         ? ['- No candidates generated from the current read-only signals.']
         : report.candidates.map(
             (candidate) =>
-              `- ${candidate.category} / ${candidate.confidence}: ${candidate.title} (${candidate.sourceName})`,
+              `- ${candidate.category} / ${candidate.confidence}: ${candidate.title} (${candidate.sourceName})\n  - Next: ${candidate.suggestedNextStep}`,
           )
     ),
     '',

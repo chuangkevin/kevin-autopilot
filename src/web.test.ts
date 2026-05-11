@@ -28,7 +28,7 @@ test('web server exposes health and idea intake', async () => {
     environment: 'test',
     dataDir,
     ruleSources: [],
-    repositories: [],
+    repositories: [{ name: 'missing-repo', path: join(dataDir, 'missing') }],
     services: [],
   }
   const server = createWebServer(config)
@@ -50,6 +50,7 @@ test('web server exposes health and idea intake', async () => {
     const pageBody = await page.text()
     assert.equal(pageBody.includes('設定 Gemini Keys'), true)
     assert.equal(pageBody.includes('Observation Backlog'), true)
+    assert.equal(pageBody.includes('OpenCode prompt'), true)
 
     const settings = await fetch(`${baseUrl}/settings`)
     assert.equal(settings.status, 200)
