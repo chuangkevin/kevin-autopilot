@@ -141,6 +141,12 @@ one primary button to copy its prompt. New ideas, self-Q&A, backlog, service, an
 repository details are secondary folded panels so they no longer compete with the
 main recommendation.
 
+Version 0.5.12 makes the dashboard goal explicit. The first screen now states
+that Autopilot is a read-only decision helper that chooses the next worthwhile
+OpenCode handoff, not a chat page or autonomous repair tool. The correction box
+is labeled as a way to fix the current observation judgment, while new product
+goals stay in a separate folded idea intake.
+
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.
 

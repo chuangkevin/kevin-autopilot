@@ -17,8 +17,9 @@ management, v0.5.4 key-manager paste/mobile layout fixes, v0.5.5 GMT+8
 display time, v0.5.6 read-only Observation Backlog, v0.5.7 bounded OpenCode
 prompts for observation candidates, v0.5.8 dashboard usage guidance / copy
 prompt UX, v0.5.9 Kevin sub-persona main-agent self-Q&A with Autopilot-owned
-dashboard supplements, v0.5.10 consolidated decision-center dashboard flow, and
-v0.5.11 single-focus recommendation card.
+dashboard supplements, v0.5.10 consolidated decision-center dashboard flow,
+v0.5.11 single-focus recommendation card, and v0.5.12 explicit dashboard goal
+copy that separates judgment correction from new product goals.
 Keep these versions read-only: they may observe, classify, report, and store
 Autopilot-owned reports/idea records/supplements, but they must not modify target
 repos, create repos, deploy, commit/push other projects, or perform destructive

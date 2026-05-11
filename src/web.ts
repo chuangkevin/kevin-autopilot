@@ -211,6 +211,9 @@ function renderPage(
     .card, section { min-width: 0; background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.035)); border: 1px solid rgba(148,163,184,0.22); border-radius: 18px; padding: clamp(14px, 4vw, 18px); box-shadow: 0 18px 48px rgba(0,0,0,0.24); }
     .command-center { border-color: rgba(245,158,11,0.5); background: radial-gradient(circle at top left, rgba(245,158,11,0.2), transparent 34%), linear-gradient(180deg, rgba(255,255,255,0.09), rgba(255,255,255,0.035)); }
     .command-grid, .focus-grid { display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(280px, 0.82fr); gap: 16px; align-items: start; }
+    .mission { border: 1px solid rgba(96,165,250,0.28); border-left: 5px solid #60a5fa; border-radius: 16px; padding: 14px; background: rgba(30,64,175,0.16); margin-bottom: 16px; }
+    .mission-title { margin: 0 0 6px; font-size: clamp(20px, 4vw, 28px); line-height: 1.15; }
+    .mission p { margin: 6px 0 0; }
     .eyebrow { color: #fbbf24; font-size: 13px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
     .main-action { margin: 6px 0 10px; font-size: clamp(34px, 8vw, 64px); line-height: 1.02; letter-spacing: -0.07em; }
     .plain-answer { font-size: clamp(18px, 4vw, 24px); line-height: 1.45; color: #f8fafc; }
@@ -279,6 +282,11 @@ function renderPage(
   </header>
 
   <section class="command-center">
+    <div class="mission">
+      <h2 class="mission-title">這頁的目標：幫你挑出下一件值得處理的事</h2>
+      <p>它會看 read-only 訊號，挑一個候選，產生可貼到 OpenCode 的安全 prompt。</p>
+      <p class="muted">它不是聊天頁、不是自動修復器，也不會自己改 repo、commit、push、部署。</p>
+    </div>
     <div class="eyebrow">今天只看這張</div>
     <h2 class="main-action">${topCandidate ? '現在重點：做這件' : '現在重點：先不要做'}</h2>
     <p class="plain-answer">${topCandidate ? escapeHtml(topCandidate.title) : '這輪沒有足夠明確的候選項。先維持觀察，或補充真正卡住的地方。'}</p>
@@ -286,11 +294,11 @@ function renderPage(
     ${topCandidate ? renderPrimaryCandidate(topCandidate) : '<div class="primary-card"><strong>唯一動作</strong><div>如果這個判斷不對，在下方補一句修正下一輪推理。</div></div>'}
     <div class="focus-grid">
       <aside class="side-panel">
-        <h2>如果不對，只改這裡</h2>
-        <p class="muted">補一句話就好。不要貼 key、token、.env。這只會影響下一輪推理，不會改任何專案。</p>
+        <h2>修正這輪判斷</h2>
+        <p class="muted">這裡不是提新產品目標，只是告訴 Autopilot 這次判斷哪裡不對。不要貼 key、token、.env。</p>
         <form id="supplement-form">
-          <textarea id="supplement-text" placeholder="例：這個 dirty repo 是我正在做的，不要當成問題。現在先看 dashboard UX。"></textarea>
-          <button type="submit">補充給下一輪</button>
+          <textarea id="supplement-text" placeholder="例：這個 dirty repo 是我正在做的，不要當成問題。這次先看 dashboard UX。"></textarea>
+          <button type="submit">修正下一輪判斷</button>
         </form>
         <div id="supplement-result" class="muted"></div>
       </aside>
@@ -361,7 +369,7 @@ function renderPage(
   </details>
 
   <details class="detail-block">
-    <summary>丟一個新想法，不是現在重點</summary>
+    <summary>提出新目標/新想法，不是修正這輪判斷</summary>
     <p class="muted">AI thinking: ${aiEnabled ? 'enabled via ai-core' : 'disabled / fallback'}。送出後只會收件、分類、列出下一步，不會開 repo、不會部署。</p>
     <form id="idea-form">
       <textarea id="idea-text" placeholder="把腦中的想法直接貼在這裡，例如：我想做一個每天自動幫我整理新專案想法、判斷要不要開 repo、部署在哪裡的工具..."></textarea>
