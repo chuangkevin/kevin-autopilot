@@ -7,6 +7,10 @@
     "model": "gemini-2.5-flash",
     "timeoutMs": 20000
   },
+  "backgroundObservation": {
+    "enabled": true,
+    "intervalMs": 300000
+  },
   "ruleSources": [
     {
       "name": "homelab-docs",

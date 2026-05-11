@@ -2,9 +2,10 @@ import { createServer } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import { createIdea, getIdea, listIdeas } from './ideas.js'
 import { clearStoredGeminiKeys, getKeyStatus, importGeminiKeys } from './keys.js'
+import { createObservationLoop, type ObservationLoop } from './observation-loop.js'
 import { observe } from './observer.js'
 import { createSupplement, listSupplements } from './supplements.js'
-import type { AutopilotConfig, IdeaRecord, KeyStatusSummary, ObservationReport, UserSupplement } from './types.js'
+import type { AutopilotConfig, IdeaRecord, KeyStatusSummary, ObservationLoopState, ObservationReport, UserSupplement } from './types.js'
 import { APP_VERSION } from './version.js'
 
 const DEFAULT_PORT = 3023
@@ -18,7 +19,9 @@ const DISPLAY_TIME_ZONE = 'Asia/Taipei'
 
 export async function startWebServer(config: AutopilotConfig): Promise<void> {
   const port = Number(process.env.PORT ?? DEFAULT_PORT)
-  const server = createWebServer(config)
+  const observationLoop = createObservationLoop(config)
+  observationLoop.start()
+  const server = createWebServer(config, observationLoop)
 
   await new Promise<void>((resolve) => {
     server.listen(port, '0.0.0.0', resolve)
@@ -27,10 +30,10 @@ export async function startWebServer(config: AutopilotConfig): Promise<void> {
   console.log(`Kevin Autopilot ${APP_VERSION} web listening on http://localhost:${port}`)
 }
 
-export function createWebServer(config: AutopilotConfig): Server {
+export function createWebServer(config: AutopilotConfig, observationLoop?: ObservationLoop): Server {
   return createServer(async (request, response) => {
     try {
-      await handleRequest(config, request, response)
+      await handleRequest(config, request, response, observationLoop)
     } catch (error) {
       response.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' })
       response.end(error instanceof Error ? error.message : String(error))
@@ -38,11 +41,16 @@ export function createWebServer(config: AutopilotConfig): Server {
   })
 }
 
-async function handleRequest(config: AutopilotConfig, request: IncomingMessage, response: ServerResponse): Promise<void> {
+async function handleRequest(config: AutopilotConfig, request: IncomingMessage, response: ServerResponse, observationLoop?: ObservationLoop): Promise<void> {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
 
   if (url.pathname === '/health') {
     writeJson(response, { ok: true, version: APP_VERSION, environment: config.environment })
+    return
+  }
+
+  if (url.pathname === '/api/observation-loop') {
+    writeJson(response, observationLoop?.getState() ?? createManualLoopState())
     return
   }
 
@@ -106,16 +114,16 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
   }
 
   if (url.pathname === '/api/report') {
-    const report = await observe(config)
+    const report = observationLoop ? observationLoop.getLastReport() ?? (await observationLoop.runOnce()) ?? (await observe(config)) : await observe(config)
     writeJson(response, report)
     return
   }
 
   if (url.pathname === '/') {
-    const report = await observe(config)
+    const report = observationLoop ? observationLoop.getLastReport() ?? (await observationLoop.runOnce()) ?? (await observe(config)) : await observe(config)
     const ideas = await listIdeas(config, 8)
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', ...NO_STORE_HEADERS })
-    response.end(renderPage(report, ideas, Boolean(config.ai?.enabled)))
+    response.end(renderPage(report, ideas, Boolean(config.ai?.enabled), observationLoop?.getState() ?? createManualLoopState()))
     return
   }
 
@@ -151,6 +159,16 @@ function writeJson(response: ServerResponse, body: unknown, statusCode = 200): v
 function writeText(response: ServerResponse, body: string, statusCode = 200): void {
   response.writeHead(statusCode, { 'content-type': 'text/plain; charset=utf-8', ...NO_STORE_HEADERS })
   response.end(`${body}\n`)
+}
+
+function createManualLoopState(): ObservationLoopState {
+  return {
+    mode: 'read-only-background-observation',
+    enabled: false,
+    intervalMs: 0,
+    running: false,
+    runCount: 0,
+  }
 }
 
 export function isTrustedSettingsAddress(address: string): boolean {
@@ -197,6 +215,7 @@ function renderPage(
   report: ObservationReport,
   ideas: IdeaRecord[],
   aiEnabled: boolean,
+  loopState: ObservationLoopState,
 ): string {
   const dirtyRepos = report.repositories.filter((repo) => repo.dirty).length
   const missingRuleFiles = report.ruleSources.reduce((sum, source) => sum + source.missingFiles.length, 0)
@@ -227,7 +246,7 @@ function renderPage(
     .mission { border: 1px solid rgba(96,165,250,0.28); border-left: 5px solid #60a5fa; border-radius: 16px; padding: 14px; background: rgba(30,64,175,0.16); margin-bottom: 16px; }
     .mission-title { margin: 0 0 6px; font-size: clamp(20px, 4vw, 28px); line-height: 1.15; }
     .mission p { margin: 6px 0 0; }
-    .truth-box { border: 1px solid rgba(248,113,113,0.3); border-left: 5px solid #f87171; border-radius: 16px; padding: 14px; background: rgba(127,29,29,0.18); margin-bottom: 16px; }
+    .truth-box { border: 1px solid rgba(34,197,94,0.28); border-left: 5px solid #22c55e; border-radius: 16px; padding: 14px; background: rgba(20,83,45,0.18); margin-bottom: 16px; }
     .truth-box strong { display: block; margin-bottom: 6px; font-size: 18px; }
     .eyebrow { color: #fbbf24; font-size: 13px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
     .main-action { margin: 6px 0 10px; font-size: clamp(34px, 8vw, 64px); line-height: 1.02; letter-spacing: -0.07em; }
@@ -306,9 +325,16 @@ function renderPage(
       <p class="muted">它不是聊天頁、不是自動修復器，也不會自己改 repo、commit、push、部署。</p>
     </div>
     <div class="truth-box">
-      <strong>目前還不會「一直自動思考」</strong>
-      <div>現在只會在首頁或 <code>/api/report</code> 被請求時即時跑一次觀察；不是常駐背景思考。</div>
-      <div class="muted">自動排程尚未實作，所以目前沒有「每幾分鐘一次」或「下一次執行時間」。下一步要做的是背景 observation loop，顯示 last run / next run / running 狀態。</div>
+      <strong>背景分身已開始 read-only 觀察</strong>
+      <div>${escapeHtml(renderLoopPlainStatus(loopState))}</div>
+      <div class="muted">它只會自動觀察、產生報告與候選項；不會自己改 repo、commit、push、部署或執行 destructive action。</div>
+      <div class="status-strip">
+        <div class="status-item"><span class="label">背景狀態</span><strong>${loopState.running ? 'Running' : loopState.enabled ? 'Idle' : 'Off'}</strong></div>
+        <div class="status-item"><span class="label">已跑次數</span><strong>${loopState.runCount}</strong></div>
+        <div class="status-item"><span class="label">上次執行</span><strong>${escapeHtml(loopState.lastFinishedAt ? formatTaipeiTime(loopState.lastFinishedAt) : '-')}</strong></div>
+        <div class="status-item"><span class="label">下次執行</span><strong>${escapeHtml(loopState.nextRunAt ? formatTaipeiTime(loopState.nextRunAt) : '-')}</strong></div>
+      </div>
+      ${loopState.lastError ? `<div class="muted">最近錯誤：${escapeHtml(loopState.lastError)}</div>` : ''}
     </div>
     <div class="eyebrow">今天只看這張</div>
     <h2 class="main-action">${topCandidate ? '現在重點：做這件' : '現在重點：先不要做'}</h2>
@@ -610,6 +636,14 @@ function renderSupplement(supplement: ObservationReport['supplements'][number]):
     <div>${escapeHtml(supplement.summary)}</div>
     <div class="muted">來源：${escapeHtml(supplement.source)} · 套用：${escapeHtml(supplement.appliesTo)}</div>
   </div>`
+}
+
+function renderLoopPlainStatus(loopState: ObservationLoopState): string {
+  if (!loopState.enabled) return '目前背景觀察已關閉；只有首頁或 /api/report 會手動觀察。'
+  if (loopState.running) return '現在正在背景觀察。完成後會更新 last run / next run。'
+  const nextRun = loopState.nextRunAt ? formatTaipeiTime(loopState.nextRunAt) : '排程中'
+  const lastRun = loopState.lastFinishedAt ? formatTaipeiTime(loopState.lastFinishedAt) : '尚未完成第一次觀察'
+  return `閒置時會每 ${Math.round(loopState.intervalMs / 60000)} 分鐘自動觀察一次。上次：${lastRun}；下次：${nextRun}。`
 }
 
 function renderIdea(idea: IdeaRecord): string {

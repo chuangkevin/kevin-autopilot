@@ -76,6 +76,12 @@ explicitly chooses a different persona source.
 Runs on demand first, then later on a timer. It should support per-repo budgets
 so one slow repository does not block all scans.
 
+v0.5.15 starts the first Web-mode timer. It is deliberately read-only: each run
+calls the existing observer, writes reports and loop status under Autopilot-owned
+`data/`, and updates dashboard/API state. It does not execute handoff prompts,
+modify target repositories, commit, push, deploy, read unmanaged secrets, or run
+destructive actions.
+
 ### Context Collector
 
 Collects only safe metadata in v0.1:
@@ -246,6 +252,10 @@ memory. The v0.5.9 report includes objective, current step, checkpoints,
 blockers, update time, and supplement count. Later background execution should
 promote this into a persisted scheduler/worker record before it can edit repos or
 deploy.
+
+The first persisted loop status is `observation-loop-state.json`, which records
+enabled/running state, interval, run count, last run, next run, report paths, and
+last error. This is status telemetry only, not permission to execute changes.
 
 ### User Supplement Store
 

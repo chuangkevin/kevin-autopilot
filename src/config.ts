@@ -30,4 +30,19 @@ function validateConfig(config: Partial<AutopilotConfig>, configPath: string): a
   if (!Array.isArray(config.services)) {
     throw new Error(`Missing services array in ${configPath}`)
   }
+
+  if (config.backgroundObservation !== undefined && (!config.backgroundObservation || typeof config.backgroundObservation !== 'object' || Array.isArray(config.backgroundObservation))) {
+    throw new Error(`backgroundObservation must be an object in ${configPath}`)
+  }
+
+  if (config.backgroundObservation?.enabled !== undefined && typeof config.backgroundObservation.enabled !== 'boolean') {
+    throw new Error(`backgroundObservation.enabled must be a boolean in ${configPath}`)
+  }
+
+  if (config.backgroundObservation?.intervalMs !== undefined) {
+    const intervalMs = config.backgroundObservation.intervalMs
+    if (!Number.isInteger(intervalMs) || intervalMs < 60_000) {
+      throw new Error(`backgroundObservation.intervalMs must be at least 60000 in ${configPath}`)
+    }
+  }
 }

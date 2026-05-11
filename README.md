@@ -158,6 +158,13 @@ handoff state, and a deterministic existing-project similarity summary based on
 configured repositories and services. Each idea also has a detail page at
 `/ideas/<id>` with the raw idea, handoff status, and matched HomeProject projects.
 
+Version 0.5.15 starts a read-only background observation loop in Web mode. The
+loop runs on idle every configured interval, writes observation reports and
+`observation-loop-state.json` under Autopilot-owned `data/`, and exposes last run,
+next run, running, run count, and last error on the dashboard plus
+`/api/observation-loop`. It still cannot edit repos, commit, push, deploy, read
+unmanaged secrets, or run destructive actions.
+
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.
 
@@ -234,7 +241,7 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
-v0.5.14 read-only idea desktop and similarity prototype. See `docs/` for architecture,
+v0.5.15 read-only background observation loop prototype. See `docs/` for architecture,
 safety, and OpenCode workflow.
 
 ## Deployment

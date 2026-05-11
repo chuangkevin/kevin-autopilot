@@ -2,9 +2,15 @@ export interface AutopilotConfig {
   environment: string
   dataDir: string
   ai?: AiConfig
+  backgroundObservation?: BackgroundObservationConfig
   ruleSources: RuleSourceConfig[]
   repositories: RepositoryConfig[]
   services: ServiceConfig[]
+}
+
+export interface BackgroundObservationConfig {
+  enabled?: boolean
+  intervalMs?: number
 }
 
 export interface AiConfig {
@@ -201,6 +207,22 @@ export interface IdeaRecord {
   projectHandoff?: ProjectHandoffPlan
   existingProjectAnalysis: ExistingProjectAnalysis
   thinking: IdeaThinkingSummary
+}
+
+export interface ObservationLoopState {
+  mode: 'read-only-background-observation'
+  enabled: boolean
+  intervalMs: number
+  running: boolean
+  runCount: number
+  lastStartedAt?: string
+  lastFinishedAt?: string
+  nextRunAt?: string
+  lastSuccess?: boolean
+  lastError?: string
+  lastReportAt?: string
+  lastReportPath?: string
+  lastMarkdownPath?: string
 }
 
 export type ExistingProjectRecommendation = 'extend-existing' | 'new-project' | 'unclear'

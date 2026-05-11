@@ -53,6 +53,13 @@ clickable cards, and each card shows what the Kevin double is currently doing fo
 that idea, whether approval is needed, and whether the idea resembles an existing
 configured HomeProject repository or service.
 
+v0.5.15 starts the first idle background observation loop. In Web mode, Autopilot
+automatically runs read-only observation on a configured interval and shows last
+run, next run, running state, run count, and last error on the dashboard and
+`/api/observation-loop`. The loop only produces Autopilot-owned reports and
+status; it does not perform implementation, commits, pushes, deployment, secret
+reads, or destructive actions.
+
 Kevin can add a supplement during or between observation cycles. The supplement
 is stored as Autopilot-owned data and merged into the next cycle as context; it
 does not reset the main task, overwrite the observation backlog, or authorize
@@ -144,9 +151,9 @@ v0.6 should still be planning-first. It may prepare OpenCode prompts and plans,
 but should not auto-edit projects until Kevin explicitly approves an automation
 mode for that category.
 
-Background observation is allowed when it stays read-only and records worker
+Background observation is now allowed when it stays read-only and records worker
 state. Background execution that mutates target repositories, commits, pushes,
-deploys, or changes service state is not allowed until the design includes
+deploys, or changes service state is still not allowed until the design includes
 scheduler state, permission gates, interrupt classification, pending action
 records, health/status surfaces, and explicit Kevin approval.
 
