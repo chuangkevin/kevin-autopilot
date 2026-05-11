@@ -48,6 +48,11 @@ loop is deterministic and read-only: it shows self-Q&A rounds, feasible options,
 an active task snapshot, and a recommendation based on current observations plus
 Kevin's stored supplements.
 
+v0.5.14 adds an idea desktop below the main decision center. Stored ideas are
+clickable cards, and each card shows what the Kevin double is currently doing for
+that idea, whether approval is needed, and whether the idea resembles an existing
+configured HomeProject repository or service.
+
 Kevin can add a supplement during or between observation cycles. The supplement
 is stored as Autopilot-owned data and merged into the next cycle as context; it
 does not reset the main task, overwrite the observation backlog, or authorize

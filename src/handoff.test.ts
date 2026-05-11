@@ -14,6 +14,7 @@ test('createProjectHandoffPlan creates read-only planning metadata', () => {
     reasons: ['needs plan'],
     suggestedNextSteps: ['write spec'],
     approvalRequired: true,
+    existingProjectAnalysis: { recommendation: 'new-project', summary: 'no match', matches: [] },
     thinking: { mode: 'deterministic-fallback', success: true },
   } satisfies Omit<IdeaRecord, 'agentHandoff' | 'projectHandoff'>)
 
@@ -35,6 +36,7 @@ test('createProjectHandoffPlan keeps mutation gates for explore ideas', () => {
     reasons: ['needs context'],
     suggestedNextSteps: ['ask questions'],
     approvalRequired: false,
+    existingProjectAnalysis: { recommendation: 'new-project', summary: 'no match', matches: [] },
     thinking: { mode: 'deterministic-fallback', success: true },
   } satisfies Omit<IdeaRecord, 'agentHandoff' | 'projectHandoff'>)
 

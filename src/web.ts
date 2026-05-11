@@ -1,6 +1,6 @@
 import { createServer } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
-import { createIdea, listIdeas } from './ideas.js'
+import { createIdea, getIdea, listIdeas } from './ideas.js'
 import { clearStoredGeminiKeys, getKeyStatus, importGeminiKeys } from './keys.js'
 import { observe } from './observer.js'
 import { createSupplement, listSupplements } from './supplements.js'
@@ -116,6 +116,19 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
     const ideas = await listIdeas(config, 8)
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', ...NO_STORE_HEADERS })
     response.end(renderPage(report, ideas, Boolean(config.ai?.enabled)))
+    return
+  }
+
+  const ideaDetailMatch = url.pathname.match(/^\/ideas\/(idea-[a-zA-Z0-9_.-]+)$/)
+  if (ideaDetailMatch) {
+    const idea = await getIdea(config, ideaDetailMatch[1] ?? '')
+    if (!idea) {
+      response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8', ...NO_STORE_HEADERS })
+      response.end('Idea not found')
+      return
+    }
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', ...NO_STORE_HEADERS })
+    response.end(renderIdeaDetailPage(idea))
     return
   }
 
@@ -264,10 +277,13 @@ function renderPage(
     input[type="checkbox"] { width: 16px; height: 16px; }
     a.button, button { display: inline-block; text-decoration: none; margin-top: 10px; border: 0; border-radius: 999px; background: #60a5fa; color: #06111f; font-weight: 700; padding: 10px 16px; cursor: pointer; }
     button.secondary { background: rgba(148,163,184,0.2); color: #e5eefc; margin-left: 8px; }
-    .idea { border-top: 1px solid rgba(148,163,184,0.16); padding: 12px 0; }
-    .idea:first-child { border-top: 0; }
-    .idea-title { font-weight: 700; overflow-wrap: anywhere; }
+    .idea-desktop { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+    .idea { display: grid; grid-template-rows: auto 1fr auto; gap: 10px; min-height: 220px; text-decoration: none; color: inherit; border: 1px solid rgba(148,163,184,0.18); border-radius: 18px; padding: 14px; background: radial-gradient(circle at top right, rgba(245,158,11,0.12), transparent 36%), rgba(15,23,42,0.54); transition: border-color 150ms ease, transform 150ms ease, background 150ms ease; }
+    .idea:hover { border-color: rgba(245,158,11,0.62); transform: translateY(-1px); background: radial-gradient(circle at top right, rgba(245,158,11,0.18), transparent 38%), rgba(15,23,42,0.7); }
+    .idea-icon { display: inline-grid; place-items: center; width: 42px; height: 42px; border-radius: 14px; background: rgba(245,158,11,0.16); color: #fde68a; font: 800 20px/1 ui-monospace, "Cascadia Code", monospace; }
+    .idea-title { font-weight: 800; font-size: 17px; line-height: 1.35; overflow-wrap: anywhere; }
     .idea-meta { color: #93a4bd; font-size: 13px; margin-top: 4px; overflow-wrap: anywhere; }
+    .idea-status { border-top: 1px solid rgba(148,163,184,0.16); padding-top: 10px; }
     @media (max-width: 820px) { header { display: block; } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .command-grid, .focus-grid, .agent-board { grid-template-columns: 1fr; } table { font-size: 13px; } }
     @media (max-width: 520px) { .grid { grid-template-columns: 1fr 1fr; } .value { font-size: 24px; } a.button, button { min-height: 44px; } }
   </style>
@@ -386,8 +402,9 @@ function renderPage(
   </details>
 
   <details class="detail-block">
-    <summary>最近想法，不是現在重點</summary>
-    ${ideas.length === 0 ? '<p class="muted">尚未收到想法。</p>' : ideas.map(renderIdea).join('')}
+    <summary>想法桌面：每個想法都是可進入的卡片</summary>
+    <p class="muted">每張卡片都顯示目前分身狀態、handoff 階段，以及是否像既有 HomeProject 專案。</p>
+    ${ideas.length === 0 ? '<p class="muted">尚未收到想法。</p>' : `<div class="idea-desktop">${ideas.map(renderIdea).join('')}</div>`}
   </details>
 
 </main>
@@ -598,13 +615,110 @@ function renderSupplement(supplement: ObservationReport['supplements'][number]):
 function renderIdea(idea: IdeaRecord): string {
   const handoff = idea.agentHandoff
   const projectHandoff = idea.projectHandoff
-  return `<div class="idea">
-    <div class="idea-title">${escapeHtml(idea.title)}</div>
-    <div class="idea-meta">${escapeHtml(formatTaipeiTime(idea.createdAt))} · ${escapeHtml(idea.classification)} · ${escapeHtml(idea.thinking.mode)}${idea.approvalRequired ? ' · requires approval' : ''}</div>
-    <div class="muted">${escapeHtml(idea.reasons[0] ?? '無分類原因')}</div>
-    ${handoff ? `<div class="idea-meta">Superpowers: ${escapeHtml(handoff.superpowers.join(', '))} · ${escapeHtml(handoff.decision)}</div>` : ''}
-    ${projectHandoff ? `<div class="idea-meta">Handoff: ${escapeHtml(projectHandoff.repoName)} · ${escapeHtml(projectHandoff.firstArtifact)} · gates ${projectHandoff.approvalGates.length}</div>` : ''}
+  const projectAnalysis = idea.existingProjectAnalysis
+  return `<a class="idea" href="/ideas/${escapeHtml(idea.id)}">
+    <div>
+      <span class="idea-icon">${escapeHtml(ideaIcon(idea))}</span>
+      <div class="idea-meta">${escapeHtml(formatTaipeiTime(idea.createdAt))}</div>
+    </div>
+    <div>
+      <div class="idea-title">${escapeHtml(idea.title)}</div>
+      <div class="idea-meta">分身狀態：${escapeHtml(ideaStatus(idea))}</div>
+      <div class="muted">${escapeHtml(projectAnalysis.summary)}</div>
+    </div>
+    <div class="idea-status">
+      <span class="pill">${escapeHtml(idea.classification)}</span>
+      <span class="pill ${idea.approvalRequired ? 'warn' : 'ok'}">${idea.approvalRequired ? '需要 approval' : '可先探索'}</span>
+      <div class="idea-meta">${escapeHtml(idea.thinking.mode)}${handoff ? ` · ${escapeHtml(handoff.decision)}` : ''}</div>
+      ${projectHandoff ? `<div class="idea-meta">Handoff: ${escapeHtml(projectHandoff.repoName)} · ${escapeHtml(projectHandoff.firstArtifact)}</div>` : ''}
+    </div>
+  </a>`
+}
+
+function renderIdeaDetailPage(idea: IdeaRecord): string {
+  const projectAnalysis = idea.existingProjectAnalysis
+  return `<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(idea.title)} · Kevin Autopilot</title>
+  <style>
+    :root { color-scheme: dark; font-family: "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif; background: #080d19; color: #e5eefc; }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; max-width: 100%; overflow-x: hidden; }
+    body { margin: 0; padding: clamp(14px, 4vw, 32px); }
+    main { width: 100%; max-width: 900px; margin: 0 auto; min-width: 0; }
+    section { min-width: 0; background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.035)); border: 1px solid rgba(148,163,184,0.22); border-radius: 18px; padding: clamp(14px, 4vw, 18px); box-shadow: 0 18px 48px rgba(0,0,0,0.24); margin-bottom: 18px; }
+    h1 { margin: 8px 0 10px; font-size: clamp(30px, 8vw, 52px); line-height: 1.04; letter-spacing: -0.06em; overflow-wrap: anywhere; }
+    h2 { margin: 0 0 12px; font-size: 18px; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; background: rgba(15,23,42,0.9); border: 1px solid rgba(148,163,184,0.18); border-radius: 12px; padding: 12px; font-size: 13px; line-height: 1.45; }
+    a.button { display: inline-block; text-decoration: none; margin-top: 10px; border: 0; border-radius: 999px; background: #60a5fa; color: #06111f; font-weight: 700; padding: 10px 16px; min-height: 44px; }
+    .pill { display: inline-block; white-space: nowrap; border-radius: 999px; padding: 4px 9px; font-size: 12px; background: rgba(59,130,246,0.18); color: #bfdbfe; margin: 0 6px 6px 0; }
+    .warn { background: rgba(245,158,11,0.16); color: #fde68a; }
+    .ok { background: rgba(34,197,94,0.14); color: #bbf7d0; }
+    .muted, .meta { color: #93a4bd; overflow-wrap: anywhere; }
+    .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+    .status-box, .match { border: 1px solid rgba(148,163,184,0.16); border-radius: 14px; padding: 12px; background: rgba(15,23,42,0.5); }
+    .status-box strong, .match strong { display: block; margin-bottom: 4px; }
+  </style>
+</head>
+<body>
+<main>
+  <a class="button" href="/">回想法桌面</a>
+  <section>
+    <div class="meta">v${escapeHtml(APP_VERSION)} · ${escapeHtml(idea.environment)} · ${escapeHtml(formatTaipeiTime(idea.createdAt))}</div>
+    <h1>${escapeHtml(idea.title)}</h1>
+    <span class="pill">${escapeHtml(idea.classification)}</span>
+    <span class="pill ${idea.approvalRequired ? 'warn' : 'ok'}">${idea.approvalRequired ? '需要 approval' : '可先探索'}</span>
+    <p>分身目前在做什麼：${escapeHtml(ideaStatus(idea))}</p>
+  </section>
+  <section>
+    <h2>既有專案相似度</h2>
+    <p>${escapeHtml(projectAnalysis.summary)}</p>
+    ${projectAnalysis.matches.length === 0 ? '<p class="muted">沒有找到可列出的相似 repo 或 service。</p>' : projectAnalysis.matches.map(renderProjectMatch).join('')}
+  </section>
+  <section>
+    <h2>Handoff 狀態</h2>
+    <div class="status-grid">
+      <div class="status-box"><strong>Thinking</strong><span class="muted">${escapeHtml(idea.thinking.mode)} · ${idea.thinking.success ? 'success' : 'fallback'}</span></div>
+      <div class="status-box"><strong>Agent</strong><span class="muted">${escapeHtml(idea.agentHandoff?.decision ?? '尚未建立 handoff')}</span></div>
+      <div class="status-box"><strong>Project</strong><span class="muted">${escapeHtml(idea.projectHandoff?.firstArtifact ?? '尚未建立 project handoff')}</span></div>
+    </div>
+  </section>
+  <section>
+    <h2>原始想法</h2>
+    <pre>${escapeHtml(idea.rawText)}</pre>
+  </section>
+  <section>
+    <h2>建議下一步</h2>
+    ${idea.suggestedNextSteps.map((step) => `<p>${escapeHtml(step)}</p>`).join('')}
+  </section>
+</main>
+</body>
+</html>`
+}
+
+function renderProjectMatch(match: IdeaRecord['existingProjectAnalysis']['matches'][number]): string {
+  return `<div class="match">
+    <strong>${escapeHtml(match.projectName)} · ${match.score}/100</strong>
+    <div>${escapeHtml(match.reason)}</div>
+    <div class="muted">來源：${escapeHtml(match.sourceType)} / ${escapeHtml(match.sourceName)}${match.domain ? ` · ${escapeHtml(match.domain)}` : ''}${match.path ? ` · ${escapeHtml(match.path)}` : ''}</div>
   </div>`
+}
+
+function ideaIcon(idea: IdeaRecord): string {
+  if (idea.classification === 'blocked') return '!'
+  if (idea.classification === 'prototype') return 'P'
+  if (idea.classification === 'plan') return 'S'
+  return '?'
+}
+
+function ideaStatus(idea: IdeaRecord): string {
+  if (idea.classification === 'blocked') return '正在隔離風險並等待 approval gate'
+  if (idea.projectHandoff) return `正在整理 ${idea.projectHandoff.firstArtifact}`
+  if (idea.agentHandoff) return `正在做 ${idea.agentHandoff.decision}`
+  return '正在收斂問題與缺少脈絡'
 }
 
 function escapeHtml(value: string): string {

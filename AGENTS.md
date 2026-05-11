@@ -19,8 +19,9 @@ prompts for observation candidates, v0.5.8 dashboard usage guidance / copy
 prompt UX, v0.5.9 Kevin sub-persona main-agent self-Q&A with Autopilot-owned
 dashboard supplements, v0.5.10 consolidated decision-center dashboard flow,
 v0.5.11 single-focus recommendation card, v0.5.12 explicit dashboard goal copy
-that separates judgment correction from new product goals, and v0.5.13 explicit
-manual-only/no-background-loop status copy.
+that separates judgment correction from new product goals, v0.5.13 explicit
+manual-only/no-background-loop status copy, and v0.5.14 idea desktop cards with
+existing-project similarity analysis.
 Keep these versions read-only: they may observe, classify, report, and store
 Autopilot-owned reports/idea records/supplements, but they must not modify target
 repos, create repos, deploy, commit/push other projects, or perform destructive

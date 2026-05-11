@@ -152,6 +152,12 @@ run a background thinking loop. It only observes when the home dashboard or
 `/api/report` is loaded, and the UI now says there is no interval or next-run
 time until a later background observation scheduler is implemented.
 
+Version 0.5.14 turns stored ideas into a clickable idea desktop. Each idea card
+shows what the Kevin double is currently doing, its classification/approval state,
+handoff state, and a deterministic existing-project similarity summary based on
+configured repositories and services. Each idea also has a detail page at
+`/ideas/<id>` with the raw idea, handoff status, and matched HomeProject projects.
+
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.
 
@@ -206,6 +212,12 @@ child agents, create repos, deploy, or modify target repositories.
 
 ## Project Handoff Plans
 
+Each idea record also includes `existingProjectAnalysis`, a deterministic
+comparison against configured repositories and services so Autopilot can say
+whether the idea should likely extend an existing HomeProject project, start as a
+new project, or remain unclear. The analysis uses safe config metadata only; it
+does not inspect target repo contents or secrets.
+
 Each idea record also includes `projectHandoff`, a deterministic read-only plan
 for turning a rough idea into a reviewable project start. The plan includes:
 
@@ -222,7 +234,7 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
-v0.5.9 read-only main agent prototype started. See `docs/` for architecture,
+v0.5.14 read-only idea desktop and similarity prototype. See `docs/` for architecture,
 safety, and OpenCode workflow.
 
 ## Deployment

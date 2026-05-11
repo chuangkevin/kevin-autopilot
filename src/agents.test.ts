@@ -14,6 +14,7 @@ test('createAgentHandoff records superpowers and agent questions', () => {
     reasons: ['needs plan'],
     suggestedNextSteps: ['write spec'],
     approvalRequired: true,
+    existingProjectAnalysis: { recommendation: 'new-project', summary: 'no match', matches: [] },
     thinking: { mode: 'deterministic-fallback', success: true },
   } satisfies Omit<IdeaRecord, 'agentHandoff'>)
 

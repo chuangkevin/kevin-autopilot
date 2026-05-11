@@ -85,12 +85,30 @@ test('web server exposes health and idea intake', async () => {
     const idea = await fetch(`${baseUrl}/api/ideas`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ rawText: 'Plan repo architecture spec and tests' }),
+      body: JSON.stringify({ rawText: '我要規格、開發和測試新工具' }),
     })
     assert.equal(idea.status, 201)
     const ideaBody = await idea.json()
     assert.equal(ideaBody.classification, 'plan')
     assert.equal(ideaBody.projectHandoff.mode, 'read-only-project-handoff')
+    assert.equal(ideaBody.existingProjectAnalysis.recommendation, 'new-project')
+
+    const pageAfterIdea = await fetch(`${baseUrl}/`)
+    const pageAfterIdeaBody = await pageAfterIdea.text()
+    assert.equal(pageAfterIdeaBody.includes('想法桌面：每個想法都是可進入的卡片'), true)
+    assert.equal(pageAfterIdeaBody.includes(`href="/ideas/${ideaBody.id}"`), true)
+    assert.equal(pageAfterIdeaBody.includes('分身狀態：'), true)
+    assert.equal(pageAfterIdeaBody.includes('目前沒有明顯相似的既有專案'), true)
+
+    const ideaDetail = await fetch(`${baseUrl}/ideas/${ideaBody.id}`)
+    assert.equal(ideaDetail.status, 200)
+    const ideaDetailBody = await ideaDetail.text()
+    assert.equal(ideaDetailBody.includes('既有專案相似度'), true)
+    assert.equal(ideaDetailBody.includes('分身目前在做什麼'), true)
+    assert.equal(ideaDetailBody.includes('Handoff 狀態'), true)
+
+    const missingIdeaDetail = await fetch(`${baseUrl}/ideas/idea-missing`)
+    assert.equal(missingIdeaDetail.status, 404)
 
     const supplement = await fetch(`${baseUrl}/api/main-agent/supplements`, {
       method: 'POST',

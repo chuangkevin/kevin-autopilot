@@ -18,6 +18,7 @@ Kevin Autopilot
 ├─ Task Classifier
 ├─ Approval Gate
 ├─ Idea Intake
+├─ Existing Project Similarity Analyzer
 ├─ Project Bootstrap Planner
 ├─ OpenCode Prompt Builder
 ├─ Verification Planner
@@ -196,6 +197,13 @@ missing product or safety decisions, and then produce a handoff plan.
 In v0.2, idea intake can call ai-core to classify the idea and suggest next
 steps. It still does not create repositories, write product code, deploy, commit,
 or push.
+
+In v0.5.14, idea intake also attaches deterministic `existingProjectAnalysis` to
+each stored idea. The analyzer compares idea text against configured repository
+names, repository path basenames, service names, domains, sources, and service
+repository hints. It only uses safe configuration metadata and gives a planning
+recommendation: extend an existing project, treat as a new project, or keep the
+decision unclear until Kevin/OpenCode gathers more evidence.
 
 Idea intake should classify an idea into:
 

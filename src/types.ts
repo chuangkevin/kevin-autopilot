@@ -199,7 +199,26 @@ export interface IdeaRecord {
   approvalRequired: boolean
   agentHandoff?: AgentHandoffSummary
   projectHandoff?: ProjectHandoffPlan
+  existingProjectAnalysis: ExistingProjectAnalysis
   thinking: IdeaThinkingSummary
+}
+
+export type ExistingProjectRecommendation = 'extend-existing' | 'new-project' | 'unclear'
+
+export interface ExistingProjectAnalysis {
+  recommendation: ExistingProjectRecommendation
+  summary: string
+  matches: ExistingProjectMatch[]
+}
+
+export interface ExistingProjectMatch {
+  projectName: string
+  sourceType: 'repository' | 'service'
+  sourceName: string
+  score: number
+  reason: string
+  path?: string
+  domain?: string
 }
 
 export interface ProjectHandoffPlan {

@@ -18,3 +18,5 @@
 16. [x] Add dedicated settings-page Gemini key import backed by SQLite DB.
 17. [x] Accept key-manager copy format and fix mobile dashboard overflow.
 18. [x] Display UI timestamps in GMT+8 / Asia/Taipei.
+19. [x] Add clickable idea desktop cards and detail pages.
+20. [x] Add deterministic existing-project similarity analysis to idea records.
