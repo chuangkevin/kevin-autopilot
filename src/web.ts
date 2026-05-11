@@ -374,7 +374,7 @@ function escapeHtml(value: string): string {
 export function formatTaipeiTime(value: string): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
-  return `${new Intl.DateTimeFormat('zh-TW', {
+  const formatted = new Intl.DateTimeFormat('zh-TW', {
     timeZone: DISPLAY_TIME_ZONE,
     year: 'numeric',
     month: '2-digit',
@@ -383,5 +383,6 @@ export function formatTaipeiTime(value: string): string {
     minute: '2-digit',
     second: '2-digit',
     hour12: false,
-  }).format(date)} GMT+8`
+  }).format(date).replace(/\s+/g, ' ')
+  return `${formatted} GMT+8`
 }
