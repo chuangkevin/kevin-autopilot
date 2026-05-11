@@ -4,6 +4,10 @@ Kevin Autopilot is a planned background agent service that continuously looks
 for useful work, thinks with Kevin's decision model, and turns safe findings into
 bounded tasks for OpenCode or another coding agent.
 
+Its north star is to act like Kevin's product-engineering brain: not a passive
+chatbot, but a proactive system that finds real pain, proposes useful work,
+validates with evidence, and keeps moving projects forward safely.
+
 The first implementation is a read-only Dockerized observer and idea intake
 prototype. It runs consistently on different HomeProject hosts without hard-coded
 application paths.
@@ -25,6 +29,10 @@ The core expectation is continuous observation across Kevin's projects. Autopilo
 should keep watching for possible bugs, regressions, stale docs, failing checks,
 workflow friction, and small improvement opportunities, then maintain a living
 plan of what can be done next.
+
+Autopilot should especially notice repeated manual work, messy data flows,
+half-finished prototypes, missing verification, and places where a small tool or
+automation could create immediate user value.
 
 It should also become an idea handoff surface: Kevin can paste a raw idea, and
 Autopilot turns it into a bounded workflow covering repo creation, deployment

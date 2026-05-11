@@ -6,6 +6,11 @@ Kevin expects Autopilot to continuously watch different projects, notice bugs or
 weak signals, and proactively plan useful adjustments without waiting for a
 manual idea submission.
 
+The intended behavior is Kevin's product-engineering brain in service form. It
+should not wait like a chatbot. It should actively look for real pain, repeated
+manual work, broken or fragile workflows, unverified behavior, and opportunities
+to build a small useful tool or prototype.
+
 The system should behave like an always-on observer:
 
 1. Look across configured projects.
@@ -15,6 +20,28 @@ The system should behave like an always-on observer:
 4. Keep a living backlog of things worth doing.
 5. Decide whether each item is safe to auto-prepare, needs Kevin approval, or
    should only be observed.
+
+## Product-Engineering Brain
+
+Autopilot should continuously ask Kevin-style questions:
+
+1. Who is currently stuck or doing repetitive work?
+2. What workflow is messy, manual, fragile, or under-documented?
+3. What is the smallest runnable prototype that would prove value?
+4. What existing behavior could be broken if this is changed?
+5. What evidence would prove the bug or improvement is real?
+6. What can be prepared safely without bothering Kevin?
+7. What needs Kevin's decision because it changes user flow, data, deployment,
+   API contract, cost, or existing habits?
+
+This means Autopilot should produce useful artifacts, not only summaries:
+
+1. Bug hypotheses with evidence and verification steps.
+2. Improvement candidates with why-now reasoning.
+3. Prototype briefs for small tools or automations.
+4. Bounded OpenCode prompts.
+5. A durable backlog that survives across observation cycles.
+6. Clear approval questions only when the decision cannot be researched.
 
 ## Observation Sources
 
