@@ -209,17 +209,20 @@ function renderPage(
     .version { color: #93a4bd; font-size: 14px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 12px; margin-bottom: 20px; }
     .card, section { min-width: 0; background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.035)); border: 1px solid rgba(148,163,184,0.22); border-radius: 18px; padding: clamp(14px, 4vw, 18px); box-shadow: 0 18px 48px rgba(0,0,0,0.24); }
-    .command-center { border-color: rgba(245,158,11,0.38); background: radial-gradient(circle at top left, rgba(245,158,11,0.18), transparent 34%), linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.035)); }
-    .command-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.75fr); gap: 16px; align-items: start; }
+    .command-center { border-color: rgba(245,158,11,0.5); background: radial-gradient(circle at top left, rgba(245,158,11,0.2), transparent 34%), linear-gradient(180deg, rgba(255,255,255,0.09), rgba(255,255,255,0.035)); }
+    .command-grid, .focus-grid { display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(280px, 0.82fr); gap: 16px; align-items: start; }
     .eyebrow { color: #fbbf24; font-size: 13px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
-    .main-action { margin: 6px 0 10px; font-size: clamp(26px, 6vw, 42px); line-height: 1.08; letter-spacing: -0.05em; }
-    .status-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 10px; margin: 16px 0; }
+    .main-action { margin: 6px 0 10px; font-size: clamp(34px, 8vw, 64px); line-height: 1.02; letter-spacing: -0.07em; }
+    .plain-answer { font-size: clamp(18px, 4vw, 24px); line-height: 1.45; color: #f8fafc; }
+    .status-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 10px; margin: 12px 0 0; }
     .status-item { border: 1px solid rgba(148,163,184,0.16); border-radius: 14px; padding: 10px; background: rgba(8,13,25,0.42); }
-    .status-item strong { display: block; font-size: 22px; margin-top: 4px; }
+    .status-item strong { display: block; font-size: 20px; margin-top: 4px; }
     .primary-card, .side-panel, .detail-block { border: 1px solid rgba(148,163,184,0.18); border-radius: 16px; padding: 14px; background: rgba(15,23,42,0.5); }
-    .primary-card { border-left: 4px solid #f59e0b; }
+    .primary-card { border-left: 5px solid #f59e0b; margin: 16px 0; }
     .side-panel { display: grid; gap: 12px; }
-    .detail-block { margin-top: 10px; }
+    .detail-block { margin: 14px 0; }
+    .only-action { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
+    .debug-note { color: #94a3b8; font-size: 13px; }
     .label { color: #93a4bd; font-size: 13px; }
     .value { font-size: 30px; font-weight: 700; margin-top: 6px; }
     section { margin-bottom: 18px; }
@@ -260,7 +263,7 @@ function renderPage(
     .idea:first-child { border-top: 0; }
     .idea-title { font-weight: 700; overflow-wrap: anywhere; }
     .idea-meta { color: #93a4bd; font-size: 13px; margin-top: 4px; overflow-wrap: anywhere; }
-    @media (max-width: 820px) { header { display: block; } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .command-grid, .agent-board { grid-template-columns: 1fr; } table { font-size: 13px; } }
+    @media (max-width: 820px) { header { display: block; } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .command-grid, .focus-grid, .agent-board { grid-template-columns: 1fr; } table { font-size: 13px; } }
     @media (max-width: 520px) { .grid { grid-template-columns: 1fr 1fr; } .value { font-size: 24px; } a.button, button { min-height: 44px; } }
   </style>
 </head>
@@ -276,38 +279,37 @@ function renderPage(
   </header>
 
   <section class="command-center">
-    <div class="command-grid">
-      <div>
-        <div class="eyebrow">現在先看這裡</div>
-        <h2 class="main-action">${topCandidate ? `先處理：${escapeHtml(topCandidate.title)}` : '這輪先不要硬做'}</h2>
-        <p>${escapeHtml(report.mainAgent.recommendation.reason)}</p>
-        <p class="muted">下一步：${escapeHtml(report.mainAgent.recommendation.nextAction)}</p>
-        <div class="status-strip">
-          <div class="status-item"><span class="label">觀察候選</span><strong>${report.candidates.length}</strong></div>
-          <div class="status-item"><span class="label">疑似 Bug</span><strong>${bugCandidates}</strong></div>
-          <div class="status-item"><span class="label">Dirty repos</span><strong>${dirtyRepos}</strong></div>
-          <div class="status-item"><span class="label">補充</span><strong>${report.supplements.length}</strong></div>
-        </div>
-        ${topCandidate ? renderPrimaryCandidate(topCandidate) : '<div class="primary-card"><strong>沒有明確候選項</strong><div class="muted">目前只保留觀察。你可以在右側補充真實卡點，讓下一輪排序更接近你的意圖。</div></div>'}
-      </div>
+    <div class="eyebrow">今天只看這張</div>
+    <h2 class="main-action">${topCandidate ? '現在重點：做這件' : '現在重點：先不要做'}</h2>
+    <p class="plain-answer">${topCandidate ? escapeHtml(topCandidate.title) : '這輪沒有足夠明確的候選項。先維持觀察，或補充真正卡住的地方。'}</p>
+    <p class="muted">為什麼：${escapeHtml(report.mainAgent.recommendation.reason)}</p>
+    ${topCandidate ? renderPrimaryCandidate(topCandidate) : '<div class="primary-card"><strong>唯一動作</strong><div>如果這個判斷不對，在下方補一句修正下一輪推理。</div></div>'}
+    <div class="focus-grid">
       <aside class="side-panel">
-        <div>
-          <h2>如果判斷不對</h2>
-          <p class="muted">直接補一句給下一輪。它只會寫進 Autopilot 自己的 data，不會改 target repo。</p>
-        </div>
+        <h2>如果不對，只改這裡</h2>
+        <p class="muted">補一句話就好。不要貼 key、token、.env。這只會影響下一輪推理，不會改任何專案。</p>
         <form id="supplement-form">
-          <textarea id="supplement-text" placeholder="例如：這個 dirty repo 是我正在做的，不要當成問題。先優先看 dashboard UX，不要碰部署。"></textarea>
-          <button type="submit">補充給下一輪推理</button>
+          <textarea id="supplement-text" placeholder="例：這個 dirty repo 是我正在做的，不要當成問題。現在先看 dashboard UX。"></textarea>
+          <button type="submit">補充給下一輪</button>
         </form>
         <div id="supplement-result" class="muted"></div>
-        ${report.supplements.length === 0 ? '<p class="muted">目前沒有補充。</p>' : `<div class="agent-stack">${report.supplements.slice(0, 3).map(renderSupplement).join('')}</div>`}
+      </aside>
+      <aside class="side-panel">
+        <h2>目前訊號</h2>
+        <div class="status-strip">
+          <div class="status-item"><span class="label">候選</span><strong>${report.candidates.length}</strong></div>
+          <div class="status-item"><span class="label">疑似 Bug</span><strong>${bugCandidates}</strong></div>
+          <div class="status-item"><span class="label">Dirty</span><strong>${dirtyRepos}</strong></div>
+          <div class="status-item"><span class="label">補充</span><strong>${report.supplements.length}</strong></div>
+        </div>
+        ${report.supplements.length === 0 ? '<p class="debug-note">目前沒有補充。</p>' : `<div class="agent-stack">${report.supplements.slice(0, 2).map(renderSupplement).join('')}</div>`}
       </aside>
     </div>
   </section>
 
-  <section>
-    <h2>細節與證據</h2>
-    <p class="muted">平常只看最上面的決策中心。需要追原因、複製其他 prompt、或檢查狀態時再展開這裡。</p>
+  <details class="detail-block">
+    <summary>除錯/證據/完整清單，不用先看</summary>
+    <p class="muted">只有要追原因、複製其他 prompt、或檢查狀態時才展開。</p>
     <details class="detail-block">
       <summary>Kevin 子人格自問自答</summary>
       <p class="muted">${escapeHtml(report.mainAgent.summary)}</p>
@@ -356,22 +358,22 @@ function renderPage(
       <summary>安全邊界</summary>
       <p class="muted">不讀 secrets、不部署、不 commit、不 push、不修復服務。補充內容會先擋常見 secret-like 字串，寫入也只允許 trusted/private 來源。</p>
     </details>
-  </section>
+  </details>
 
-  <section>
-    <h2>新想法入口</h2>
+  <details class="detail-block">
+    <summary>丟一個新想法，不是現在重點</summary>
     <p class="muted">AI thinking: ${aiEnabled ? 'enabled via ai-core' : 'disabled / fallback'}。送出後只會收件、分類、列出下一步，不會開 repo、不會部署。</p>
     <form id="idea-form">
       <textarea id="idea-text" placeholder="把腦中的想法直接貼在這裡，例如：我想做一個每天自動幫我整理新專案想法、判斷要不要開 repo、部署在哪裡的工具..."></textarea>
       <button type="submit">交給 Autopilot 思考</button>
     </form>
     <div id="idea-result" class="muted"></div>
-  </section>
+  </details>
 
-  <section>
-    <h2>最近想法</h2>
+  <details class="detail-block">
+    <summary>最近想法，不是現在重點</summary>
     ${ideas.length === 0 ? '<p class="muted">尚未收到想法。</p>' : ideas.map(renderIdea).join('')}
-  </section>
+  </details>
 
 </main>
 <script>
@@ -416,9 +418,9 @@ function renderPage(
 
   document.querySelectorAll('.copy-prompt').forEach((button) => {
     button.addEventListener('click', async () => {
-      const details = button.closest('details');
-      const prompt = details ? details.querySelector('pre')?.textContent || '' : '';
-      const status = details ? details.querySelector('.copy-status') : null;
+      const container = button.closest('.prompt-block') || button.closest('details');
+      const prompt = container ? container.querySelector('pre')?.textContent || '' : '';
+      const status = container ? container.querySelector('.copy-status') : null;
       try {
         if (navigator.clipboard && window.isSecureContext) {
           await navigator.clipboard.writeText(prompt);
@@ -534,10 +536,13 @@ function renderKeySection(keyStatus: KeyStatusSummary): string {
 
 function renderPrimaryCandidate(candidate: ObservationReport['candidates'][number]): string {
   return `<div class="primary-card">
-    <strong>本輪建議候選：${escapeHtml(candidate.title)}</strong>
-    <div class="muted">${escapeHtml(candidate.category)} · ${escapeHtml(candidate.confidence)} · ${escapeHtml(candidate.sourceName)}${candidate.approvalRequired ? ' · 需要 approval' : ''}</div>
+    <strong>唯一主要操作</strong>
     <div>${escapeHtml(candidate.suggestedNextStep)}</div>
-    <details open><summary>OpenCode prompt</summary><button type="button" class="secondary copy-prompt">複製 Prompt</button><span class="copy-status" aria-live="polite"></span><pre>${escapeHtml(candidate.boundedPrompt)}</pre></details>
+    <div class="muted">來源：${escapeHtml(candidate.sourceName)} · ${escapeHtml(candidate.category)} · ${escapeHtml(candidate.confidence)}${candidate.approvalRequired ? ' · 需要 approval' : ''}</div>
+    <div class="prompt-block">
+      <div class="only-action"><button type="button" class="copy-prompt">複製這個 Prompt</button><span class="copy-status" aria-live="polite"></span><span class="debug-note">複製後貼到 OpenCode。Autopilot 自己不會動 repo。</span></div>
+      <details><summary>查看 prompt 內容</summary><pre>${escapeHtml(candidate.boundedPrompt)}</pre></details>
+    </div>
   </div>`
 }
 

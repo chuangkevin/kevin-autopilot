@@ -135,6 +135,12 @@ where to correct the next observation. Self-Q&A, backlog, service, and repositor
 tables move under `細節與證據` so the page has a clear main flow instead of many
 competing sections.
 
+Version 0.5.11 reduces the dashboard further into a single-focus card. The first
+screen now says only whether to act, what the one recommended item is, and the
+one primary button to copy its prompt. New ideas, self-Q&A, backlog, service, and
+repository details are secondary folded panels so they no longer compete with the
+main recommendation.
+
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.
 
