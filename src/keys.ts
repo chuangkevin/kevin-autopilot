@@ -1,16 +1,17 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { existsSync, mkdirSync, readFileSync, unlinkSync } from 'node:fs'
+import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { GeminiClient, KeyPool } from '@kevinsisi/ai-core'
 import type { ApiKey, StorageAdapter } from '@kevinsisi/ai-core'
 import type { AutopilotConfig, KeyImportSummary, KeyStatusSummary } from './types.js'
 
-const KEY_STORE_VERSION = 1
 const GEMINI_KEY_RE = /^AIzaSy[0-9A-Za-z_-]{30,40}$/
 const PLACEHOLDER_RE = /^(your[_-]?key[_-]?here|xxx+|test|example|changeme)$/i
 let keyStoreQueue = Promise.resolve()
+let migratedLegacyStores = new Set<string>()
 
 interface PersistedKeyStore {
-  version: number
   nextId: number
   keys: ApiKey[]
 }
@@ -149,7 +150,6 @@ export async function importGeminiKeys(
     }
 
     if (replace) {
-      currentStore.version = store.version
       currentStore.nextId = store.nextId
       currentStore.keys = store.keys
     }
@@ -195,7 +195,6 @@ async function validateGeminiKey(config: AutopilotConfig, key: string): Promise<
 
 export async function clearStoredGeminiKeys(config: AutopilotConfig): Promise<KeyStatusSummary> {
   await transactKeyStore(config, (store) => {
-    store.version = KEY_STORE_VERSION
     store.nextId = 1
     store.keys = []
     return true
@@ -241,26 +240,39 @@ function getEnvGeminiKeys(): string[] {
 }
 
 async function readKeyStore(config: AutopilotConfig): Promise<PersistedKeyStore> {
+  await migrateLegacyKeyStore(config)
+  const db = openKeyDatabase(config)
   try {
-    const parsed = JSON.parse(await readFile(keyStorePath(config), 'utf8')) as Partial<PersistedKeyStore>
-    if (!Array.isArray(parsed.keys)) return emptyKeyStore()
-    return {
-      version: KEY_STORE_VERSION,
-      nextId: typeof parsed.nextId === 'number' && parsed.nextId > 0 ? parsed.nextId : nextIdFromKeys(parsed.keys),
-      keys: parsed.keys.filter(isApiKey),
-    }
-  } catch (error) {
-    if (error instanceof Error && (error as NodeJS.ErrnoException).code === 'ENOENT') return emptyKeyStore()
-    throw error
+    const rows = db.prepare('SELECT id, key, is_active, cooldown_until, lease_until, lease_token, usage_count FROM gemini_keys ORDER BY id').all()
+    const keys = rows.map(rowToApiKey).filter(isApiKey)
+    return { nextId: nextIdFromKeys(keys), keys }
+  } finally {
+    db.close()
   }
 }
 
 async function writeKeyStore(config: AutopilotConfig, store: PersistedKeyStore): Promise<void> {
-  const path = keyStorePath(config)
-  await mkdir(dirname(path), { recursive: true })
-  const tempPath = `${path}.tmp-${process.pid}-${Date.now()}`
-  await writeFile(tempPath, `${JSON.stringify(store, null, 2)}\n`, 'utf8')
-  await rename(tempPath, path)
+  await mkdir(dirname(keyDatabasePath(config)), { recursive: true })
+  const db = openKeyDatabase(config)
+  try {
+    db.exec('BEGIN IMMEDIATE')
+    db.exec('DELETE FROM gemini_keys')
+    const insert = db.prepare(`
+      INSERT INTO gemini_keys (id, key, is_active, cooldown_until, lease_until, lease_token, usage_count)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `)
+    for (const key of store.keys) {
+      insert.run(key.id, key.key, key.isActive ? 1 : 0, key.cooldownUntil, key.leaseUntil, key.leaseToken, key.usageCount)
+    }
+    db.exec('COMMIT')
+  } catch (error) {
+    try {
+      db.exec('ROLLBACK')
+    } catch {}
+    throw error
+  } finally {
+    db.close()
+  }
 }
 
 async function updateLeasedKey(
@@ -311,11 +323,15 @@ function makeApiKey(id: number, key: string): ApiKey {
 }
 
 function emptyKeyStore(): PersistedKeyStore {
-  return { version: KEY_STORE_VERSION, nextId: 1, keys: [] }
+  return { nextId: 1, keys: [] }
 }
 
 function nextIdFromKeys(keys: ApiKey[]): number {
-  return Math.max(0, ...keys.map((key) => key.id).filter((id) => Number.isInteger(id))) + 1
+  return nextIdFromIds(keys.map((key) => key.id))
+}
+
+function nextIdFromIds(ids: number[]): number {
+  return Math.max(0, ...ids.filter((id) => Number.isInteger(id))) + 1
 }
 
 function isApiKey(value: unknown): value is ApiKey {
@@ -323,8 +339,76 @@ function isApiKey(value: unknown): value is ApiKey {
   return typeof key.id === 'number' && typeof key.key === 'string' && GEMINI_KEY_RE.test(key.key)
 }
 
-function keyStorePath(config: AutopilotConfig): string {
+function legacyKeyStorePath(config: AutopilotConfig): string {
   return join(config.dataDir, 'keys.json')
+}
+
+function keyDatabasePath(config: AutopilotConfig): string {
+  return join(config.dataDir, 'autopilot.db')
+}
+
+function openKeyDatabase(config: AutopilotConfig): DatabaseSync {
+  mkdirSync(dirname(keyDatabasePath(config)), { recursive: true })
+  const db = new DatabaseSync(keyDatabasePath(config))
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gemini_keys (
+      id INTEGER PRIMARY KEY,
+      key TEXT NOT NULL UNIQUE,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      cooldown_until INTEGER NOT NULL DEFAULT 0,
+      lease_until INTEGER NOT NULL DEFAULT 0,
+      lease_token TEXT,
+      usage_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `)
+  return db
+}
+
+async function migrateLegacyKeyStore(config: AutopilotConfig): Promise<void> {
+  const legacyPath = legacyKeyStorePath(config)
+  if (migratedLegacyStores.has(legacyPath) || !existsSync(legacyPath)) return
+  const db = openKeyDatabase(config)
+  try {
+    const parsed = JSON.parse(readFileSync(legacyPath, 'utf8')) as Partial<{ keys: unknown[] }>
+    const keys = Array.isArray(parsed.keys) ? parsed.keys.filter(isApiKey) : []
+    const existingKeys = new Set(db.prepare('SELECT key FROM gemini_keys').all().map((row) => String((row as Record<string, unknown>).key)))
+    let nextId = nextIdFromIds(db.prepare('SELECT id FROM gemini_keys').all().map((row) => Number((row as Record<string, unknown>).id)))
+    const insert = db.prepare(`
+      INSERT INTO gemini_keys (id, key, is_active, cooldown_until, lease_until, lease_token, usage_count)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `)
+    db.exec('BEGIN IMMEDIATE')
+    for (const key of keys) {
+      if (existingKeys.has(key.key)) continue
+      insert.run(nextId++, key.key, key.isActive ? 1 : 0, key.cooldownUntil, key.leaseUntil, key.leaseToken, key.usageCount)
+      existingKeys.add(key.key)
+    }
+    db.exec('COMMIT')
+    unlinkSync(legacyPath)
+    migratedLegacyStores.add(legacyPath)
+  } catch (error) {
+    try {
+      db.exec('ROLLBACK')
+    } catch {}
+    throw error
+  } finally {
+    db.close()
+  }
+}
+
+function rowToApiKey(row: unknown): ApiKey {
+  const value = row as Record<string, unknown>
+  return {
+    id: Number(value.id),
+    key: String(value.key),
+    isActive: Boolean(value.is_active),
+    cooldownUntil: Number(value.cooldown_until),
+    leaseUntil: Number(value.lease_until),
+    leaseToken: typeof value.lease_token === 'string' ? value.lease_token : null,
+    usageCount: Number(value.usage_count),
+  }
 }
 
 function maskKeySuffix(key: string): string {

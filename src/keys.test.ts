@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { clearStoredGeminiKeys, FileKeyStorageAdapter, getKeyStatus, importGeminiKeys, parseGeminiKeys } from './keys.js'
@@ -30,8 +31,46 @@ test('importGeminiKeys stores keys without exposing full values in status', asyn
     assert.equal(status.totalAvailable, 2)
     assert.ok(!JSON.stringify(status).includes(KEY_ONE))
 
-    const rawStore = await readFile(join(dataDir, 'keys.json'), 'utf8')
-    assert.ok(rawStore.includes(KEY_ONE))
+    const rawStore = await readFile(join(dataDir, 'autopilot.db'))
+    assert.ok(rawStore.includes(Buffer.from(KEY_ONE)))
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('importGeminiKeys migrates legacy keys.json into sqlite db', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-keys-'))
+  const config = makeConfig(dataDir)
+  try {
+    await writeFile(
+      join(dataDir, 'keys.json'),
+      `${JSON.stringify({ nextId: 2, keys: [{ id: 1, key: KEY_ONE, isActive: true, cooldownUntil: 0, leaseUntil: 0, leaseToken: null, usageCount: 0 }] })}\n`,
+      'utf8',
+    )
+    const status = await getKeyStatus(config)
+    assert.equal(status.storedCount, 1)
+    assert.deepEqual(status.storedSuffixes, ['...AAAA'])
+    assert.equal(existsSync(join(dataDir, 'keys.json')), false)
+    assert.equal(existsSync(join(dataDir, 'autopilot.db')), true)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('legacy migration preserves keys when ids collide with sqlite rows', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-keys-'))
+  const config = makeConfig(dataDir)
+  try {
+    await importGeminiKeys(config, KEY_ONE, false)
+    await writeFile(
+      join(dataDir, 'keys.json'),
+      `${JSON.stringify({ nextId: 2, keys: [{ id: 1, key: KEY_TWO, isActive: true, cooldownUntil: 0, leaseUntil: 0, leaseToken: null, usageCount: 0 }] })}\n`,
+      'utf8',
+    )
+    const status = await getKeyStatus(config)
+    assert.equal(status.storedCount, 2)
+    assert.deepEqual(status.storedSuffixes, ['...AAAA', '...BBBB'])
+    assert.equal(existsSync(join(dataDir, 'keys.json')), false)
   } finally {
     await rm(dataDir, { recursive: true, force: true })
   }

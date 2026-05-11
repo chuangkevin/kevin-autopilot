@@ -4,39 +4,18 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createWebServer, getKeyManagementAccessForValues, isKeyManagementAllowed, isLoopbackAddress } from './web.js'
+import { createWebServer, isTrustedSettingsAddress } from './web.js'
 import type { AutopilotConfig } from './types.js'
 
 const GEMINI_KEY = `AIzaSy${'C'.repeat(33)}`
 
-test('isLoopbackAddress rejects non-loopback clients for key writes', () => {
-  assert.equal(isLoopbackAddress('127.0.0.1'), true)
-  assert.equal(isLoopbackAddress('::1'), true)
-  assert.equal(isLoopbackAddress('::ffff:127.0.0.1'), true)
-  assert.equal(isLoopbackAddress('192.168.1.10'), false)
-  assert.equal(isLoopbackAddress('10.0.0.8'), false)
-})
-
-test('isKeyManagementAllowed accepts configured remote admin token', () => {
-  assert.equal(isKeyManagementAllowed('192.168.1.10', undefined, 'long-enough-token'), false)
-  assert.equal(isKeyManagementAllowed('192.168.1.10', 'wrong-token', 'long-enough-token'), false)
-  assert.equal(isKeyManagementAllowed('192.168.1.10', 'long-enough-token', 'long-enough-token'), true)
-  assert.equal(isKeyManagementAllowed('192.168.1.10', 'short', 'short'), false)
-})
-
-test('getKeyManagementAccessForValues reports remote token availability and denial', () => {
-  assert.deepEqual(getKeyManagementAccessForValues('192.168.1.10', undefined, undefined), {
-    allowed: false,
-    remoteAuthAvailable: false,
-  })
-  assert.deepEqual(getKeyManagementAccessForValues('192.168.1.10', 'wrong-token', 'long-enough-token'), {
-    allowed: false,
-    remoteAuthAvailable: true,
-  })
-  assert.deepEqual(getKeyManagementAccessForValues('192.168.1.10', 'long-enough-token', 'long-enough-token'), {
-    allowed: true,
-    remoteAuthAvailable: true,
-  })
+test('isTrustedSettingsAddress allows private and Tailscale networks only', () => {
+  assert.equal(isTrustedSettingsAddress('127.0.0.1'), true)
+  assert.equal(isTrustedSettingsAddress('::ffff:192.168.1.5'), true)
+  assert.equal(isTrustedSettingsAddress('10.0.0.8'), true)
+  assert.equal(isTrustedSettingsAddress('172.20.0.2'), true)
+  assert.equal(isTrustedSettingsAddress('100.83.112.20'), true)
+  assert.equal(isTrustedSettingsAddress('8.8.8.8'), false)
 })
 
 test('web server exposes health and idea intake', async () => {
@@ -64,6 +43,14 @@ test('web server exposes health and idea intake', async () => {
     const page = await fetch(`${baseUrl}/`)
     assert.equal(page.status, 200)
     assert.equal(page.headers.get('cache-control'), 'no-store, max-age=0')
+    assert.equal((await page.text()).includes('設定 Gemini Keys'), true)
+
+    const settings = await fetch(`${baseUrl}/settings`)
+    assert.equal(settings.status, 200)
+    const settingsBody = await settings.text()
+    assert.equal(settingsBody.includes('Autopilot Settings'), true)
+    assert.equal(settingsBody.includes('data/autopilot.db'), true)
+    assert.equal(settingsBody.includes('key-admin-token'), false)
 
     const idea = await fetch(`${baseUrl}/api/ideas`, {
       method: 'POST',

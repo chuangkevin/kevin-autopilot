@@ -62,7 +62,8 @@ still does not execute implementation automatically.
 Version 0.3 adds app-owned Gemini key import and records the first read-only
 superpowers / multi-agent handoff summary for each accepted idea. Kevin can paste
 keys through the dashboard; Autopilot stores them only under ignored local
-`data/keys.json` and shows only masked suffixes in API/UI responses.
+`data/keys.json` and shows only masked suffixes in API/UI responses. Version
+0.5.3 migrates this store into ignored SQLite DB `data/autopilot.db`.
 
 Version 0.4 adds kevinhome CI/CD and private Tailnet domain routing at
 `https://kevin.sisihome.org`. The deployed dashboard runs in Docker Web mode on
@@ -78,10 +79,10 @@ deploying, or modifying target projects.
 Version 0.5.1 adds no-store cache headers to the dashboard and JSON APIs so the
 deployed page refreshes to the current application version immediately.
 
-Version 0.5.2 adds token-protected remote Gemini key management for the private
-domain. Loopback clients can still manage keys directly; remote clients only see
-the import UI when `AUTOPILOT_KEY_IMPORT_TOKEN` is configured, and writes must
-send that token in `x-autopilot-admin-token`.
+Version 0.5.3 moves Gemini key management to a dedicated `/settings` page and
+stores imported keys in Autopilot's SQLite DB at `data/autopilot.db`. No admin
+token input is required on the page; API/UI responses still expose only masked
+suffixes.
 
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.
@@ -173,10 +174,9 @@ Runtime target:
 - Compose: `docker-compose.kevinhome.yml`
 - Data: ignored local `data/`
 
-Key management writes are loopback-only unless `AUTOPILOT_KEY_IMPORT_TOKEN` is
-set in the deployment environment. When configured, the routed domain displays a
-password field and sends the token as `x-autopilot-admin-token`; Autopilot stores
-only Gemini keys under ignored `data/keys.json`, never the admin token.
+Key management lives at `/settings`. Imported Gemini keys are stored in ignored
+SQLite DB `data/autopilot.db`; legacy `data/keys.json` is migrated into the DB
+on first read. The dashboard and API only show counts and masked suffixes.
 
 ## Run Observer Locally
 
