@@ -85,7 +85,33 @@ export interface ObservationReport {
   ruleSources: RuleSourceObservation[]
   repositories: RepositoryObservation[]
   services: ServiceObservation[]
+  candidates: ObservationCandidate[]
   safety: SafetySummary
+}
+
+export type ObservationCandidateCategory =
+  | 'bug_watch'
+  | 'bug_fix_candidate'
+  | 'improvement_candidate'
+  | 'prototype_candidate'
+  | 'needs_kevin_decision'
+  | 'blocked'
+
+export type ObservationCandidateConfidence = 'suspected' | 'likely' | 'confirmed'
+
+export interface ObservationCandidate {
+  id: string
+  category: ObservationCandidateCategory
+  confidence: ObservationCandidateConfidence
+  title: string
+  sourceType: 'rule_source' | 'repository' | 'service'
+  sourceName: string
+  evidence: string[]
+  expectedBehavior: string
+  actualBehavior: string
+  suggestedNextStep: string
+  approvalRequired: boolean
+  risk: 'low' | 'medium' | 'high'
 }
 
 export interface SafetySummary {

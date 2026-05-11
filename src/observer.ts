@@ -6,6 +6,7 @@ import { APP_VERSION } from './version.js'
 import type {
   AutopilotConfig,
   ObservationReport,
+  ObservationCandidate,
   RepositoryObservation,
   RuleSourceObservation,
   ServiceObservation,
@@ -27,6 +28,7 @@ export async function observe(config: AutopilotConfig): Promise<ObservationRepor
     ruleSources,
     repositories,
     services,
+    candidates: createObservationCandidates(ruleSources, repositories, services),
     safety: {
       mode: 'read-only',
       skippedSecretPatterns: SKIPPED_SECRET_PATTERNS,
@@ -34,6 +36,143 @@ export async function observe(config: AutopilotConfig): Promise<ObservationRepor
       deploymentActions: 'disabled',
     },
   }
+}
+
+function createObservationCandidates(
+  ruleSources: RuleSourceObservation[],
+  repositories: RepositoryObservation[],
+  services: ServiceObservation[],
+): ObservationCandidate[] {
+  const candidates: ObservationCandidate[] = []
+
+  for (const source of ruleSources) {
+    if (!source.exists) {
+      candidates.push({
+        id: candidateId('rule_source', source.name, 'missing-source'),
+        category: source.required ? 'needs_kevin_decision' : 'improvement_candidate',
+        confidence: 'likely',
+        title: `${source.name} rule source is missing`,
+        sourceType: 'rule_source',
+        sourceName: source.name,
+        evidence: [`Configured path does not exist: ${source.path}`],
+        expectedBehavior: 'Required rule sources should be available before Autopilot makes work decisions.',
+        actualBehavior: 'The configured rule source path could not be found.',
+        suggestedNextStep: 'Confirm the mount/path for this environment before relying on decisions from this run.',
+        approvalRequired: source.required,
+        risk: source.required ? 'high' : 'medium',
+      })
+      continue
+    }
+
+    if (source.missingFiles.length > 0) {
+      candidates.push({
+        id: candidateId('rule_source', source.name, 'missing-files'),
+        category: 'improvement_candidate',
+        confidence: 'likely',
+        title: `${source.name} has missing rule files`,
+        sourceType: 'rule_source',
+        sourceName: source.name,
+        evidence: [`Missing files: ${source.missingFiles.join(', ')}`],
+        expectedBehavior: 'Configured rule entry files should be loadable so early constraints are not forgotten.',
+        actualBehavior: 'One or more configured rule entry files could not be loaded or were skipped as secret-like paths.',
+        suggestedNextStep: 'Update config entry files or restore the missing non-secret rule files.',
+        approvalRequired: false,
+        risk: 'low',
+      })
+    }
+  }
+
+  for (const repo of repositories) {
+    if (!repo.exists) {
+      candidates.push({
+        id: candidateId('repository', repo.name, 'missing-repo'),
+        category: 'improvement_candidate',
+        confidence: 'likely',
+        title: `${repo.name} repository path is missing`,
+        sourceType: 'repository',
+        sourceName: repo.name,
+        evidence: [`Configured path does not exist: ${repo.path}`],
+        expectedBehavior: 'Configured repositories should be mounted/readable for continuous observation.',
+        actualBehavior: 'Autopilot could not find the configured repository path.',
+        suggestedNextStep: 'Fix the repository mount/path or remove it from observation config.',
+        approvalRequired: false,
+        risk: 'low',
+      })
+      continue
+    }
+
+    if (repo.error) {
+      candidates.push({
+        id: candidateId('repository', repo.name, 'git-error'),
+        category: 'bug_watch',
+        confidence: 'suspected',
+        title: `${repo.name} git observation failed`,
+        sourceType: 'repository',
+        sourceName: repo.name,
+        evidence: [repo.error],
+        expectedBehavior: 'Autopilot should read safe git metadata from configured repositories.',
+        actualBehavior: 'Git metadata collection failed for this repository.',
+        suggestedNextStep: 'Run the smallest git status check in that repo and inspect path/permission issues.',
+        approvalRequired: false,
+        risk: 'low',
+      })
+    } else if (repo.dirty) {
+      candidates.push({
+        id: candidateId('repository', repo.name, 'dirty-worktree'),
+        category: 'improvement_candidate',
+        confidence: 'suspected',
+        title: `${repo.name} has uncommitted work`,
+        sourceType: 'repository',
+        sourceName: repo.name,
+        evidence: [`Branch: ${repo.branch ?? 'unknown'}`, 'git status --short returned changes'],
+        expectedBehavior: 'Active work should be converged, documented, committed, and pushed when safe.',
+        actualBehavior: 'The repository has uncommitted or untracked changes.',
+        suggestedNextStep: 'Review whether the dirty work is active, stale, or ready for verification/commit.',
+        approvalRequired: false,
+        risk: 'low',
+      })
+    }
+  }
+
+  for (const service of services) {
+    if (service.healthStatus === 'failed') {
+      candidates.push({
+        id: candidateId('service', service.name, 'health-failed'),
+        category: 'bug_watch',
+        confidence: 'likely',
+        title: `${service.name} health check failed`,
+        sourceType: 'service',
+        sourceName: service.name,
+        evidence: [service.healthDetail ?? 'Health check failed without detail'],
+        expectedBehavior: 'Explicitly enabled health checks should return a healthy response.',
+        actualBehavior: `Health status is failed for ${service.domain ?? service.name}.`,
+        suggestedNextStep: 'Verify the endpoint from the target network and inspect the owning repo/service logs if approved.',
+        approvalRequired: true,
+        risk: 'medium',
+      })
+    } else if (service.healthStatus === 'not_configured') {
+      candidates.push({
+        id: candidateId('service', service.name, 'health-not-configured'),
+        category: 'improvement_candidate',
+        confidence: 'suspected',
+        title: `${service.name} has no health policy`,
+        sourceType: 'service',
+        sourceName: service.name,
+        evidence: ['No healthCheck config was provided'],
+        expectedBehavior: 'Important services should have an explicit health observation policy.',
+        actualBehavior: 'Autopilot cannot tell whether this service should be checked or intentionally skipped.',
+        suggestedNextStep: 'Decide whether to disable health checks explicitly or add an approved read-only health endpoint.',
+        approvalRequired: false,
+        risk: 'low',
+      })
+    }
+  }
+
+  return candidates
+}
+
+function candidateId(sourceType: string, sourceName: string, reason: string): string {
+  return `${sourceType}-${sourceName}-${reason}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 }
 
 export async function writeReports(report: ObservationReport, dataDir: string): Promise<{ jsonPath: string; markdownPath: string }> {
@@ -189,6 +328,17 @@ function renderMarkdown(report: ObservationReport): string {
     ...report.services.map(
       (service) =>
         `- ${service.name}: host=${service.host ?? 'unknown'}, domain=${service.domain ?? 'unknown'}, port=${service.port ?? 'unknown'}, health=${service.healthStatus}`,
+    ),
+    '',
+    '## Observation Backlog',
+    '',
+    ...(
+      report.candidates.length === 0
+        ? ['- No candidates generated from the current read-only signals.']
+        : report.candidates.map(
+            (candidate) =>
+              `- ${candidate.category} / ${candidate.confidence}: ${candidate.title} (${candidate.sourceName})`,
+          )
     ),
     '',
     '## Not Done',

@@ -104,6 +104,11 @@ mobile layout so tables and long idea text no longer push the page sideways.
 Version 0.5.5 displays dashboard/settings timestamps in GMT+8 / Asia/Taipei and
 sets the kevinhome container timezone to `Asia/Taipei`.
 
+Version 0.5.6 adds a read-only Observation Backlog to the report and dashboard.
+It turns rule-source, repository, and service signals into categorized candidates
+such as `bug_watch`, `improvement_candidate`, and `needs_kevin_decision` with
+evidence and suggested next steps.
+
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.
 

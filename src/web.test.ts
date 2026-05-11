@@ -47,7 +47,9 @@ test('web server exposes health and idea intake', async () => {
     const page = await fetch(`${baseUrl}/`)
     assert.equal(page.status, 200)
     assert.equal(page.headers.get('cache-control'), 'no-store, max-age=0')
-    assert.equal((await page.text()).includes('設定 Gemini Keys'), true)
+    const pageBody = await page.text()
+    assert.equal(pageBody.includes('設定 Gemini Keys'), true)
+    assert.equal(pageBody.includes('Observation Backlog'), true)
 
     const settings = await fetch(`${baseUrl}/settings`)
     assert.equal(settings.status, 200)

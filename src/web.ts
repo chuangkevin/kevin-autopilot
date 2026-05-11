@@ -148,6 +148,7 @@ function renderPage(
 ): string {
   const dirtyRepos = report.repositories.filter((repo) => repo.dirty).length
   const missingRuleFiles = report.ruleSources.reduce((sum, source) => sum + source.missingFiles.length, 0)
+  const bugCandidates = report.candidates.filter((candidate) => candidate.category === 'bug_watch' || candidate.category === 'bug_fix_candidate').length
 
   return `<!doctype html>
 <html lang="zh-Hant">
@@ -207,6 +208,8 @@ function renderPage(
     <div class="card"><div class="label">Repos</div><div class="value">${report.repositories.length}</div></div>
     <div class="card"><div class="label">Dirty repos</div><div class="value">${dirtyRepos}</div></div>
     <div class="card"><div class="label">缺少規則檔</div><div class="value">${missingRuleFiles}</div></div>
+    <div class="card"><div class="label">觀察候選</div><div class="value">${report.candidates.length}</div></div>
+    <div class="card"><div class="label">疑似 Bug</div><div class="value">${bugCandidates}</div></div>
   </div>
 
   <section>
@@ -222,6 +225,13 @@ function renderPage(
   <section>
     <h2>最近想法</h2>
     ${ideas.length === 0 ? '<p class="muted">尚未收到想法。</p>' : ideas.map(renderIdea).join('')}
+  </section>
+
+  <section>
+    <h2>Observation Backlog</h2>
+    ${report.candidates.length === 0 ? '<p class="muted">目前沒有從 read-only signals 產生候選項。</p>' : `<div class="table-scroll"><table><thead><tr><th>類型</th><th>信心</th><th>來源</th><th>候選項</th><th>下一步</th><th>Approval</th></tr></thead><tbody>
+      ${report.candidates.map((candidate) => `<tr><td><span class="pill">${escapeHtml(candidate.category)}</span></td><td>${escapeHtml(candidate.confidence)}</td><td>${escapeHtml(candidate.sourceName)}</td><td>${escapeHtml(candidate.title)}<div class="muted">${escapeHtml(candidate.evidence[0] ?? '')}</div></td><td>${escapeHtml(candidate.suggestedNextStep)}</td><td>${candidate.approvalRequired ? '<span class="pill warn">需要</span>' : '<span class="pill ok">不需要</span>'}</td></tr>`).join('')}
+    </tbody></table></div>`}
   </section>
 
   <section>

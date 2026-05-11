@@ -39,10 +39,43 @@ test('observe records rule source provenance and disabled service checks', async
     assert.equal(report.ruleSources[0]?.loadedFiles.length, 1)
     assert.deepEqual(report.ruleSources[0]?.missingFiles, ['.env'])
     assert.equal(report.services[0]?.healthStatus, 'disabled')
+    assert.equal(report.candidates.some((candidate) => candidate.category === 'improvement_candidate'), true)
 
     const written = await writeReports(report, data)
     const markdown = await readFile(written.markdownPath, 'utf8')
     assert.match(markdown, /Kevin Autopilot Observation Report/)
+    assert.match(markdown, /Observation Backlog/)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('observe creates backlog candidates from repo and service signals', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'kevin-autopilot-'))
+  try {
+    const data = join(root, 'data')
+    const config: AutopilotConfig = {
+      environment: 'test',
+      dataDir: data,
+      ruleSources: [],
+      repositories: [
+        {
+          name: 'missing-repo',
+          path: join(root, 'missing'),
+        },
+      ],
+      services: [
+        {
+          name: 'Broken Service',
+          source: 'test',
+          healthCheck: { enabled: true, url: 'http://127.0.0.1:1/health', timeoutMs: 50 },
+        },
+      ],
+    }
+
+    const report = await observe(config)
+    assert.equal(report.candidates.some((candidate) => candidate.category === 'improvement_candidate' && candidate.sourceName === 'missing-repo'), true)
+    assert.equal(report.candidates.some((candidate) => candidate.category === 'bug_watch' && candidate.sourceName === 'Broken Service'), true)
   } finally {
     await rm(root, { recursive: true, force: true })
   }
