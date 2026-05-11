@@ -21,6 +21,11 @@ Build an AI system that can proactively:
 4. Produce bounded OpenCode prompts for safe implementation.
 5. Verify, commit, and push completed low-risk changes when allowed.
 
+The core expectation is continuous observation across Kevin's projects. Autopilot
+should keep watching for possible bugs, regressions, stale docs, failing checks,
+workflow friction, and small improvement opportunities, then maintain a living
+plan of what can be done next.
+
 It should also become an idea handoff surface: Kevin can paste a raw idea, and
 Autopilot turns it into a bounded workflow covering repo creation, deployment
 target selection, architecture, OpenSpec, implementation prompts, verification,
@@ -93,6 +98,11 @@ sets the kevinhome container timezone to `Asia/Taipei`.
 
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.
+
+Version 0.6 should also introduce continuous multi-project observation as a
+first-class workflow: suspected bugs, likely bugs, improvement candidates,
+prototype candidates, and items that need Kevin's decision should be shown as a
+durable planning backlog rather than only as one-off reports.
 
 ## Non-Goals For v0.1
 

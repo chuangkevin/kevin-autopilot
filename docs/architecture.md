@@ -9,6 +9,9 @@ Kevin Autopilot
 ├─ Rule Source Resolver
 ├─ Context Collector
 ├─ Service Observer
+├─ Project Watcher
+├─ Bug Signal Analyzer
+├─ Improvement Planner
 ├─ Persona Loader
 ├─ Thinking Engine
 ├─ AI Core Adapter
@@ -88,6 +91,33 @@ Forbidden observation inputs in v0.1:
 3. Secret paths.
 4. Container environment variables.
 5. Destructive or mutating service commands.
+
+### Project Watcher
+
+Continuously scans configured repositories and services for safe signals that
+may indicate bugs, regressions, stale docs, or useful next work. It should run on
+manual demand first, then on a schedule with per-project timeouts and budgets.
+
+The watcher should not only react to Kevin's pasted ideas. It should maintain a
+living backlog of observed candidates across projects.
+
+### Bug Signal Analyzer
+
+Turns observation signals into bug candidates with confidence levels:
+
+1. `suspected`: weak signal that needs more evidence.
+2. `likely`: repeated failure, failed check, or clear docs/runtime mismatch.
+3. `confirmed`: reproducible failure or trusted check evidence.
+
+Bug candidates must include symptom, evidence source, affected repo/service,
+expected behavior, actual behavior, and the smallest verification step.
+
+### Improvement Planner
+
+Finds non-bug work worth planning, such as docs drift, missing verification,
+hard-coded paths, workflow friction, untested behavior, or prototype hardening.
+It should score candidates using Kevin's priorities and classify whether the work
+can be auto-prepared, needs approval, should only be observed, or is blocked.
 
 ### Persona Loader
 
