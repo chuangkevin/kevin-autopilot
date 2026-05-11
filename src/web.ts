@@ -188,6 +188,9 @@ function renderPage(
   const dirtyRepos = report.repositories.filter((repo) => repo.dirty).length
   const missingRuleFiles = report.ruleSources.reduce((sum, source) => sum + source.missingFiles.length, 0)
   const bugCandidates = report.candidates.filter((candidate) => candidate.category === 'bug_watch' || candidate.category === 'bug_fix_candidate').length
+  const topCandidate = report.mainAgent.recommendation.candidateId
+    ? report.candidates.find((candidate) => candidate.id === report.mainAgent.recommendation.candidateId)
+    : undefined
 
   return `<!doctype html>
 <html lang="zh-Hant">
@@ -206,6 +209,17 @@ function renderPage(
     .version { color: #93a4bd; font-size: 14px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 12px; margin-bottom: 20px; }
     .card, section { min-width: 0; background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.035)); border: 1px solid rgba(148,163,184,0.22); border-radius: 18px; padding: clamp(14px, 4vw, 18px); box-shadow: 0 18px 48px rgba(0,0,0,0.24); }
+    .command-center { border-color: rgba(245,158,11,0.38); background: radial-gradient(circle at top left, rgba(245,158,11,0.18), transparent 34%), linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.035)); }
+    .command-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.75fr); gap: 16px; align-items: start; }
+    .eyebrow { color: #fbbf24; font-size: 13px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+    .main-action { margin: 6px 0 10px; font-size: clamp(26px, 6vw, 42px); line-height: 1.08; letter-spacing: -0.05em; }
+    .status-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 10px; margin: 16px 0; }
+    .status-item { border: 1px solid rgba(148,163,184,0.16); border-radius: 14px; padding: 10px; background: rgba(8,13,25,0.42); }
+    .status-item strong { display: block; font-size: 22px; margin-top: 4px; }
+    .primary-card, .side-panel, .detail-block { border: 1px solid rgba(148,163,184,0.18); border-radius: 16px; padding: 14px; background: rgba(15,23,42,0.5); }
+    .primary-card { border-left: 4px solid #f59e0b; }
+    .side-panel { display: grid; gap: 12px; }
+    .detail-block { margin-top: 10px; }
     .label { color: #93a4bd; font-size: 13px; }
     .value { font-size: 30px; font-weight: 700; margin-top: 6px; }
     section { margin-bottom: 18px; }
@@ -246,7 +260,7 @@ function renderPage(
     .idea:first-child { border-top: 0; }
     .idea-title { font-weight: 700; overflow-wrap: anywhere; }
     .idea-meta { color: #93a4bd; font-size: 13px; margin-top: 4px; overflow-wrap: anywhere; }
-    @media (max-width: 820px) { header { display: block; } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .agent-board { grid-template-columns: 1fr; } table { font-size: 13px; } }
+    @media (max-width: 820px) { header { display: block; } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .command-grid, .agent-board { grid-template-columns: 1fr; } table { font-size: 13px; } }
     @media (max-width: 520px) { .grid { grid-template-columns: 1fr 1fr; } .value { font-size: 24px; } a.button, button { min-height: 44px; } }
   </style>
 </head>
@@ -261,60 +275,91 @@ function renderPage(
     <div class="pill ok">Read-only observer</div>
   </header>
 
-  <div class="grid">
-    <div class="card"><div class="label">服務</div><div class="value">${report.services.length}</div></div>
-    <div class="card"><div class="label">Repos</div><div class="value">${report.repositories.length}</div></div>
-    <div class="card"><div class="label">Dirty repos</div><div class="value">${dirtyRepos}</div></div>
-    <div class="card"><div class="label">缺少規則檔</div><div class="value">${missingRuleFiles}</div></div>
-    <div class="card"><div class="label">觀察候選</div><div class="value">${report.candidates.length}</div></div>
-    <div class="card"><div class="label">疑似 Bug</div><div class="value">${bugCandidates}</div></div>
-  </div>
-
-  <section>
-    <h2>Kevin 子人格自問自答</h2>
-    <p class="muted">${escapeHtml(report.mainAgent.summary)}</p>
-    <div class="agent-board">
-      <div class="agent-rounds">
-        ${report.mainAgent.rounds.map(renderMainAgentRound).join('')}
+  <section class="command-center">
+    <div class="command-grid">
+      <div>
+        <div class="eyebrow">現在先看這裡</div>
+        <h2 class="main-action">${topCandidate ? `先處理：${escapeHtml(topCandidate.title)}` : '這輪先不要硬做'}</h2>
+        <p>${escapeHtml(report.mainAgent.recommendation.reason)}</p>
+        <p class="muted">下一步：${escapeHtml(report.mainAgent.recommendation.nextAction)}</p>
+        <div class="status-strip">
+          <div class="status-item"><span class="label">觀察候選</span><strong>${report.candidates.length}</strong></div>
+          <div class="status-item"><span class="label">疑似 Bug</span><strong>${bugCandidates}</strong></div>
+          <div class="status-item"><span class="label">Dirty repos</span><strong>${dirtyRepos}</strong></div>
+          <div class="status-item"><span class="label">補充</span><strong>${report.supplements.length}</strong></div>
+        </div>
+        ${topCandidate ? renderPrimaryCandidate(topCandidate) : '<div class="primary-card"><strong>沒有明確候選項</strong><div class="muted">目前只保留觀察。你可以在右側補充真實卡點，讓下一輪排序更接近你的意圖。</div></div>'}
       </div>
-      <div class="agent-stack">
-        <div class="recommendation">
-          <strong>主 agent 決策：${escapeHtml(report.mainAgent.recommendation.decision)}</strong>
-          <div>${escapeHtml(report.mainAgent.recommendation.reason)}</div>
-          <div class="muted">下一步：${escapeHtml(report.mainAgent.recommendation.nextAction)}</div>
-        </div>
+      <aside class="side-panel">
         <div>
-          <h2>Active Task</h2>
-          <p class="muted">${escapeHtml(report.mainAgent.activeTask.objective)}<br>目前步驟：${escapeHtml(report.mainAgent.activeTask.currentStep)}</p>
-          ${report.mainAgent.activeTask.checkpoints.map(renderCheckpoint).join('')}
+          <h2>如果判斷不對</h2>
+          <p class="muted">直接補一句給下一輪。它只會寫進 Autopilot 自己的 data，不會改 target repo。</p>
         </div>
-        <div>
-          <h2>可行方案</h2>
-          ${report.mainAgent.feasibleOptions.map(renderFeasibleOption).join('')}
-        </div>
-      </div>
-    </div>
-    <form id="supplement-form">
-      <textarea id="supplement-text" placeholder="補充給下一輪推理，例如：先不要碰部署；優先看 dashboard 使用流程；這個 dirty repo 是我正在做的不要當成問題。"></textarea>
-      <button type="submit">補充給下一輪推理</button>
-    </form>
-    <div id="supplement-result" class="muted"></div>
-    ${report.supplements.length === 0 ? '<p class="muted">目前沒有補充。補充會存進 Autopilot 自己的 data/supplements，不會寫 target repos。</p>' : `<div class="agent-stack">${report.supplements.map(renderSupplement).join('')}</div>`}
-  </section>
-
-  <section>
-    <h2>這頁怎麼用</h2>
-    <p class="muted">目前不會自動改專案。它的用途是幫你把「可能要做的事」整理成可交給 OpenCode 的安全任務。</p>
-    <div class="steps">
-      <div class="step"><strong>1. 先看觀察候選</strong><span class="muted">上方數字代表目前找到幾個可追蹤項目。</span></div>
-      <div class="step"><strong>2. 看類型和下一步</strong><span class="muted">先處理疑似 bug、dirty repo、缺設定或缺規則。</span></div>
-      <div class="step"><strong>3. 展開 OpenCode prompt</strong><span class="muted">按「複製 Prompt」，貼到 OpenCode 新 session。</span></div>
-      <div class="step"><strong>4. 回來重新整理</strong><span class="muted">OpenCode 處理後，回來看候選項是否消失或變少。</span></div>
+        <form id="supplement-form">
+          <textarea id="supplement-text" placeholder="例如：這個 dirty repo 是我正在做的，不要當成問題。先優先看 dashboard UX，不要碰部署。"></textarea>
+          <button type="submit">補充給下一輪推理</button>
+        </form>
+        <div id="supplement-result" class="muted"></div>
+        ${report.supplements.length === 0 ? '<p class="muted">目前沒有補充。</p>' : `<div class="agent-stack">${report.supplements.slice(0, 3).map(renderSupplement).join('')}</div>`}
+      </aside>
     </div>
   </section>
 
   <section>
-    <h2>想法接手</h2>
+    <h2>細節與證據</h2>
+    <p class="muted">平常只看最上面的決策中心。需要追原因、複製其他 prompt、或檢查狀態時再展開這裡。</p>
+    <details class="detail-block">
+      <summary>Kevin 子人格自問自答</summary>
+      <p class="muted">${escapeHtml(report.mainAgent.summary)}</p>
+      <div class="agent-board">
+        <div class="agent-rounds">
+          ${report.mainAgent.rounds.map(renderMainAgentRound).join('')}
+        </div>
+        <div class="agent-stack">
+          <div class="recommendation">
+            <strong>主 agent 決策：${escapeHtml(report.mainAgent.recommendation.decision)}</strong>
+            <div>${escapeHtml(report.mainAgent.recommendation.reason)}</div>
+            <div class="muted">下一步：${escapeHtml(report.mainAgent.recommendation.nextAction)}</div>
+          </div>
+          <div>
+            <h2>Active Task</h2>
+            <p class="muted">${escapeHtml(report.mainAgent.activeTask.objective)}<br>目前步驟：${escapeHtml(report.mainAgent.activeTask.currentStep)}</p>
+            ${report.mainAgent.activeTask.checkpoints.map(renderCheckpoint).join('')}
+          </div>
+          <div>
+            <h2>可行方案</h2>
+            ${report.mainAgent.feasibleOptions.map(renderFeasibleOption).join('')}
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <details class="detail-block">
+      <summary>Observation Backlog：其他候選與 OpenCode prompts</summary>
+      <p class="muted">需要操作時展開 prompt 複製給 OpenCode。這裡仍是 read-only handoff，不會自動改專案。</p>
+      ${report.candidates.length === 0 ? '<p class="muted">目前沒有從 read-only signals 產生候選項。</p>' : `<div class="table-scroll"><table><thead><tr><th>類型</th><th>信心</th><th>來源</th><th>候選項與操作</th><th>下一步</th><th>Approval</th></tr></thead><tbody>
+        ${report.candidates.map((candidate) => `<tr><td><span class="pill">${escapeHtml(candidate.category)}</span></td><td>${escapeHtml(candidate.confidence)}</td><td>${escapeHtml(candidate.sourceName)}</td><td>${escapeHtml(candidate.title)}<div class="muted">${escapeHtml(candidate.evidence[0] ?? '')}</div><div class="candidate-action">你可以：先複製 prompt 給 OpenCode 做 read-only 釐清。</div><details><summary>OpenCode prompt</summary><button type="button" class="secondary copy-prompt">複製 Prompt</button><span class="copy-status" aria-live="polite"></span><pre>${escapeHtml(candidate.boundedPrompt)}</pre></details></td><td>${escapeHtml(candidate.suggestedNextStep)}</td><td>${candidate.approvalRequired ? '<span class="pill warn">需要</span>' : '<span class="pill ok">不需要</span>'}</td></tr>`).join('')}
+      </tbody></table></div>`}
+    </details>
+
+    <details class="detail-block">
+      <summary>服務與 Repository 狀態</summary>
+      <div class="table-scroll"><table><thead><tr><th>服務</th><th>Host</th><th>Domain</th><th>Port</th><th>Health</th></tr></thead><tbody>
+        ${report.services.map((service) => `<tr><td>${escapeHtml(service.name)}</td><td>${escapeHtml(service.host ?? '-')}</td><td>${escapeHtml(service.domain ?? '-')}</td><td>${escapeHtml(String(service.port ?? '-'))}</td><td><span class="pill">${escapeHtml(service.healthStatus)}</span></td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="table-scroll"><table><thead><tr><th>Repo</th><th>Branch</th><th>Status</th><th>Recent commits</th></tr></thead><tbody>
+        ${report.repositories.map((repo) => `<tr><td>${escapeHtml(repo.name)}</td><td>${escapeHtml(repo.branch ?? '-')}</td><td><span class="pill ${repo.dirty ? 'warn' : 'ok'}">${repo.dirty ? 'dirty' : 'clean'}</span></td><td>${repo.recentCommits.length}</td></tr>`).join('')}
+      </tbody></table></div>
+    </details>
+
+    <details class="detail-block">
+      <summary>安全邊界</summary>
+      <p class="muted">不讀 secrets、不部署、不 commit、不 push、不修復服務。補充內容會先擋常見 secret-like 字串，寫入也只允許 trusted/private 來源。</p>
+    </details>
+  </section>
+
+  <section>
+    <h2>新想法入口</h2>
     <p class="muted">AI thinking: ${aiEnabled ? 'enabled via ai-core' : 'disabled / fallback'}。送出後只會收件、分類、列出下一步，不會開 repo、不會部署。</p>
     <form id="idea-form">
       <textarea id="idea-text" placeholder="把腦中的想法直接貼在這裡，例如：我想做一個每天自動幫我整理新專案想法、判斷要不要開 repo、部署在哪裡的工具..."></textarea>
@@ -328,32 +373,6 @@ function renderPage(
     ${ideas.length === 0 ? '<p class="muted">尚未收到想法。</p>' : ideas.map(renderIdea).join('')}
   </section>
 
-  <section>
-    <h2>Observation Backlog</h2>
-    <p class="muted">這裡是 Autopilot 主動找出來的待辦雷達。先看「下一步」，需要操作時展開 prompt 複製給 OpenCode。</p>
-    ${report.candidates.length === 0 ? '<p class="muted">目前沒有從 read-only signals 產生候選項。代表這一輪沒有發現明顯可追蹤事項。</p>' : `<div class="table-scroll"><table><thead><tr><th>類型</th><th>信心</th><th>來源</th><th>候選項與操作</th><th>下一步</th><th>Approval</th></tr></thead><tbody>
-      ${report.candidates.map((candidate) => `<tr><td><span class="pill">${escapeHtml(candidate.category)}</span></td><td>${escapeHtml(candidate.confidence)}</td><td>${escapeHtml(candidate.sourceName)}</td><td>${escapeHtml(candidate.title)}<div class="muted">${escapeHtml(candidate.evidence[0] ?? '')}</div><div class="candidate-action">你可以：先複製 prompt 給 OpenCode 做 read-only 釐清。</div><details><summary>OpenCode prompt</summary><button type="button" class="secondary copy-prompt">複製 Prompt</button><span class="copy-status" aria-live="polite"></span><pre>${escapeHtml(candidate.boundedPrompt)}</pre></details></td><td>${escapeHtml(candidate.suggestedNextStep)}</td><td>${candidate.approvalRequired ? '<span class="pill warn">需要</span>' : '<span class="pill ok">不需要</span>'}</td></tr>`).join('')}
-    </tbody></table></div>`}
-  </section>
-
-  <section>
-    <h2>服務觀察</h2>
-    <div class="table-scroll"><table><thead><tr><th>服務</th><th>Host</th><th>Domain</th><th>Port</th><th>Health</th></tr></thead><tbody>
-      ${report.services.map((service) => `<tr><td>${escapeHtml(service.name)}</td><td>${escapeHtml(service.host ?? '-')}</td><td>${escapeHtml(service.domain ?? '-')}</td><td>${escapeHtml(String(service.port ?? '-'))}</td><td><span class="pill">${escapeHtml(service.healthStatus)}</span></td></tr>`).join('')}
-    </tbody></table></div>
-  </section>
-
-  <section>
-    <h2>Repository</h2>
-    <div class="table-scroll"><table><thead><tr><th>Repo</th><th>Branch</th><th>Status</th><th>Recent commits</th></tr></thead><tbody>
-      ${report.repositories.map((repo) => `<tr><td>${escapeHtml(repo.name)}</td><td>${escapeHtml(repo.branch ?? '-')}</td><td><span class="pill ${repo.dirty ? 'warn' : 'ok'}">${repo.dirty ? 'dirty' : 'clean'}</span></td><td>${repo.recentCommits.length}</td></tr>`).join('')}
-    </tbody></table></div>
-  </section>
-
-  <section>
-    <h2>安全邊界</h2>
-    <p class="muted">不讀 secrets、不部署、不 commit、不 push、不修復服務。Health check 目前預設關閉。</p>
-  </section>
 </main>
 <script>
   document.getElementById('supplement-form').addEventListener('submit', async (event) => {
@@ -511,6 +530,15 @@ function renderKeySection(keyStatus: KeyStatusSummary): string {
     </form>
     <div id="key-result" class="muted"></div>
   </section>`
+}
+
+function renderPrimaryCandidate(candidate: ObservationReport['candidates'][number]): string {
+  return `<div class="primary-card">
+    <strong>本輪建議候選：${escapeHtml(candidate.title)}</strong>
+    <div class="muted">${escapeHtml(candidate.category)} · ${escapeHtml(candidate.confidence)} · ${escapeHtml(candidate.sourceName)}${candidate.approvalRequired ? ' · 需要 approval' : ''}</div>
+    <div>${escapeHtml(candidate.suggestedNextStep)}</div>
+    <details open><summary>OpenCode prompt</summary><button type="button" class="secondary copy-prompt">複製 Prompt</button><span class="copy-status" aria-live="polite"></span><pre>${escapeHtml(candidate.boundedPrompt)}</pre></details>
+  </div>`
 }
 
 function renderMainAgentRound(round: ObservationReport['mainAgent']['rounds'][number]): string {

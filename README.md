@@ -129,6 +129,12 @@ edits, commits, pushes, deployments, or destructive actions. True background
 execution requires a later scheduler state, permission gate, interrupt classifier,
 pending action record, health surface, and explicit Kevin approval.
 
+Version 0.5.10 consolidates the dashboard around one decision center. The top of
+the page now answers what to do next, why, where to copy the primary prompt, and
+where to correct the next observation. Self-Q&A, backlog, service, and repository
+tables move under `細節與證據` so the page has a clear main flow instead of many
+competing sections.
+
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.
 

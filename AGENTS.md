@@ -16,8 +16,8 @@ read-only project handoff plan work, v0.5.3 settings-page DB-backed key
 management, v0.5.4 key-manager paste/mobile layout fixes, v0.5.5 GMT+8
 display time, v0.5.6 read-only Observation Backlog, v0.5.7 bounded OpenCode
 prompts for observation candidates, v0.5.8 dashboard usage guidance / copy
-prompt UX, and v0.5.9 Kevin sub-persona main-agent self-Q&A with
-Autopilot-owned dashboard supplements.
+prompt UX, v0.5.9 Kevin sub-persona main-agent self-Q&A with Autopilot-owned
+dashboard supplements, and v0.5.10 consolidated decision-center dashboard flow.
 Keep these versions read-only: they may observe, classify, report, and store
 Autopilot-owned reports/idea records/supplements, but they must not modify target
 repos, create repos, deploy, commit/push other projects, or perform destructive
