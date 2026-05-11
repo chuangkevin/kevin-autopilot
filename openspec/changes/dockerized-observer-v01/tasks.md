@@ -21,3 +21,4 @@
 19. [x] Add clickable idea desktop cards and detail pages.
 20. [x] Add deterministic existing-project similarity analysis to idea records.
 21. [x] Add read-only background observation loop with dashboard/API status.
+22. [x] Add visible auditable thinking trace to dashboard and API.

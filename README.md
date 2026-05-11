@@ -165,6 +165,12 @@ next run, running, run count, and last error on the dashboard plus
 `/api/observation-loop`. It still cannot edit repos, commit, push, deploy, read
 unmanaged secrets, or run destructive actions.
 
+Version 0.5.16 makes the Kevin-double thinking trace visible on the dashboard and
+through `/api/main-agent/thinking`. It shows auditable reasoning artifacts:
+current task, role self-Q&A rounds, feasible options, recommendation, next action,
+and evidence summaries. This is intentionally not private chain-of-thought; it is
+a reviewable explanation of what the agent considered and decided.
+
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.
 
@@ -241,7 +247,7 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
-v0.5.15 read-only background observation loop prototype. See `docs/` for architecture,
+v0.5.16 visible thinking trace prototype. See `docs/` for architecture,
 safety, and OpenCode workflow.
 
 ## Deployment

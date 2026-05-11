@@ -21,8 +21,8 @@ dashboard supplements, v0.5.10 consolidated decision-center dashboard flow,
 v0.5.11 single-focus recommendation card, v0.5.12 explicit dashboard goal copy
 that separates judgment correction from new product goals, v0.5.13 explicit
 manual-only/no-background-loop status copy, v0.5.14 idea desktop cards with
-existing-project similarity analysis, and v0.5.15 read-only background
-observation loop status.
+existing-project similarity analysis, v0.5.15 read-only background observation
+loop status, and v0.5.16 visible auditable thinking trace.
 Keep these versions read-only: they may observe, classify, report, and store
 Autopilot-owned reports/idea records/supplements, but they must not modify target
 repos, create repos, deploy, commit/push other projects, or perform destructive

@@ -64,6 +64,10 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(pageBody.includes('目前背景觀察已關閉'), true)
     assert.equal(pageBody.includes('不會自己改 repo、commit、push、部署'), true)
     assert.equal(pageBody.includes('今天只看這張'), true)
+    assert.equal(pageBody.includes('分身思考過程'), true)
+    assert.equal(pageBody.includes('我怎麼判斷下一步'), true)
+    assert.equal(pageBody.includes('這不是模型私有 chain-of-thought'), true)
+    assert.equal(pageBody.includes('/api/main-agent/thinking'), true)
     assert.equal(pageBody.includes('現在重點：做這件'), true)
     assert.equal(pageBody.includes('唯一主要操作'), true)
     assert.equal(pageBody.includes('修正這輪判斷'), true)
@@ -80,6 +84,12 @@ test('web server exposes health and idea intake', async () => {
     const loopStatusBody = await loopStatus.json()
     assert.equal(loopStatusBody.enabled, false)
     assert.equal(loopStatusBody.mode, 'read-only-background-observation')
+
+    const thinking = await fetch(`${baseUrl}/api/main-agent/thinking`)
+    assert.equal(thinking.status, 200)
+    const thinkingBody = await thinking.json()
+    assert.equal(thinkingBody.mainAgent.mode, 'kevin-double-deterministic')
+    assert.equal(thinkingBody.note, 'This is an auditable reasoning trace, not private chain-of-thought.')
 
     const settings = await fetch(`${baseUrl}/settings`)
     assert.equal(settings.status, 200)

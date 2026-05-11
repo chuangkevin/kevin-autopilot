@@ -54,6 +54,19 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
     return
   }
 
+  if (url.pathname === '/api/main-agent/thinking') {
+    const report = await getVisibleReport(config, observationLoop)
+    writeJson(response, {
+      generatedAt: report.generatedAt,
+      environment: report.environment,
+      loop: observationLoop?.getState() ?? createManualLoopState(),
+      mainAgent: report.mainAgent,
+      candidates: report.candidates.slice(0, 5),
+      note: 'This is an auditable reasoning trace, not private chain-of-thought.',
+    })
+    return
+  }
+
   if (url.pathname === '/api/ideas' && request.method === 'GET') {
     writeJson(response, await listIdeas(config))
     return
@@ -114,13 +127,13 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
   }
 
   if (url.pathname === '/api/report') {
-    const report = observationLoop ? observationLoop.getLastReport() ?? (await observationLoop.runOnce()) ?? (await observe(config)) : await observe(config)
+    const report = await getVisibleReport(config, observationLoop)
     writeJson(response, report)
     return
   }
 
   if (url.pathname === '/') {
-    const report = observationLoop ? observationLoop.getLastReport() ?? (await observationLoop.runOnce()) ?? (await observe(config)) : await observe(config)
+    const report = await getVisibleReport(config, observationLoop)
     const ideas = await listIdeas(config, 8)
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', ...NO_STORE_HEADERS })
     response.end(renderPage(report, ideas, Boolean(config.ai?.enabled), observationLoop?.getState() ?? createManualLoopState()))
@@ -159,6 +172,11 @@ function writeJson(response: ServerResponse, body: unknown, statusCode = 200): v
 function writeText(response: ServerResponse, body: string, statusCode = 200): void {
   response.writeHead(statusCode, { 'content-type': 'text/plain; charset=utf-8', ...NO_STORE_HEADERS })
   response.end(`${body}\n`)
+}
+
+async function getVisibleReport(config: AutopilotConfig, observationLoop?: ObservationLoop): Promise<ObservationReport> {
+  if (!observationLoop) return observe(config)
+  return observationLoop.getLastReport() ?? (await observationLoop.runOnce()) ?? (await observe(config))
 }
 
 function createManualLoopState(): ObservationLoopState {
@@ -285,6 +303,11 @@ function renderPage(
     .checkpoint.cancelled { opacity: 0.55; text-decoration: line-through; }
     .recommendation { border-radius: 16px; padding: 14px; background: rgba(120,53,15,0.28); border: 1px solid rgba(245,158,11,0.28); }
     .recommendation strong { display: block; margin-bottom: 6px; }
+    .thinking-trace { border-color: rgba(34,197,94,0.34); background: radial-gradient(circle at top left, rgba(34,197,94,0.13), transparent 34%), linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.035)); }
+    .thinking-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(250px, 0.9fr); gap: 14px; align-items: start; }
+    .trace-step { border: 1px solid rgba(34,197,94,0.2); border-left: 4px solid rgba(34,197,94,0.78); border-radius: 14px; padding: 12px; background: rgba(15,23,42,0.5); margin-bottom: 10px; }
+    .trace-step strong { display: block; margin-bottom: 5px; }
+    .trace-note { border: 1px solid rgba(148,163,184,0.18); border-radius: 14px; padding: 12px; background: rgba(8,13,25,0.42); }
     .candidate-action { margin-top: 8px; color: #cbd5e1; font-size: 13px; }
     .copy-status { display: inline-block; margin-left: 8px; color: #bbf7d0; font-size: 13px; }
     .pill { display: inline-block; white-space: nowrap; border-radius: 999px; padding: 4px 9px; font-size: 12px; background: rgba(59,130,246,0.18); color: #bfdbfe; }
@@ -303,7 +326,7 @@ function renderPage(
     .idea-title { font-weight: 800; font-size: 17px; line-height: 1.35; overflow-wrap: anywhere; }
     .idea-meta { color: #93a4bd; font-size: 13px; margin-top: 4px; overflow-wrap: anywhere; }
     .idea-status { border-top: 1px solid rgba(148,163,184,0.16); padding-top: 10px; }
-    @media (max-width: 820px) { header { display: block; } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .command-grid, .focus-grid, .agent-board { grid-template-columns: 1fr; } table { font-size: 13px; } }
+    @media (max-width: 820px) { header { display: block; } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .command-grid, .focus-grid, .agent-board, .thinking-grid { grid-template-columns: 1fr; } table { font-size: 13px; } }
     @media (max-width: 520px) { .grid { grid-template-columns: 1fr 1fr; } .value { font-size: 24px; } a.button, button { min-height: 44px; } }
   </style>
 </head>
@@ -363,6 +386,8 @@ function renderPage(
       </aside>
     </div>
   </section>
+
+  ${renderThinkingTrace(report)}
 
   <details class="detail-block">
     <summary>除錯/證據/完整清單，不用先看</summary>
@@ -635,6 +660,48 @@ function renderSupplement(supplement: ObservationReport['supplements'][number]):
     <strong>${escapeHtml(formatTaipeiTime(supplement.createdAt))}</strong>
     <div>${escapeHtml(supplement.summary)}</div>
     <div class="muted">來源：${escapeHtml(supplement.source)} · 套用：${escapeHtml(supplement.appliesTo)}</div>
+  </div>`
+}
+
+function renderThinkingTrace(report: ObservationReport): string {
+  const mainAgent = report.mainAgent
+  const topCandidates = report.candidates.slice(0, 3)
+  return `<section class="thinking-trace">
+    <div class="eyebrow">分身思考過程</div>
+    <h2 class="mission-title">我怎麼判斷下一步</h2>
+    <p class="muted">這裡顯示可審核的推理紀錄：觀察、角色自問自答、候選方案、決策與證據。這不是模型私有 chain-of-thought。</p>
+    <div class="thinking-grid">
+      <div>
+        <div class="trace-step">
+          <strong>目前任務</strong>
+          <div>${escapeHtml(mainAgent.activeTask.objective)}</div>
+          <div class="muted">正在做：${escapeHtml(mainAgent.activeTask.currentStep)}</div>
+        </div>
+        ${mainAgent.rounds.map(renderTraceRound).join('')}
+      </div>
+      <aside class="trace-note">
+        <h2>目前結論</h2>
+        <div class="recommendation">
+          <strong>${escapeHtml(mainAgent.recommendation.decision)}${mainAgent.recommendation.approvalRequired ? ' · 需要 approval' : ''}</strong>
+          <div>${escapeHtml(mainAgent.recommendation.reason)}</div>
+          <div class="muted">下一步：${escapeHtml(mainAgent.recommendation.nextAction)}</div>
+        </div>
+        <h2>可行方案</h2>
+        ${mainAgent.feasibleOptions.slice(0, 3).map(renderFeasibleOption).join('')}
+        <h2>證據摘要</h2>
+        ${topCandidates.length === 0 ? '<p class="muted">目前沒有候選證據。</p>' : topCandidates.map((candidate) => `<div class="checkpoint"><strong>${escapeHtml(candidate.title)}</strong><div class="muted">${escapeHtml(candidate.sourceName)} · ${escapeHtml(candidate.confidence)} · ${escapeHtml(candidate.evidence[0] ?? '')}</div></div>`).join('')}
+        <p class="muted">完整 JSON：<code>/api/main-agent/thinking</code></p>
+      </aside>
+    </div>
+  </section>`
+}
+
+function renderTraceRound(round: ObservationReport['mainAgent']['rounds'][number]): string {
+  return `<div class="trace-step">
+    <strong>${escapeHtml(round.agent)} · ${escapeHtml(round.role)}</strong>
+    <div class="muted">觀察：${escapeHtml(round.observation)}</div>
+    <div>判斷：${escapeHtml(round.argument)}</div>
+    <div class="muted">輸出：${escapeHtml(round.output)}</div>
   </div>`
 }
 

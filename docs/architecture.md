@@ -253,6 +253,12 @@ blockers, update time, and supplement count. Later background execution should
 promote this into a persisted scheduler/worker record before it can edit repos or
 deploy.
 
+v0.5.16 promotes the deterministic main-agent trace to a first-class dashboard
+section and `/api/main-agent/thinking`. The trace includes auditable artifacts:
+current task, role rounds, observations, judgments, outputs, feasible options,
+recommendation, next action, and evidence summaries. It is not private
+chain-of-thought and should remain safe to show to Kevin.
+
 The first persisted loop status is `observation-loop-state.json`, which records
 enabled/running state, interval, run count, last run, next run, report paths, and
 last error. This is status telemetry only, not permission to execute changes.

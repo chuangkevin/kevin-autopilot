@@ -60,6 +60,11 @@ run, next run, running state, run count, and last error on the dashboard and
 status; it does not perform implementation, commits, pushes, deployment, secret
 reads, or destructive actions.
 
+v0.5.16 makes the background agent's thinking trace visible. The dashboard and
+`/api/main-agent/thinking` show the current task, role self-Q&A rounds, candidate
+evidence, feasible options, and recommendation so Kevin can inspect why the
+double chose a next action without exposing private model chain-of-thought.
+
 Kevin can add a supplement during or between observation cycles. The supplement
 is stored as Autopilot-owned data and merged into the next cycle as context; it
 does not reset the main task, overwrite the observation backlog, or authorize
