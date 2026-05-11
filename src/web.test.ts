@@ -49,8 +49,11 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(page.headers.get('cache-control'), 'no-store, max-age=0')
     const pageBody = await page.text()
     assert.equal(pageBody.includes('設定 Gemini Keys'), true)
+    assert.equal(pageBody.includes('這頁怎麼用'), true)
+    assert.equal(pageBody.includes('目前不會自動改專案'), true)
     assert.equal(pageBody.includes('Observation Backlog'), true)
     assert.equal(pageBody.includes('OpenCode prompt'), true)
+    assert.equal(pageBody.includes('複製 Prompt'), true)
 
     const settings = await fetch(`${baseUrl}/settings`)
     assert.equal(settings.status, 200)

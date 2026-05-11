@@ -177,6 +177,11 @@ function renderPage(
     th { color: #93a4bd; font-weight: 600; }
     pre { white-space: pre-wrap; overflow-wrap: anywhere; background: rgba(15,23,42,0.9); border: 1px solid rgba(148,163,184,0.18); border-radius: 12px; padding: 12px; font-size: 13px; line-height: 1.45; }
     summary { cursor: pointer; color: #bfdbfe; font-weight: 700; }
+    .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+    .step { border: 1px solid rgba(148,163,184,0.16); border-radius: 14px; padding: 12px; background: rgba(15,23,42,0.44); }
+    .step strong { display: block; margin-bottom: 4px; }
+    .candidate-action { margin-top: 8px; color: #cbd5e1; font-size: 13px; }
+    .copy-status { display: inline-block; margin-left: 8px; color: #bbf7d0; font-size: 13px; }
     .pill { display: inline-block; white-space: nowrap; border-radius: 999px; padding: 4px 9px; font-size: 12px; background: rgba(59,130,246,0.18); color: #bfdbfe; }
     .warn { background: rgba(245,158,11,0.16); color: #fde68a; }
     .ok { background: rgba(34,197,94,0.14); color: #bbf7d0; }
@@ -215,6 +220,17 @@ function renderPage(
   </div>
 
   <section>
+    <h2>這頁怎麼用</h2>
+    <p class="muted">目前不會自動改專案。它的用途是幫你把「可能要做的事」整理成可交給 OpenCode 的安全任務。</p>
+    <div class="steps">
+      <div class="step"><strong>1. 先看觀察候選</strong><span class="muted">上方數字代表目前找到幾個可追蹤項目。</span></div>
+      <div class="step"><strong>2. 看類型和下一步</strong><span class="muted">先處理疑似 bug、dirty repo、缺設定或缺規則。</span></div>
+      <div class="step"><strong>3. 展開 OpenCode prompt</strong><span class="muted">按「複製 Prompt」，貼到 OpenCode 新 session。</span></div>
+      <div class="step"><strong>4. 回來重新整理</strong><span class="muted">OpenCode 處理後，回來看候選項是否消失或變少。</span></div>
+    </div>
+  </section>
+
+  <section>
     <h2>想法接手</h2>
     <p class="muted">AI thinking: ${aiEnabled ? 'enabled via ai-core' : 'disabled / fallback'}。送出後只會收件、分類、列出下一步，不會開 repo、不會部署。</p>
     <form id="idea-form">
@@ -231,8 +247,9 @@ function renderPage(
 
   <section>
     <h2>Observation Backlog</h2>
-    ${report.candidates.length === 0 ? '<p class="muted">目前沒有從 read-only signals 產生候選項。</p>' : `<div class="table-scroll"><table><thead><tr><th>類型</th><th>信心</th><th>來源</th><th>候選項</th><th>下一步</th><th>Approval</th></tr></thead><tbody>
-      ${report.candidates.map((candidate) => `<tr><td><span class="pill">${escapeHtml(candidate.category)}</span></td><td>${escapeHtml(candidate.confidence)}</td><td>${escapeHtml(candidate.sourceName)}</td><td>${escapeHtml(candidate.title)}<div class="muted">${escapeHtml(candidate.evidence[0] ?? '')}</div><details><summary>OpenCode prompt</summary><pre>${escapeHtml(candidate.boundedPrompt)}</pre></details></td><td>${escapeHtml(candidate.suggestedNextStep)}</td><td>${candidate.approvalRequired ? '<span class="pill warn">需要</span>' : '<span class="pill ok">不需要</span>'}</td></tr>`).join('')}
+    <p class="muted">這裡是 Autopilot 主動找出來的待辦雷達。先看「下一步」，需要操作時展開 prompt 複製給 OpenCode。</p>
+    ${report.candidates.length === 0 ? '<p class="muted">目前沒有從 read-only signals 產生候選項。代表這一輪沒有發現明顯可追蹤事項。</p>' : `<div class="table-scroll"><table><thead><tr><th>類型</th><th>信心</th><th>來源</th><th>候選項與操作</th><th>下一步</th><th>Approval</th></tr></thead><tbody>
+      ${report.candidates.map((candidate) => `<tr><td><span class="pill">${escapeHtml(candidate.category)}</span></td><td>${escapeHtml(candidate.confidence)}</td><td>${escapeHtml(candidate.sourceName)}</td><td>${escapeHtml(candidate.title)}<div class="muted">${escapeHtml(candidate.evidence[0] ?? '')}</div><div class="candidate-action">你可以：先複製 prompt 給 OpenCode 做 read-only 釐清。</div><details><summary>OpenCode prompt</summary><button type="button" class="secondary copy-prompt">複製 Prompt</button><span class="copy-status" aria-live="polite"></span><pre>${escapeHtml(candidate.boundedPrompt)}</pre></details></td><td>${escapeHtml(candidate.suggestedNextStep)}</td><td>${candidate.approvalRequired ? '<span class="pill warn">需要</span>' : '<span class="pill ok">不需要</span>'}</td></tr>`).join('')}
     </tbody></table></div>`}
   </section>
 
@@ -273,6 +290,32 @@ function renderPage(
     const idea = await response.json();
     result.textContent = '已收件：' + idea.title + ' / ' + idea.classification + ' / ' + idea.thinking.mode;
     setTimeout(() => location.reload(), 700);
+  });
+
+  document.querySelectorAll('.copy-prompt').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const details = button.closest('details');
+      const prompt = details ? details.querySelector('pre')?.textContent || '' : '';
+      const status = details ? details.querySelector('.copy-status') : null;
+      try {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(prompt);
+        } else {
+          const textArea = document.createElement('textarea');
+          textArea.value = prompt;
+          textArea.style.position = 'fixed';
+          textArea.style.left = '-9999px';
+          document.body.appendChild(textArea);
+          textArea.focus();
+          textArea.select();
+          document.execCommand('copy');
+          textArea.remove();
+        }
+        if (status) status.textContent = '已複製';
+      } catch {
+        if (status) status.textContent = '複製失敗，請手動選取';
+      }
+    });
   });
 </script>
 </body>

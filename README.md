@@ -113,6 +113,10 @@ Version 0.5.7 adds bounded OpenCode prompts to each observation candidate so the
 dashboard can hand off safe, constrained investigation or planning work without
 automatically modifying target projects.
 
+Version 0.5.8 makes the dashboard usage explicit: the home page explains how to
+use Observation Backlog, clarifies that Autopilot does not auto-edit projects,
+and adds a copy button for each bounded OpenCode prompt.
+
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.
 
