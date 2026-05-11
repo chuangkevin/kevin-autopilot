@@ -105,14 +105,14 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
     return
   }
 
-  const report = await observe(config)
-
   if (url.pathname === '/api/report') {
+    const report = await observe(config)
     writeJson(response, report)
     return
   }
 
   if (url.pathname === '/') {
+    const report = await observe(config)
     const ideas = await listIdeas(config, 8)
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', ...NO_STORE_HEADERS })
     response.end(renderPage(report, ideas, Boolean(config.ai?.enabled)))
@@ -122,7 +122,7 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
   if (url.pathname === '/settings') {
     const keyStatus = await getKeyStatus(config)
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', ...NO_STORE_HEADERS })
-    response.end(renderSettingsPage(report, keyStatus))
+    response.end(renderSettingsPage(config, keyStatus))
     return
   }
 
@@ -214,6 +214,8 @@ function renderPage(
     .mission { border: 1px solid rgba(96,165,250,0.28); border-left: 5px solid #60a5fa; border-radius: 16px; padding: 14px; background: rgba(30,64,175,0.16); margin-bottom: 16px; }
     .mission-title { margin: 0 0 6px; font-size: clamp(20px, 4vw, 28px); line-height: 1.15; }
     .mission p { margin: 6px 0 0; }
+    .truth-box { border: 1px solid rgba(248,113,113,0.3); border-left: 5px solid #f87171; border-radius: 16px; padding: 14px; background: rgba(127,29,29,0.18); margin-bottom: 16px; }
+    .truth-box strong { display: block; margin-bottom: 6px; font-size: 18px; }
     .eyebrow { color: #fbbf24; font-size: 13px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
     .main-action { margin: 6px 0 10px; font-size: clamp(34px, 8vw, 64px); line-height: 1.02; letter-spacing: -0.07em; }
     .plain-answer { font-size: clamp(18px, 4vw, 24px); line-height: 1.45; color: #f8fafc; }
@@ -286,6 +288,11 @@ function renderPage(
       <h2 class="mission-title">這頁的目標：幫你挑出下一件值得處理的事</h2>
       <p>它會看 read-only 訊號，挑一個候選，產生可貼到 OpenCode 的安全 prompt。</p>
       <p class="muted">它不是聊天頁、不是自動修復器，也不會自己改 repo、commit、push、部署。</p>
+    </div>
+    <div class="truth-box">
+      <strong>目前還不會「一直自動思考」</strong>
+      <div>現在只會在首頁或 <code>/api/report</code> 被請求時即時跑一次觀察；不是常駐背景思考。</div>
+      <div class="muted">自動排程尚未實作，所以目前沒有「每幾分鐘一次」或「下一次執行時間」。下一步要做的是背景 observation loop，顯示 last run / next run / running 狀態。</div>
     </div>
     <div class="eyebrow">今天只看這張</div>
     <h2 class="main-action">${topCandidate ? '現在重點：做這件' : '現在重點：先不要做'}</h2>
@@ -454,7 +461,7 @@ function renderPage(
 </html>`
 }
 
-function renderSettingsPage(report: ObservationReport, keyStatus: KeyStatusSummary): string {
+function renderSettingsPage(config: AutopilotConfig, keyStatus: KeyStatusSummary): string {
   return `<!doctype html>
 <html lang="zh-Hant">
 <head>
@@ -483,7 +490,7 @@ function renderSettingsPage(report: ObservationReport, keyStatus: KeyStatusSumma
 <main>
   <header>
     <h1>Autopilot Settings</h1>
-    <div class="version">v${escapeHtml(report.version)} · ${escapeHtml(report.environment)} · ${escapeHtml(formatTaipeiTime(report.generatedAt))} · DB-backed Gemini keys</div>
+    <div class="version">v${escapeHtml(APP_VERSION)} · ${escapeHtml(config.environment)} · ${escapeHtml(formatTaipeiTime(new Date().toISOString()))} · DB-backed Gemini keys</div>
     <a class="button" href="/">回 Dashboard</a>
   </header>
   ${renderKeySection(keyStatus)}

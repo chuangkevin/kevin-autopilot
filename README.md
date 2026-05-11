@@ -123,9 +123,9 @@ feasible options, and a recommendation. Kevin can add mid-run supplements from
 the dashboard; these are stored only in Autopilot-owned `data/supplements` and
 are merged into the next observation cycle without writing target repositories.
 
-The v0.5.9 background boundary is deliberate: Autopilot may background-observe
-and prepare handoff artifacts, but it still does not background-execute repo
-edits, commits, pushes, deployments, or destructive actions. True background
+The v0.5.9 boundary is deliberate: Autopilot may observe on request and prepare
+handoff artifacts, but it still does not background-execute repo edits, commits,
+pushes, deployments, or destructive actions. Any true background observation or
 execution requires a later scheduler state, permission gate, interrupt classifier,
 pending action record, health surface, and explicit Kevin approval.
 
@@ -146,6 +146,11 @@ that Autopilot is a read-only decision helper that chooses the next worthwhile
 OpenCode handoff, not a chat page or autonomous repair tool. The correction box
 is labeled as a way to fix the current observation judgment, while new product
 goals stay in a separate folded idea intake.
+
+Version 0.5.13 makes the current execution mode explicit: Autopilot does not yet
+run a background thinking loop. It only observes when the home dashboard or
+`/api/report` is loaded, and the UI now says there is no interval or next-run
+time until a later background observation scheduler is implemented.
 
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.
