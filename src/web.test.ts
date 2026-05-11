@@ -67,6 +67,8 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(pageBody.includes('分身思考過程'), true)
     assert.equal(pageBody.includes('我怎麼判斷下一步'), true)
     assert.equal(pageBody.includes('這不是模型私有 chain-of-thought'), true)
+    assert.equal(pageBody.includes('像 Kevin 嗎？'), true)
+    assert.equal(pageBody.includes('/100'), true)
     assert.equal(pageBody.includes('/api/main-agent/thinking'), true)
     assert.equal(pageBody.includes('現在重點：做這件'), true)
     assert.equal(pageBody.includes('唯一主要操作'), true)
@@ -89,6 +91,8 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(thinking.status, 200)
     const thinkingBody = await thinking.json()
     assert.equal(thinkingBody.mainAgent.mode, 'kevin-double-deterministic')
+    assert.equal(typeof thinkingBody.mainAgent.qualityReview.score, 'number')
+    assert.equal(thinkingBody.mainAgent.qualityReview.checks.length > 0, true)
     assert.equal(thinkingBody.note, 'This is an auditable reasoning trace, not private chain-of-thought.')
 
     const settings = await fetch(`${baseUrl}/settings`)

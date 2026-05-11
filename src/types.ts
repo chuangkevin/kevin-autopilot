@@ -116,6 +116,21 @@ export interface MainAgentBrief {
   rounds: MainAgentRound[]
   feasibleOptions: FeasibleOption[]
   recommendation: MainAgentRecommendation
+  qualityReview: MainAgentQualityReview
+}
+
+export interface MainAgentQualityReview {
+  verdict: 'qualified' | 'needs_more_context' | 'not_qualified'
+  score: number
+  summary: string
+  checks: MainAgentQualityCheck[]
+  improvements: string[]
+}
+
+export interface MainAgentQualityCheck {
+  label: string
+  status: 'pass' | 'warn' | 'fail'
+  evidence: string
 }
 
 export interface MainAgentTaskState {

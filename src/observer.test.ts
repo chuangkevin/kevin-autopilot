@@ -45,6 +45,8 @@ test('observe records rule source provenance and disabled service checks', async
     assert.equal(report.supplements.length, 0)
     assert.equal(report.mainAgent.activeTask.supplementCount, 0)
     assert.equal(report.mainAgent.rounds.some((round) => round.agent === 'Kevin 補充'), true)
+    assert.ok(['qualified', 'needs_more_context', 'not_qualified'].includes(report.mainAgent.qualityReview.verdict))
+    assert.equal(report.mainAgent.qualityReview.checks.some((check) => check.label === '安全邊界與 approval gate'), true)
 
     const written = await writeReports(report, data)
     const markdown = await readFile(written.markdownPath, 'utf8')
@@ -87,6 +89,34 @@ test('observe creates backlog candidates from repo and service signals', async (
     assert.equal(report.supplements.length, 1)
     assert.match(report.mainAgent.summary, /先不要碰部署/)
     assert.equal(report.mainAgent.activeTask.supplementCount, 1)
+    assert.equal(report.mainAgent.qualityReview.score >= 50, true)
+    assert.equal(report.mainAgent.qualityReview.checks.some((check) => check.status === 'pass'), true)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('main agent quality review does not qualify weak suspected signals', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'kevin-autopilot-'))
+  try {
+    const config: AutopilotConfig = {
+      environment: 'test',
+      dataDir: join(root, 'data'),
+      ruleSources: [],
+      repositories: [],
+      services: [
+        {
+          name: 'Service Without Health Policy',
+          source: 'test',
+        },
+      ],
+    }
+
+    const report = await observe(config)
+    assert.equal(report.candidates[0]?.confidence, 'suspected')
+    assert.equal(report.mainAgent.qualityReview.verdict, 'needs_more_context')
+    assert.ok(report.mainAgent.qualityReview.score < 90)
+    assert.equal(report.mainAgent.qualityReview.checks.some((check) => check.status === 'warn'), true)
   } finally {
     await rm(root, { recursive: true, force: true })
   }

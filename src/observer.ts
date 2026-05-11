@@ -117,6 +117,78 @@ function createMainAgentBrief(
       candidateId: topCandidate?.id,
       approvalRequired: Boolean(topCandidate?.approvalRequired),
     },
+    qualityReview: createQualityReview(topCandidate, candidates, supplements, failedServices, dirtyRepos, missingRules),
+  }
+}
+
+function createQualityReview(
+  topCandidate: ObservationCandidate | undefined,
+  candidates: ObservationCandidate[],
+  supplements: UserSupplement[],
+  failedServices: ServiceObservation[],
+  dirtyRepos: RepositoryObservation[],
+  missingRules: RuleSourceObservation[],
+): MainAgentBrief['qualityReview'] {
+  const hasStrongCandidate = Boolean(topCandidate && topCandidate.confidence !== 'suspected')
+  const hasWeakCandidate = Boolean(topCandidate && topCandidate.confidence === 'suspected')
+  const checks: MainAgentBrief['qualityReview']['checks'] = [
+    {
+      label: '真實痛點或明確訊號',
+      status: hasStrongCandidate ? 'pass' : topCandidate || supplements.length > 0 || candidates.length > 0 ? 'warn' : 'fail',
+      evidence: topCandidate
+        ? `有候選項「${topCandidate.title}」與 ${topCandidate.evidence.length} 條證據。`
+        : supplements.length > 0
+          ? '有 Kevin 補充，但還缺可驗證的觀察候選。'
+          : '目前沒有候選項，不能假裝已找到痛點。',
+    },
+    {
+      label: 'UX / 穩定 / 可驗證排序',
+      status: topCandidate && topCandidate.confidence !== 'suspected' && ['bug_watch', 'bug_fix_candidate', 'needs_kevin_decision', 'improvement_candidate'].includes(topCandidate.category) ? 'pass' : topCandidate ? 'warn' : 'fail',
+      evidence: topCandidate
+        ? `目前優先 ${topCandidate.category} / ${topCandidate.confidence}，風險 ${topCandidate.risk}。`
+        : `服務失敗 ${failedServices.length}、dirty repo ${dirtyRepos.length}、規則異常 ${missingRules.length}。`,
+    },
+    {
+      label: '最小可執行下一步',
+      status: topCandidate?.suggestedNextStep && topCandidate.boundedPrompt && !hasWeakCandidate ? 'pass' : topCandidate ? 'warn' : 'fail',
+      evidence: topCandidate ? topCandidate.suggestedNextStep : '沒有 bounded prompt；只能維持觀察或增加訊號。',
+    },
+    {
+      label: '安全邊界與 approval gate',
+      status: topCandidate && topCandidate.risk === 'high' && !topCandidate.approvalRequired ? 'fail' : 'pass',
+      evidence: topCandidate
+        ? topCandidate.approvalRequired ? '候選項已要求 approval；仍只允許 read-only handoff。' : '候選項未要求前置 approval，但執行前仍不得自動修改 repo。'
+        : '沒有候選項，因此沒有升權、部署或 destructive action。',
+    },
+    {
+      label: '避免硬做垃圾自動化',
+      status: topCandidate || candidates.length === 0 ? 'pass' : 'warn',
+      evidence: topCandidate ? '只挑一個主要候選，不把清單當成果。' : '目前選擇 observe-only，避免硬找工作。',
+    },
+  ]
+  const score = checks.reduce((sum, check) => sum + (check.status === 'pass' ? 20 : check.status === 'warn' ? 8 : 0), 0)
+  const hasSafetyFailure = checks.some((check) => check.label === '安全邊界與 approval gate' && check.status === 'fail')
+  const hasAnyFailure = checks.some((check) => check.status === 'fail')
+  const hasAnyWarning = checks.some((check) => check.status === 'warn')
+  const verdict = hasSafetyFailure || (hasAnyFailure && score < 50)
+    ? 'not_qualified'
+    : !hasAnyWarning && !hasAnyFailure && score >= 90
+      ? 'qualified'
+      : 'needs_more_context'
+  const improvements = checks
+    .filter((check) => check.status !== 'pass')
+    .map((check) => `${check.label}：${check.evidence}`)
+
+  return {
+    verdict,
+    score,
+    summary: verdict === 'qualified'
+      ? '這輪分身判斷符合 Kevin persona：先看真實訊號、保留安全邊界，並產生可驗證下一步。'
+      : verdict === 'needs_more_context'
+        ? '這輪有部分 Kevin-style 判斷，但證據或最小下一步還不夠，不能宣稱完全合格。'
+        : '這輪不夠像 Kevin 的產品工程判斷；缺少真實痛點、證據或可執行下一步。',
+    checks,
+    improvements: improvements.length > 0 ? improvements : ['維持現有品質門檻，下一輪繼續用 evidence 驗證。'],
   }
 }
 

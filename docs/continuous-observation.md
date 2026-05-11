@@ -65,6 +65,11 @@ v0.5.16 makes the background agent's thinking trace visible. The dashboard and
 evidence, feasible options, and recommendation so Kevin can inspect why the
 double chose a next action without exposing private model chain-of-thought.
 
+v0.5.17 adds a quality gate for that visible thinking. Every observation report
+now includes a Kevin-style review score and verdict, so weak thinking is labeled
+as needing more context or not qualified instead of being presented as if it were
+Kevin-quality judgment.
+
 Kevin can add a supplement during or between observation cycles. The supplement
 is stored as Autopilot-owned data and merged into the next cycle as context; it
 does not reset the main task, overwrite the observation backlog, or authorize

@@ -22,3 +22,4 @@
 20. [x] Add deterministic existing-project similarity analysis to idea records.
 21. [x] Add read-only background observation loop with dashboard/API status.
 22. [x] Add visible auditable thinking trace to dashboard and API.
+23. [x] Add Kevin-style thinking quality review with pass/warn/fail checks.

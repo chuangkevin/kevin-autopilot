@@ -171,6 +171,13 @@ current task, role self-Q&A rounds, feasible options, recommendation, next actio
 and evidence summaries. This is intentionally not private chain-of-thought; it is
 a reviewable explanation of what the agent considered and decided.
 
+Version 0.5.17 adds a Kevin-style thinking quality review to every main-agent
+brief. The review scores whether the double is actually following Kevin's
+decision style: real pain or clear signal, UX/stability/verifiability priority,
+smallest executable next step, safety/approval boundaries, and avoidance of fake
+busywork. Low-scoring rounds are marked `needs_more_context` or `not_qualified`
+with concrete improvements instead of pretending the thinking is good.
+
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.
 
@@ -247,7 +254,7 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
-v0.5.16 visible thinking trace prototype. See `docs/` for architecture,
+v0.5.17 Kevin-style thinking quality review prototype. See `docs/` for architecture,
 safety, and OpenCode workflow.
 
 ## Deployment

@@ -259,6 +259,12 @@ current task, role rounds, observations, judgments, outputs, feasible options,
 recommendation, next action, and evidence summaries. It is not private
 chain-of-thought and should remain safe to show to Kevin.
 
+v0.5.17 adds `qualityReview` to the main-agent state. It scores the decision
+against Kevin's persona priorities: real pain or clear signal, user experience /
+stability / verifiability, smallest executable next step, safety and approval
+gates, and avoiding fake busywork. Rounds that do not meet the bar are explicitly
+marked `needs_more_context` or `not_qualified` with improvements.
+
 The first persisted loop status is `observation-loop-state.json`, which records
 enabled/running state, interval, run count, last run, next run, report paths, and
 last error. This is status telemetry only, not permission to execute changes.

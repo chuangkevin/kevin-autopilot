@@ -686,6 +686,12 @@ function renderThinkingTrace(report: ObservationReport): string {
           <div>${escapeHtml(mainAgent.recommendation.reason)}</div>
           <div class="muted">下一步：${escapeHtml(mainAgent.recommendation.nextAction)}</div>
         </div>
+        <h2>像 Kevin 嗎？</h2>
+        <div class="recommendation">
+          <strong>${escapeHtml(renderQualityVerdict(mainAgent.qualityReview.verdict))} · ${mainAgent.qualityReview.score}/100</strong>
+          <div>${escapeHtml(mainAgent.qualityReview.summary)}</div>
+        </div>
+        ${mainAgent.qualityReview.checks.map(renderQualityCheck).join('')}
         <h2>可行方案</h2>
         ${mainAgent.feasibleOptions.slice(0, 3).map(renderFeasibleOption).join('')}
         <h2>證據摘要</h2>
@@ -703,6 +709,19 @@ function renderTraceRound(round: ObservationReport['mainAgent']['rounds'][number
     <div>判斷：${escapeHtml(round.argument)}</div>
     <div class="muted">輸出：${escapeHtml(round.output)}</div>
   </div>`
+}
+
+function renderQualityCheck(check: ObservationReport['mainAgent']['qualityReview']['checks'][number]): string {
+  return `<div class="checkpoint ${check.status === 'pass' ? 'completed' : check.status === 'warn' ? 'pending' : 'cancelled'}">
+    <strong>${escapeHtml(check.label)} · ${escapeHtml(check.status)}</strong>
+    <div class="muted">${escapeHtml(check.evidence)}</div>
+  </div>`
+}
+
+function renderQualityVerdict(verdict: ObservationReport['mainAgent']['qualityReview']['verdict']): string {
+  if (verdict === 'qualified') return '合格'
+  if (verdict === 'needs_more_context') return '需要補強'
+  return '不合格'
 }
 
 function renderLoopPlainStatus(loopState: ObservationLoopState): string {
