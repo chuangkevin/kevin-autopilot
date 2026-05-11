@@ -17,6 +17,50 @@ test('parseGeminiKeys accepts common paste formats and deduplicates', () => {
   )
 })
 
+test('parseGeminiKeys accepts key-manager copy format and wrapped mobile keys', () => {
+  assert.deepEqual(
+    parseGeminiKeys(`# ===== 可信 Key Pool (50 keys，去重後) =====
+
+# -無擁有者 (50)
+${KEY_ONE.slice(0, 28)}
+${KEY_ONE.slice(28)}
+${KEY_TWO}`),
+    [KEY_ONE, KEY_TWO],
+  )
+})
+
+test('parseGeminiKeys does not merge a complete key with following owner text', () => {
+  assert.deepEqual(parseGeminiKeys(`${KEY_ONE}\nowner123`), [KEY_ONE])
+})
+
+test('importGeminiKeys counts duplicate submitted keys as ignored', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-keys-'))
+  const config = makeConfig(dataDir)
+  try {
+    const summary = await importGeminiKeys(config, `${KEY_ONE},${KEY_ONE}`, false)
+    assert.equal(summary.imported, 1)
+    assert.equal(summary.ignored, 1)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('importGeminiKeys does not mark wrapped key-manager keys as ignored', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-keys-'))
+  const config = makeConfig(dataDir)
+  try {
+    const summary = await importGeminiKeys(
+      config,
+      `# ===== 可信 Key Pool (50 keys，去重後) =====\n# -無擁有者 (50)\n${KEY_ONE.slice(0, 28)}\n${KEY_ONE.slice(28)}\n${KEY_TWO}`,
+      false,
+    )
+    assert.equal(summary.imported, 2)
+    assert.equal(summary.ignored, 0)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
 test('importGeminiKeys stores keys without exposing full values in status', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-keys-'))
   const config = makeConfig(dataDir)

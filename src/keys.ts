@@ -6,7 +6,8 @@ import { GeminiClient, KeyPool } from '@kevinsisi/ai-core'
 import type { ApiKey, StorageAdapter } from '@kevinsisi/ai-core'
 import type { AutopilotConfig, KeyImportSummary, KeyStatusSummary } from './types.js'
 
-const GEMINI_KEY_RE = /^AIzaSy[0-9A-Za-z_-]{30,40}$/
+const GEMINI_KEY_RE = /^AIzaSy[0-9A-Za-z_-]{33}$/
+const GEMINI_KEY_CHARS_RE = /^[0-9A-Za-z_-]+$/
 const PLACEHOLDER_RE = /^(your[_-]?key[_-]?here|xxx+|test|example|changeme)$/i
 let keyStoreQueue = Promise.resolve()
 let migratedLegacyStores = new Set<string>()
@@ -14,6 +15,11 @@ let migratedLegacyStores = new Set<string>()
 interface PersistedKeyStore {
   nextId: number
   keys: ApiKey[]
+}
+
+interface KeyInputCandidate {
+  value: string
+  joinsPrevious: boolean
 }
 
 class SingleKeyStorageAdapter implements StorageAdapter {
@@ -117,9 +123,10 @@ export class FileKeyStorageAdapter implements StorageAdapter {
 export function parseGeminiKeys(rawText: string): string[] {
   const seen = new Set<string>()
   const keys: string[] = []
+  const candidates = parseKeyCandidates(rawText)
 
-  for (const rawPart of rawText.split(/[\r\n,]+/)) {
-    const value = normalizeKeyInput(rawPart)
+  for (const rawPart of candidates) {
+    const value = normalizeKeyInput(rawPart).replace(/\s+/g, '')
     if (!value || seen.has(value) || PLACEHOLDER_RE.test(value) || !GEMINI_KEY_RE.test(value)) continue
     seen.add(value)
     keys.push(value)
@@ -229,7 +236,57 @@ function normalizeKeyInput(rawPart: string): string {
 }
 
 function countSubmittedKeys(rawText: string): number {
-  return rawText.split(/[\r\n,]+/).map(normalizeKeyInput).filter(Boolean).length
+  const candidates = parseKeyCandidates(rawText).map((candidate) => normalizeKeyInput(candidate).replace(/\s+/g, ''))
+  const validCandidates = candidates.filter((candidate) => GEMINI_KEY_RE.test(candidate))
+  const invalidCandidates = candidates.filter((candidate) => candidate && !GEMINI_KEY_RE.test(candidate) && !validCandidates.some((key) => key.includes(candidate)))
+  return validCandidates.length + invalidCandidates.length
+}
+
+function parseLineKeyCandidates(rawText: string): KeyInputCandidate[] {
+  const candidates: KeyInputCandidate[] = []
+  for (const rawLine of rawText.replace(/\r\n/g, '\n').split('\n')) {
+    const line = rawLine.trim()
+    if (!line || line.startsWith('#')) continue
+    if (line.includes(',')) {
+      candidates.push(...line.split(',').map((part) => part.trim()).filter(Boolean).map((value) => ({ value, joinsPrevious: false })))
+    } else {
+      candidates.push({ value: line, joinsPrevious: true })
+    }
+  }
+  return candidates
+}
+
+function parseKeyCandidates(rawText: string): string[] {
+  const lineCandidates = parseLineKeyCandidates(rawText)
+  const candidates: string[] = []
+  for (let index = 0; index < lineCandidates.length; index++) {
+    const current = normalizeKeyInput(lineCandidates[index]?.value ?? '').replace(/\s+/g, '')
+    if (!current) continue
+    if (!current.startsWith('AIzaSy')) {
+      candidates.push(current)
+      continue
+    }
+
+    let combined = current
+    let best = GEMINI_KEY_RE.test(combined) ? { value: combined, index } : undefined
+    for (let nextIndex = index + 1; nextIndex < lineCandidates.length; nextIndex++) {
+      const nextCandidate = lineCandidates[nextIndex]
+      const fragment = normalizeKeyInput(nextCandidate?.value ?? '').replace(/\s+/g, '')
+      if (!nextCandidate?.joinsPrevious || !fragment || fragment.startsWith('AIzaSy') || !GEMINI_KEY_CHARS_RE.test(fragment)) break
+      combined += fragment
+      if (GEMINI_KEY_RE.test(combined)) {
+        best = { value: combined, index: nextIndex }
+      }
+      if (combined.length > 39) break
+    }
+    if (best) {
+      candidates.push(best.value)
+      index = best.index
+    } else {
+      candidates.push(current)
+    }
+  }
+  return candidates
 }
 
 function getEnvGeminiKeys(): string[] {

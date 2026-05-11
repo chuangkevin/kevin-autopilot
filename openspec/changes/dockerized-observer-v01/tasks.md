@@ -16,3 +16,4 @@
 14. [x] Add v0.5 read-only project handoff plans for stored ideas.
 15. [x] Add no-store headers for dashboard/API refresh correctness.
 16. [x] Add dedicated settings-page Gemini key import backed by SQLite DB.
+17. [x] Accept key-manager copy format and fix mobile dashboard overflow.

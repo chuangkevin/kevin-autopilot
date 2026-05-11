@@ -84,6 +84,10 @@ stores imported keys in Autopilot's SQLite DB at `data/autopilot.db`. No admin
 token input is required on the page; API/UI responses still expose only masked
 suffixes.
 
+Version 0.5.4 accepts key-manager copied key-pool text, including comment
+headers and mobile-wrapped Gemini keys, and tightens the dashboard/settings
+mobile layout so tables and long idea text no longer push the page sideways.
+
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.
 

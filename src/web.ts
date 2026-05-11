@@ -155,25 +155,28 @@ function renderPage(
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Kevin Autopilot</title>
   <style>
-    :root { color-scheme: dark; font-family: Inter, "Microsoft JhengHei", system-ui, sans-serif; background: #0b1020; color: #e5eefc; }
-    body { margin: 0; padding: 32px; }
-    main { max-width: 1120px; margin: 0 auto; }
-    header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 28px; }
-    h1 { margin: 0; font-size: 36px; letter-spacing: -0.04em; }
+    :root { color-scheme: dark; font-family: "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif; background: #080d19; color: #e5eefc; }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; max-width: 100%; overflow-x: hidden; }
+    body { margin: 0; padding: clamp(14px, 4vw, 32px); }
+    main { width: 100%; max-width: 1120px; margin: 0 auto; min-width: 0; }
+    header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 24px; min-width: 0; }
+    h1 { margin: 0; font-size: clamp(30px, 8vw, 48px); line-height: 1.02; letter-spacing: -0.06em; overflow-wrap: anywhere; }
     .version { color: #93a4bd; font-size: 14px; }
-    .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 24px; }
-    .card, section { background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04)); border: 1px solid rgba(148,163,184,0.22); border-radius: 18px; padding: 18px; box-shadow: 0 18px 48px rgba(0,0,0,0.28); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .card, section { min-width: 0; background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.035)); border: 1px solid rgba(148,163,184,0.22); border-radius: 18px; padding: clamp(14px, 4vw, 18px); box-shadow: 0 18px 48px rgba(0,0,0,0.24); }
     .label { color: #93a4bd; font-size: 13px; }
     .value { font-size: 30px; font-weight: 700; margin-top: 6px; }
     section { margin-bottom: 18px; }
     h2 { margin: 0 0 12px; font-size: 18px; }
-    table { width: 100%; border-collapse: collapse; font-size: 14px; }
-    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid rgba(148,163,184,0.16); }
+    .table-scroll { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    table { width: 100%; min-width: 680px; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid rgba(148,163,184,0.16); vertical-align: top; }
     th { color: #93a4bd; font-weight: 600; }
-    .pill { display: inline-block; border-radius: 999px; padding: 4px 9px; font-size: 12px; background: rgba(59,130,246,0.18); color: #bfdbfe; }
+    .pill { display: inline-block; white-space: nowrap; border-radius: 999px; padding: 4px 9px; font-size: 12px; background: rgba(59,130,246,0.18); color: #bfdbfe; }
     .warn { background: rgba(245,158,11,0.16); color: #fde68a; }
     .ok { background: rgba(34,197,94,0.14); color: #bbf7d0; }
-    .muted { color: #93a4bd; }
+    .muted { color: #93a4bd; overflow-wrap: anywhere; }
     textarea { width: 100%; min-height: 118px; box-sizing: border-box; resize: vertical; border-radius: 14px; border: 1px solid rgba(148,163,184,0.28); background: rgba(15,23,42,0.86); color: #e5eefc; padding: 14px; font: inherit; font-size: 16px; line-height: 1.5; }
     label { display: inline-flex; gap: 8px; align-items: center; color: #cbd5e1; margin-top: 10px; font-size: 14px; }
     input[type="checkbox"] { width: 16px; height: 16px; }
@@ -181,9 +184,10 @@ function renderPage(
     button.secondary { background: rgba(148,163,184,0.2); color: #e5eefc; margin-left: 8px; }
     .idea { border-top: 1px solid rgba(148,163,184,0.16); padding: 12px 0; }
     .idea:first-child { border-top: 0; }
-    .idea-title { font-weight: 700; }
-    .idea-meta { color: #93a4bd; font-size: 13px; margin-top: 4px; }
-    @media (max-width: 820px) { body { padding: 18px; } header { display: block; } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } table { font-size: 13px; } }
+    .idea-title { font-weight: 700; overflow-wrap: anywhere; }
+    .idea-meta { color: #93a4bd; font-size: 13px; margin-top: 4px; overflow-wrap: anywhere; }
+    @media (max-width: 820px) { header { display: block; } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } table { font-size: 13px; } }
+    @media (max-width: 520px) { .grid { grid-template-columns: 1fr 1fr; } .value { font-size: 24px; } a.button, button { min-height: 44px; } }
   </style>
 </head>
 <body>
@@ -221,16 +225,16 @@ function renderPage(
 
   <section>
     <h2>服務觀察</h2>
-    <table><thead><tr><th>服務</th><th>Host</th><th>Domain</th><th>Port</th><th>Health</th></tr></thead><tbody>
+    <div class="table-scroll"><table><thead><tr><th>服務</th><th>Host</th><th>Domain</th><th>Port</th><th>Health</th></tr></thead><tbody>
       ${report.services.map((service) => `<tr><td>${escapeHtml(service.name)}</td><td>${escapeHtml(service.host ?? '-')}</td><td>${escapeHtml(service.domain ?? '-')}</td><td>${escapeHtml(String(service.port ?? '-'))}</td><td><span class="pill">${escapeHtml(service.healthStatus)}</span></td></tr>`).join('')}
-    </tbody></table>
+    </tbody></table></div>
   </section>
 
   <section>
     <h2>Repository</h2>
-    <table><thead><tr><th>Repo</th><th>Branch</th><th>Status</th><th>Recent commits</th></tr></thead><tbody>
+    <div class="table-scroll"><table><thead><tr><th>Repo</th><th>Branch</th><th>Status</th><th>Recent commits</th></tr></thead><tbody>
       ${report.repositories.map((repo) => `<tr><td>${escapeHtml(repo.name)}</td><td>${escapeHtml(repo.branch ?? '-')}</td><td><span class="pill ${repo.dirty ? 'warn' : 'ok'}">${repo.dirty ? 'dirty' : 'clean'}</span></td><td>${repo.recentCommits.length}</td></tr>`).join('')}
-    </tbody></table>
+    </tbody></table></div>
   </section>
 
   <section>
@@ -270,11 +274,13 @@ function renderSettingsPage(report: ObservationReport, keyStatus: KeyStatusSumma
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Kevin Autopilot Settings</title>
   <style>
-    :root { color-scheme: dark; font-family: Inter, "Microsoft JhengHei", system-ui, sans-serif; background: #0b1020; color: #e5eefc; }
-    body { margin: 0; padding: 32px; }
-    main { max-width: 860px; margin: 0 auto; }
-    section { background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04)); border: 1px solid rgba(148,163,184,0.22); border-radius: 18px; padding: 18px; box-shadow: 0 18px 48px rgba(0,0,0,0.28); margin-bottom: 18px; }
-    h1 { margin: 0 0 6px; font-size: 34px; letter-spacing: -0.04em; }
+    :root { color-scheme: dark; font-family: "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif; background: #080d19; color: #e5eefc; }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; max-width: 100%; overflow-x: hidden; }
+    body { margin: 0; padding: clamp(14px, 4vw, 32px); }
+    main { width: 100%; max-width: 860px; margin: 0 auto; min-width: 0; }
+    section { min-width: 0; background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.035)); border: 1px solid rgba(148,163,184,0.22); border-radius: 18px; padding: clamp(14px, 4vw, 18px); box-shadow: 0 18px 48px rgba(0,0,0,0.24); margin-bottom: 18px; }
+    h1 { margin: 0 0 6px; font-size: clamp(30px, 8vw, 44px); line-height: 1.06; letter-spacing: -0.06em; overflow-wrap: anywhere; }
     h2 { margin: 0 0 12px; font-size: 18px; }
     .version, .muted { color: #93a4bd; }
     textarea { width: 100%; min-height: 160px; box-sizing: border-box; resize: vertical; border-radius: 14px; border: 1px solid rgba(148,163,184,0.28); background: rgba(15,23,42,0.86); color: #e5eefc; padding: 14px; font: inherit; font-size: 16px; line-height: 1.5; }
@@ -282,7 +288,7 @@ function renderSettingsPage(report: ObservationReport, keyStatus: KeyStatusSumma
     input[type="checkbox"] { width: 16px; height: 16px; }
     a.button, button { display: inline-block; text-decoration: none; margin-top: 10px; border: 0; border-radius: 999px; background: #60a5fa; color: #06111f; font-weight: 700; padding: 10px 16px; cursor: pointer; }
     button.secondary { background: rgba(148,163,184,0.2); color: #e5eefc; margin-left: 8px; }
-    @media (max-width: 820px) { body { padding: 18px; } }
+    @media (max-width: 520px) { a.button, button { min-height: 44px; } button.secondary { margin-left: 0; display: block; } }
   </style>
 </head>
 <body>

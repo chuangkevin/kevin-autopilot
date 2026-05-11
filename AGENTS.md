@@ -12,8 +12,8 @@ fallback during local development.
 
 Kevin approved the v0.1 Dockerized observer, v0.2 idea-intake prototype, v0.3
 key import / agent handoff metadata, v0.4 kevinhome deployment, v0.5
-read-only project handoff plan work, and v0.5.3 settings-page DB-backed key
-management.
+read-only project handoff plan work, v0.5.3 settings-page DB-backed key
+management, and v0.5.4 key-manager paste/mobile layout fixes.
 Keep these versions read-only: they may observe, classify, report, and store
 Autopilot-owned reports/idea records, but they must not modify target repos,
 create repos, deploy, commit/push other projects, or perform destructive actions
