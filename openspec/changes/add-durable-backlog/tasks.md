@@ -36,5 +36,5 @@
 ## 6. Verification And Release
 
 - [x] 6.1 `npm run build`, `npm test`, `docker compose -f docker-compose.kevinhome.yml config`, and `git diff --check` are green for the UI release checkpoint: 59/59 tests.
-- [ ] 6.2 Local Docker container smoke is not run on this corporate dev box unless an untracked `Dockerfile.local` MITM workaround is present; use CI-built image plus deploy health checks for the release smoke.
-- [ ] 6.3 Commit + push + verify CI / Docker / Deploy for v0.7.0.
+- [x] 6.2 CI-built Docker image smoke verified through the kevinhome deploy: `/health` reports `0.7.0`, the dashboard renders Durable Backlog, `/api/backlog` responds, and the container is healthy.
+- [x] 6.3 Commit + push + verify CI / Docker / Deploy for v0.7.0.
