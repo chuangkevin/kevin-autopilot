@@ -62,7 +62,7 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
       loop: observationLoop?.getState() ?? createManualLoopState(),
       mainAgent: report.mainAgent,
       projectRadar: report.projectRadar,
-      candidates: report.candidates.slice(0, 5),
+      candidates: rankCandidatesForDashboard(report.candidates, report.mainAgent.recommendation.candidateId).slice(0, 12),
       note: 'This is an auditable reasoning trace, not private chain-of-thought.',
     })
     return
@@ -310,6 +310,16 @@ function renderPage(
     .trace-step strong { display: block; margin-bottom: 5px; }
     .trace-note { border: 1px solid rgba(148,163,184,0.18); border-radius: 14px; padding: 12px; background: rgba(8,13,25,0.42); }
     .candidate-action { margin-top: 8px; color: #cbd5e1; font-size: 13px; }
+    .priority-board { border-color: rgba(96,165,250,0.32); background: radial-gradient(circle at top right, rgba(96,165,250,0.14), transparent 34%), linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.035)); }
+    .priority-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
+    .priority-card { display: grid; gap: 10px; border: 1px solid rgba(148,163,184,0.18); border-top: 4px solid #64748b; border-radius: 18px; padding: 14px; background: rgba(15,23,42,0.52); min-width: 0; }
+    .priority-card.priority-critical { border-top-color: #f87171; }
+    .priority-card.priority-high { border-top-color: #f59e0b; }
+    .priority-card.priority-normal { border-top-color: #60a5fa; }
+    .priority-head { display: flex; gap: 10px; align-items: flex-start; }
+    .rank-badge { flex: 0 0 auto; display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 12px; background: rgba(96,165,250,0.18); color: #dbeafe; font: 800 14px/1 ui-monospace, "Cascadia Code", monospace; }
+    .priority-title { font-weight: 800; line-height: 1.28; overflow-wrap: anywhere; }
+    .priority-meta { display: flex; flex-wrap: wrap; gap: 6px; }
     .radar-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
     .radar-card { border: 1px solid rgba(148,163,184,0.18); border-left: 5px solid #64748b; border-radius: 16px; padding: 14px; background: rgba(15,23,42,0.5); min-width: 0; }
     .radar-card.needs_attention { border-left-color: #f87171; }
@@ -354,8 +364,8 @@ function renderPage(
 
   <section class="command-center">
     <div class="mission">
-      <h2 class="mission-title">這頁的目標：幫你挑出下一件值得處理的事</h2>
-      <p>它會看 read-only 訊號，挑一個候選，產生可貼到 OpenCode 的安全 prompt。</p>
+      <h2 class="mission-title">這頁的目標：幫你把多件事排成可讀優先序</h2>
+      <p>它會看 read-only 訊號，先列出多個候選，再把最該看的項目放在最上面。</p>
       <p class="muted">它不是聊天頁、不是自動修復器，也不會自己改 repo、commit、push、部署。</p>
     </div>
     <div class="truth-box">
@@ -370,7 +380,7 @@ function renderPage(
       </div>
       ${loopState.lastError ? `<div class="muted">最近錯誤：${escapeHtml(loopState.lastError)}</div>` : ''}
     </div>
-    <div class="eyebrow">今天只看這張</div>
+    <div class="eyebrow">第一優先</div>
     <h2 class="main-action">${topCandidate ? '現在重點：做這件' : '現在重點：先不要做'}</h2>
     <p class="plain-answer">${topCandidate ? escapeHtml(topCandidate.title) : '這輪沒有足夠明確的候選項。先維持觀察，或補充真正卡住的地方。'}</p>
     <p class="muted">為什麼：${escapeHtml(report.mainAgent.recommendation.reason)}</p>
@@ -397,6 +407,8 @@ function renderPage(
       </aside>
     </div>
   </section>
+
+  ${renderPriorityBoard(report)}
 
   ${renderThinkingTrace(report)}
 
@@ -628,6 +640,78 @@ function renderKeySection(keyStatus: KeyStatusSummary): string {
     </form>
     <div id="key-result" class="muted"></div>
   </section>`
+}
+
+function renderPriorityBoard(report: ObservationReport): string {
+  const rankedCandidates = rankCandidatesForDashboard(report.candidates, report.mainAgent.recommendation.candidateId).slice(0, 12)
+  const bugCount = rankedCandidates.filter((candidate) => candidate.category === 'bug_watch' || candidate.category === 'bug_fix_candidate').length
+  const evidenceCount = rankedCandidates.filter(needsEvidenceFirst).length
+  return `<section class="priority-board">
+    <div class="eyebrow">Priority Board</div>
+    <h2 class="mission-title">一次看多件，但每件都有下一步</h2>
+    <p class="muted">這裡不是 debug backlog；它是給你同時掃十幾件事的工作台。弱訊號先補證據，較強訊號才展開 read-only handoff prompt。</p>
+    <div class="status-strip">
+      <div class="status-item"><span class="label">列出候選</span><strong>${rankedCandidates.length}</strong></div>
+      <div class="status-item"><span class="label">疑似 Bug</span><strong>${bugCount}</strong></div>
+      <div class="status-item"><span class="label">先補證據</span><strong>${evidenceCount}</strong></div>
+      <div class="status-item"><span class="label">全部候選</span><strong>${report.candidates.length}</strong></div>
+    </div>
+    ${rankedCandidates.length === 0 ? '<p class="muted">目前沒有候選項；先看 Project Radar 或補充真實卡點。</p>' : `<div class="priority-grid">${rankedCandidates.map((candidate, index) => renderPriorityCandidate(candidate, index + 1)).join('')}</div>`}
+  </section>`
+}
+
+function renderPriorityCandidate(candidate: ObservationReport['candidates'][number], rank: number): string {
+  const mode = needsEvidenceFirst(candidate) ? '先補證據' : 'Read-only handoff'
+  const priorityClass = candidate.risk === 'high' || candidate.category === 'bug_fix_candidate' ? 'priority-critical' : candidate.category === 'bug_watch' || candidate.approvalRequired ? 'priority-high' : 'priority-normal'
+  return `<article class="priority-card ${priorityClass}">
+    <div class="priority-head">
+      <span class="rank-badge">#${rank}</span>
+      <div>
+        <div class="priority-title">${escapeHtml(candidate.title)}</div>
+        <div class="priority-meta">
+          <span class="pill">${escapeHtml(candidate.category)}</span>
+          <span class="pill ${candidate.confidence === 'suspected' ? 'warn' : 'ok'}">${escapeHtml(candidate.confidence)}</span>
+          <span class="pill ${candidate.risk === 'high' || candidate.risk === 'medium' ? 'warn' : 'ok'}">risk ${escapeHtml(candidate.risk)}</span>
+          ${candidate.approvalRequired ? '<span class="pill warn">需要 approval</span>' : ''}
+        </div>
+      </div>
+    </div>
+    <div>${escapeHtml(candidate.suggestedNextStep)}</div>
+    <div class="muted">來源：${escapeHtml(candidate.sourceType)} / ${escapeHtml(candidate.sourceName)}</div>
+    <div class="candidate-action">建議模式：${mode}</div>
+    <details><summary>證據與 prompt</summary><div class="muted">${candidate.evidence.map(escapeHtml).join('<br>')}</div><button type="button" class="secondary copy-prompt">複製 Prompt</button><span class="copy-status" aria-live="polite"></span><pre>${escapeHtml(candidate.boundedPrompt)}</pre></details>
+  </article>`
+}
+
+function needsEvidenceFirst(candidate: ObservationReport['candidates'][number]): boolean {
+  return candidate.confidence === 'suspected' || (candidate.category === 'improvement_candidate' && candidate.risk === 'low')
+}
+
+function rankCandidatesForDashboard(candidates: ObservationReport['candidates'], topCandidateId?: string): ObservationReport['candidates'] {
+  return [...candidates].sort((a, b) => {
+    if (a.id === topCandidateId) return -1
+    if (b.id === topCandidateId) return 1
+    return candidateDashboardScore(b) - candidateDashboardScore(a)
+  })
+}
+
+function candidateDashboardScore(candidate: ObservationReport['candidates'][number]): number {
+  const categoryScore: Record<ObservationReport['candidates'][number]['category'], number> = {
+    bug_fix_candidate: 90,
+    bug_watch: 80,
+    needs_kevin_decision: 70,
+    improvement_candidate: 60,
+    prototype_candidate: 50,
+    blocked: 0,
+  }
+  const confidenceScore: Record<ObservationReport['candidates'][number]['confidence'], number> = {
+    confirmed: 20,
+    likely: 12,
+    suspected: 4,
+  }
+  const riskPenalty = candidate.risk === 'high' ? 25 : candidate.risk === 'medium' ? 12 : 0
+  const approvalPenalty = candidate.approvalRequired ? 8 : 0
+  return categoryScore[candidate.category] + confidenceScore[candidate.confidence] - riskPenalty - approvalPenalty
 }
 
 function renderProjectRadar(report: ObservationReport): string {

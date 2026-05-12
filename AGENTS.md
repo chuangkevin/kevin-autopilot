@@ -23,8 +23,8 @@ that separates judgment correction from new product goals, v0.5.13 explicit
 manual-only/no-background-loop status copy, v0.5.14 idea desktop cards with
 existing-project similarity analysis, v0.5.15 read-only background observation
 loop status, v0.5.16 visible auditable thinking trace, v0.5.17 Kevin-style
-thinking quality review, v0.5.18 evidence-gap-driven quality review, and
-v0.5.19 all-project Project Radar.
+thinking quality review, v0.5.18 evidence-gap-driven quality review,
+v0.5.19 all-project Project Radar, and v0.5.20 multi-item Priority Board.
 Keep these versions read-only: they may observe, classify, report, and store
 Autopilot-owned reports/idea records/supplements, but they must not modify target
 repos, create repos, deploy, commit/push other projects, or perform destructive

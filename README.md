@@ -189,6 +189,11 @@ configured repository/service as a first-class card with status, signals,
 candidate links, and the next read-only observation step, while the command center
 still keeps one focused top priority.
 
+Version 0.5.20 adds a multi-item Priority Board above the debug sections. It
+shows up to twelve ranked candidates at once, labels whether each item should
+collect evidence or can use a read-only handoff prompt, and keeps prompts tucked
+behind details so ten-plus items remain scannable.
+
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.
 
@@ -265,7 +270,7 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
-v0.5.19 all-project Project Radar prototype. See `docs/` for architecture,
+v0.5.20 multi-item Priority Board prototype. See `docs/` for architecture,
 safety, and OpenCode workflow.
 
 ## Deployment

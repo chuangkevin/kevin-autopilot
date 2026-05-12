@@ -79,6 +79,11 @@ Each configured repository/service appears on the dashboard with status, linked
 signals, and the next observation step, making it clear that the loop watches the
 whole HomeProject surface even though the command center chooses one focus.
 
+v0.5.20 keeps the same full observation loop but changes the dashboard from a
+single visible candidate to a multi-item Priority Board. A run can now surface
+ten-plus ranked candidates without hiding them in debug tables; each card still
+uses read-only evidence and collapsed bounded prompts.
+
 Kevin can add a supplement during or between observation cycles. The supplement
 is stored as Autopilot-owned data and merged into the next cycle as context; it
 does not reset the main task, overwrite the observation backlog, or authorize

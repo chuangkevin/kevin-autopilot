@@ -25,3 +25,4 @@
 23. [x] Add Kevin-style thinking quality review with pass/warn/fail checks.
 24. [x] Add explicit evidence gaps and upgrade conditions for weak thinking.
 25. [x] Add all-project Project Radar to observation reports and dashboard.
+26. [x] Add multi-item Priority Board for ranked observation candidates.

@@ -276,6 +276,11 @@ health policy, linked candidates, and the next read-only observation step, so th
 dashboard can show global HomeProject coverage while still focusing on one top
 priority.
 
+v0.5.20 adds a visible Priority Board for multiple observation candidates. The
+command center still highlights the first priority, but the board ranks up to
+twelve candidates, separates evidence-first items from read-only handoff items,
+and keeps bounded prompts collapsed to preserve scanability.
+
 The first persisted loop status is `observation-loop-state.json`, which records
 enabled/running state, interval, run count, last run, next run, report paths, and
 last error. This is status telemetry only, not permission to execute changes.

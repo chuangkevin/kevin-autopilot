@@ -37,7 +37,10 @@ test('web server exposes health and idea intake', async () => {
     environment: 'test',
     dataDir,
     ruleSources: [],
-    repositories: [{ name: 'missing-repo', path: join(dataDir, 'missing') }],
+    repositories: [
+      { name: 'missing-repo', path: join(dataDir, 'missing') },
+      ...Array.from({ length: 12 }, (_, index) => ({ name: `missing-repo-${index + 2}`, path: join(dataDir, `missing-${index + 2}`) })),
+    ],
     services: [],
   }
   const server = createWebServer(config)
@@ -58,12 +61,16 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(page.headers.get('cache-control'), 'no-store, max-age=0')
     const pageBody = await page.text()
     assert.equal(pageBody.includes('設定 Gemini Keys'), true)
-    assert.equal(pageBody.includes('這頁的目標：幫你挑出下一件值得處理的事'), true)
+    assert.equal(pageBody.includes('這頁的目標：幫你把多件事排成可讀優先序'), true)
     assert.equal(pageBody.includes('不是聊天頁、不是自動修復器'), true)
     assert.equal(pageBody.includes('背景分身已開始 read-only 觀察'), true)
     assert.equal(pageBody.includes('目前背景觀察已關閉'), true)
     assert.equal(pageBody.includes('不會自己改 repo、commit、push、部署'), true)
-    assert.equal(pageBody.includes('今天只看這張'), true)
+    assert.equal(pageBody.includes('第一優先'), true)
+    assert.equal(pageBody.includes('Priority Board'), true)
+    assert.equal(pageBody.includes('一次看多件，但每件都有下一步'), true)
+    assert.equal(pageBody.includes('建議模式：先補證據'), true)
+    assert.equal(pageBody.match(/class="priority-card/g)?.length, 12)
     assert.equal(pageBody.includes('分身思考過程'), true)
     assert.equal(pageBody.includes('我怎麼判斷下一步'), true)
     assert.equal(pageBody.includes('這不是模型私有 chain-of-thought'), true)
@@ -102,6 +109,9 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(Array.isArray(thinkingBody.mainAgent.qualityReview.gaps), true)
     assert.equal(thinkingBody.projectRadar[0].name, 'missing-repo')
     assert.equal(thinkingBody.projectRadar[0].status, 'needs_attention')
+    assert.equal(thinkingBody.candidates.length, 12)
+    assert.equal(thinkingBody.candidates[0].id, 'repository-missing-repo-missing-repo')
+    assert.equal(thinkingBody.candidates[0].id, thinkingBody.mainAgent.recommendation.candidateId)
     assert.equal(thinkingBody.note, 'This is an auditable reasoning trace, not private chain-of-thought.')
 
     const settings = await fetch(`${baseUrl}/settings`)
