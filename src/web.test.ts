@@ -146,6 +146,8 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(pageBody.includes('navigator.clipboard'), true)
     assert.equal(pageBody.includes("document.execCommand('copy')"), true)
     assert.equal(pageBody.includes('Prompt 已複製'), true)
+    assert.equal(pageBody.includes('.cockpit-panel { max-height: clamp(520px, 62vh, 720px); overflow-y: auto; overflow-x: hidden; touch-action: pan-y; }'), true)
+    assert.equal(pageBody.includes('.node-actions { position: sticky; top: 0;'), true)
 
     const graph = await fetch(`${baseUrl}/api/graph`)
     assert.equal(graph.status, 200)

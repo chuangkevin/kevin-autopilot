@@ -418,7 +418,7 @@ function renderPage(
     .neural-cockpit::before { content: ""; position: absolute; inset: 0; pointer-events: none; background-image: linear-gradient(rgba(245,234,215,0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(245,234,215,0.035) 1px, transparent 1px); background-size: 34px 34px; mask-image: radial-gradient(circle at center, black, transparent 74%); }
     .neural-shell { position: relative; display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(290px, 0.75fr); gap: 16px; align-items: start; }
     .neural-stage { position: relative; height: clamp(520px, 62vh, 720px); border: 1px solid rgba(251,191,36,0.18); border-radius: 28px; overflow: hidden; background: radial-gradient(circle at center, rgba(251,191,36,0.12), rgba(8,13,25,0.2) 42%, rgba(8,13,25,0.68)); }
-    .cockpit-panel { max-height: clamp(520px, 62vh, 720px); overflow-y: auto; }
+    .cockpit-panel { max-height: clamp(520px, 62vh, 720px); overflow-y: auto; overflow-x: hidden; touch-action: pan-y; }
     .neural-map { position: absolute; inset: 0; width: 100%; height: 100%; }
     .neural-edge { stroke: rgba(245,234,215,0.22); stroke-width: 1.4; }
     .neural-edge.strong { stroke: rgba(45,212,191,0.55); stroke-width: 2.2; }
@@ -432,11 +432,13 @@ function renderPage(
     .brain-node.task { color: #bfdbfe; }
     .node-type { display: block; font: 800 10px/1 ui-monospace, "Cascadia Code", monospace; letter-spacing: 0.12em; text-transform: uppercase; color: #a8a29e; margin-bottom: 5px; }
     .node-title { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; font-weight: 900; line-height: 1.25; overflow-wrap: anywhere; }
-    .cockpit-panel { border: 1px solid rgba(245,234,215,0.16); border-radius: 24px; padding: 16px; background: rgba(11,9,7,0.72); min-width: 0; }
+    .cockpit-panel { border: 1px solid rgba(245,234,215,0.16); border-radius: 24px; padding: 16px; background: rgba(11,9,7,0.72); min-width: 0; width: 100%; max-width: 100%; }
     .cockpit-panel h2 { font-size: 24px; line-height: 1.18; margin-bottom: 8px; }
     .thought-line { font-size: clamp(18px, 3vw, 26px); line-height: 1.38; color: #fef3c7; }
-    .node-drawer { display: grid; gap: 10px; margin-top: 12px; }
-    .node-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .node-drawer { display: grid; gap: 10px; margin-top: 12px; min-width: 0; width: 100%; max-width: 100%; overflow-x: hidden; touch-action: pan-y; }
+    .node-drawer > * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+    .node-actions { position: sticky; top: 0; z-index: 8; display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; padding: 0 0 10px; background: linear-gradient(180deg, rgba(11,9,7,0.96), rgba(11,9,7,0.78)); backdrop-filter: blur(10px); }
+    .node-actions button, .node-actions .node-action-disabled { margin: 0; max-width: 100%; white-space: normal; text-align: left; }
     .node-actions button:disabled { opacity: 0.44; cursor: not-allowed; }
     .node-action-disabled { display: inline-flex; flex-direction: column; gap: 2px; border-radius: 999px; padding: 8px 13px; background: rgba(148,163,184,0.12); color: #94a3b8; font-weight: 700; }
     .node-action-disabled small { font-size: 11px; font-weight: 600; color: #64748b; }
@@ -500,7 +502,7 @@ function renderPage(
     .workbench-head { display: flex; gap: 10px; align-items: flex-start; }
     .source-badge { flex: 0 0 auto; display: inline-grid; place-items: center; min-width: 34px; height: 34px; padding: 0 8px; border-radius: 12px; background: rgba(96,165,250,0.18); color: #dbeafe; font: 800 13px/1 ui-monospace, "Cascadia Code", monospace; }
     .workbench-title { font-weight: 800; line-height: 1.28; overflow-wrap: anywhere; }
-    .workbench-meta { display: flex; flex-wrap: wrap; gap: 6px; }
+    .workbench-meta { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; max-width: 100%; overflow: hidden; }
     .durable-backlog { border-color: rgba(45,212,191,0.34); background: radial-gradient(circle at top left, rgba(45,212,191,0.13), transparent 34%), linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.035)); }
     .backlog-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
     .backlog-filter { background: rgba(148,163,184,0.18); color: #e5eefc; margin: 0; }
@@ -527,7 +529,8 @@ function renderPage(
     .radar-signals { margin: 8px 0 0; padding-left: 18px; color: #cbd5e1; font-size: 13px; }
     .radar-signals li { margin: 3px 0; overflow-wrap: anywhere; }
     .copy-status { display: inline-block; margin-left: 8px; color: #bbf7d0; font-size: 13px; }
-    .pill { display: inline-block; white-space: nowrap; border-radius: 999px; padding: 4px 9px; font-size: 12px; background: rgba(59,130,246,0.18); color: #bfdbfe; }
+    .pill { display: inline-block; white-space: nowrap; border-radius: 999px; padding: 4px 9px; font-size: 12px; background: rgba(59,130,246,0.18); color: #bfdbfe; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+    .node-drawer .pill { white-space: normal; overflow-wrap: anywhere; text-overflow: clip; }
     .warn { background: rgba(245,158,11,0.16); color: #fde68a; }
     .ok { background: rgba(34,197,94,0.14); color: #bbf7d0; }
     .muted { color: #93a4bd; overflow-wrap: anywhere; }
@@ -543,8 +546,8 @@ function renderPage(
     .idea-title { font-weight: 800; font-size: 17px; line-height: 1.35; overflow-wrap: anywhere; }
     .idea-meta { color: #93a4bd; font-size: 13px; margin-top: 4px; overflow-wrap: anywhere; }
     .idea-status { border-top: 1px solid rgba(148,163,184,0.16); padding-top: 10px; }
-    @media (max-width: 820px) { header { display: block; } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .command-grid, .focus-grid, .agent-board, .thinking-grid, .neural-shell, .backlog-evidence { grid-template-columns: 1fr; } .neural-stage { min-height: 430px; } table { font-size: 13px; } }
-    @media (max-width: 520px) { .grid { grid-template-columns: 1fr 1fr; } .value { font-size: 24px; } a.button, button { min-height: 44px; } }
+    @media (max-width: 820px) { header { display: block; } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .command-grid, .focus-grid, .agent-board, .thinking-grid, .neural-shell, .backlog-evidence { grid-template-columns: minmax(0, 1fr); } .neural-stage { min-height: 430px; } table { font-size: 13px; } }
+    @media (max-width: 520px) { .grid { grid-template-columns: 1fr 1fr; } .value { font-size: 24px; } a.button, button { min-height: 44px; } .cockpit-panel { max-height: 72vh; padding: 12px; } .node-actions { margin: -2px 0 2px; } }
   </style>
 </head>
 <body>
@@ -891,7 +894,7 @@ function renderPage(
     const promptHtml = node.prompt ? '<details><summary>OpenCode prompt</summary><button type="button" class="secondary copy-prompt">複製 Prompt</button><span class="copy-status" aria-live="polite"></span><pre>' + htmlEscape(node.prompt) + '</pre></details>' : '';
     const evidenceHtml = node.thinking.evidence.length === 0 ? '<p class="muted">目前沒有證據。</p>' : '<ul class="radar-signals">' + node.thinking.evidence.slice(0, 4).map((item) => '<li>' + htmlEscape(item) + '</li>').join('') + '</ul>';
     const missingHtml = node.thinking.missingEvidence.length === 0 ? '<p class="muted">目前沒有明確缺口。</p>' : '<ul class="radar-signals">' + node.thinking.missingEvidence.slice(0, 4).map((item) => '<li>' + htmlEscape(item) + '</li>').join('') + '</ul>';
-    drawer.innerHTML = '<div class="recommendation"><strong>' + htmlEscape(node.title) + '</strong><div>' + htmlEscape(node.summary) + '</div><div class="muted">' + htmlEscape(node.type) + ' · ' + htmlEscape(node.confidence) + ' · ' + htmlEscape(node.source) + '</div></div><div class="trace-note"><strong>我怎麼理解它</strong><div>' + htmlEscape(node.thinking.understanding) + '</div><div class="muted">為什麼有關：' + htmlEscape(node.thinking.whyItMatters) + '</div><div class="muted">下一步：' + htmlEscape(node.thinking.nextExploration) + '</div></div><div><strong>關鍵字</strong><div class="workbench-meta">' + keywordHtml + '</div></div><div><strong>相連節點</strong>' + connectedHtml + '</div><div><strong>證據</strong>' + evidenceHtml + '</div><div><strong>缺的證據</strong>' + missingHtml + '</div><div class="node-actions">' + actionHtml + '</div>' + promptHtml;
+    drawer.innerHTML = '<div class="node-actions">' + actionHtml + '</div><div class="recommendation"><strong>' + htmlEscape(node.title) + '</strong><div>' + htmlEscape(node.summary) + '</div><div class="muted">' + htmlEscape(node.type) + ' · ' + htmlEscape(node.confidence) + ' · ' + htmlEscape(node.source) + '</div></div><div class="trace-note"><strong>我怎麼理解它</strong><div>' + htmlEscape(node.thinking.understanding) + '</div><div class="muted">為什麼有關：' + htmlEscape(node.thinking.whyItMatters) + '</div><div class="muted">下一步：' + htmlEscape(node.thinking.nextExploration) + '</div></div><div><strong>關鍵字</strong><div class="workbench-meta">' + keywordHtml + '</div></div><div><strong>相連節點</strong>' + connectedHtml + '</div><div><strong>證據</strong>' + evidenceHtml + '</div><div><strong>缺的證據</strong>' + missingHtml + '</div>' + promptHtml;
   }
 
   function htmlEscape(value) {
@@ -1048,7 +1051,10 @@ function renderSelectedNode(node: IdeaGraphNode, graph: IdeaGraph): string {
     .slice(0, 5)
     .map((edge) => graph.nodes.find((item) => item.id === (edge.from === node.id ? edge.to : edge.from)))
     .filter((item): item is IdeaGraphNode => Boolean(item))
-  return `<div class="recommendation">
+  return `<div class="node-actions">
+    ${node.actions.map((action) => renderNodeAction(node.id, action)).join('')}
+  </div>
+  <div class="recommendation">
     <strong>${escapeHtml(node.title)}</strong>
     <div>${escapeHtml(node.summary)}</div>
     <div class="muted">${escapeHtml(node.type)} · ${escapeHtml(node.confidence)} · ${escapeHtml(node.source)}</div>
@@ -1074,9 +1080,6 @@ function renderSelectedNode(node: IdeaGraphNode, graph: IdeaGraph): string {
   <div>
     <strong>缺的證據</strong>
     ${node.thinking.missingEvidence.length === 0 ? '<p class="muted">目前沒有明確缺口。</p>' : `<ul class="radar-signals">${node.thinking.missingEvidence.slice(0, 4).map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`}
-  </div>
-  <div class="node-actions">
-    ${node.actions.map((action) => renderNodeAction(node.id, action)).join('')}
   </div>
   ${node.prompt ? `<details><summary>OpenCode prompt</summary><button type="button" class="secondary copy-prompt">複製 Prompt</button><span class="copy-status" aria-live="polite"></span><pre>${escapeHtml(node.prompt)}</pre></details>` : ''}`
 }
