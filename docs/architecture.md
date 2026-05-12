@@ -265,6 +265,11 @@ stability / verifiability, smallest executable next step, safety and approval
 gates, and avoiding fake busywork. Rounds that do not meet the bar are explicitly
 marked `needs_more_context` or `not_qualified` with improvements.
 
+v0.5.18 adds explicit quality gaps with required evidence and upgrade conditions.
+When the top signal is only `suspected`, the main recommendation changes to
+`collect-more-evidence` instead of `prepare-read-only-handoff`, so the dashboard
+shows what is missing before claiming a Kevin-quality decision.
+
 The first persisted loop status is `observation-loop-state.json`, which records
 enabled/running state, interval, run count, last run, next run, report paths, and
 last error. This is status telemetry only, not permission to execute changes.

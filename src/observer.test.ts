@@ -117,6 +117,38 @@ test('main agent quality review does not qualify weak suspected signals', async 
     assert.equal(report.mainAgent.qualityReview.verdict, 'needs_more_context')
     assert.ok(report.mainAgent.qualityReview.score < 90)
     assert.equal(report.mainAgent.qualityReview.checks.some((check) => check.status === 'warn'), true)
+    assert.equal(report.mainAgent.recommendation.decision, 'collect-more-evidence')
+    assert.equal(report.mainAgent.qualityReview.gaps.some((gap) => gap.gap === '目前只是 suspected 弱訊號'), true)
+    assert.match(report.mainAgent.qualityReview.nextReviewFocus, /read-only/)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('main agent routes qualified-but-gapped improvements to evidence collection', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'kevin-autopilot-'))
+  try {
+    const config: AutopilotConfig = {
+      environment: 'test',
+      dataDir: join(root, 'data'),
+      ruleSources: [],
+      repositories: [
+        {
+          name: 'missing-repo',
+          path: join(root, 'missing'),
+        },
+      ],
+      services: [],
+    }
+
+    const report = await observe(config)
+    assert.equal(report.candidates[0]?.confidence, 'likely')
+    assert.equal(report.mainAgent.qualityReview.gaps.some((gap) => gap.gap === '改善候選還沒有證明 why now'), true)
+    assert.equal(report.mainAgent.recommendation.decision, 'collect-more-evidence')
+    assert.match(report.mainAgent.recommendation.nextAction, /阻塞目前工作流|housekeeping/)
+    assert.match(report.mainAgent.activeTask.currentStep, /補證據/)
+    assert.equal(report.mainAgent.activeTask.checkpoints.find((checkpoint) => checkpoint.id === 'evidence-gap')?.status, 'in_progress')
+    assert.equal(report.mainAgent.activeTask.checkpoints.find((checkpoint) => checkpoint.id === 'handoff')?.status, 'pending')
   } finally {
     await rm(root, { recursive: true, force: true })
   }

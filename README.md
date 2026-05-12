@@ -178,6 +178,12 @@ smallest executable next step, safety/approval boundaries, and avoidance of fake
 busywork. Low-scoring rounds are marked `needs_more_context` or `not_qualified`
 with concrete improvements instead of pretending the thinking is good.
 
+Version 0.5.18 makes the quality review evidence-gap driven. Weak `suspected`
+signals now change the main recommendation to `collect-more-evidence`, add
+explicit gaps, required evidence, and upgrade conditions, and show a `差在哪`
+section on the dashboard. This prevents dirty-worktree or other weak signals from
+being packaged as implementation-quality work.
+
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.
 
@@ -254,7 +260,7 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
-v0.5.17 Kevin-style thinking quality review prototype. See `docs/` for architecture,
+v0.5.18 evidence-gap-driven quality review prototype. See `docs/` for architecture,
 safety, and OpenCode workflow.
 
 ## Deployment

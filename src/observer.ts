@@ -63,13 +63,15 @@ function createMainAgentBrief(
   const summary = topCandidate
     ? `${supplementSummary} 我先處理「${topCandidate.title}」，因為它最符合使用者體驗、穩定與可驗證性的優先序。`
     : `${supplementSummary} 這一輪沒有明顯候選項；保持觀察，不要硬找事情做。`
+  const qualityReview = createQualityReview(topCandidate, candidates, supplements, failedServices, dirtyRepos, missingRules)
+  const needsMoreEvidence = qualityReview.verdict !== 'qualified' || qualityReview.gaps.length > 0
 
   return {
     mode: 'kevin-double-deterministic',
     persona: 'Kevin 子人格主 agent',
     superpowers: ['using-superpowers', 'root-cause-debugging', 'brainstorming', 'planning', 'verification-and-evidence'],
     summary,
-    activeTask: createActiveTaskState(candidates, supplements, topCandidate),
+    activeTask: createActiveTaskState(candidates, supplements, topCandidate, needsMoreEvidence, qualityReview.nextReviewFocus),
     rounds: [
       {
         agent: 'Kevin 子人格',
@@ -100,24 +102,31 @@ function createMainAgentBrief(
         output: topCandidate?.approvalRequired ? '只允許產生 proposal，不能修改。' : '可先做 read-only 釐清，執行修復前仍需明確切換階段。',
       },
       {
+        agent: '品質審查官',
+        role: 'Kevin persona fit gate',
+        observation: `品質 verdict=${qualityReview.verdict}，score=${qualityReview.score}/100，缺口 ${qualityReview.gaps.length} 個。`,
+        argument: '分身不能只挑到候選就自稱像 Kevin；弱訊號要先補證據，安全失敗要直接擋下。',
+        output: needsMoreEvidence ? `先補強：${qualityReview.nextReviewFocus}` : '這輪可以進入 read-only handoff。',
+      },
+      {
         agent: '建造者',
         role: '可行方案整合',
         observation: topCandidate ? `已有 bounded prompt 可複製給 OpenCode：${topCandidate.id}` : '目前只有觀察報告。',
-        argument: '下一步必須是可操作 artifact：prompt、驗證步驟、或 approval 問題。',
-        output: topCandidate ? '建議複製該候選項 prompt 給 OpenCode 做 read-only 釐清。' : '建議先增加更多安全訊號，例如 CI status 或允許的 health endpoint。',
+        argument: needsMoreEvidence ? '下一步先補證據，不要把弱訊號包成實作任務。' : '下一步必須是可操作 artifact：prompt、驗證步驟、或 approval 問題。',
+        output: topCandidate ? needsMoreEvidence ? `建議先做 read-only 補證據：${qualityReview.nextReviewFocus}` : '建議複製該候選項 prompt 給 OpenCode 做 read-only 釐清。' : '建議先增加更多安全訊號，例如 CI status 或允許的 health endpoint。',
       },
     ],
     feasibleOptions: makeFeasibleOptions(topCandidate, candidates, supplements),
     recommendation: {
-      decision: topCandidate ? 'prepare-read-only-handoff' : 'observe-only',
+      decision: topCandidate ? needsMoreEvidence ? 'collect-more-evidence' : 'prepare-read-only-handoff' : 'observe-only',
       reason: topCandidate
-        ? '它是目前最小、最安全、最能產生證據的下一步；Kevin 補充只作為排序與脈絡，不會直接放大權限。'
+        ? needsMoreEvidence ? `目前候選還沒有達到 Kevin-style 品質門檻：${qualityReview.summary}` : '它是目前最小、最安全、最能產生證據的下一步；Kevin 補充只作為排序與脈絡，不會直接放大權限。'
         : '沒有足夠訊號支持主動插手，硬做會變成垃圾自動化。',
-      nextAction: topCandidate ? `複製「${topCandidate.title}」的 OpenCode prompt。` : '保留觀察，下一步增加安全觀察來源或補充真實痛點。',
+      nextAction: topCandidate ? needsMoreEvidence ? qualityReview.nextReviewFocus : `複製「${topCandidate.title}」的 OpenCode prompt。` : '保留觀察，下一步增加安全觀察來源或補充真實痛點。',
       candidateId: topCandidate?.id,
       approvalRequired: Boolean(topCandidate?.approvalRequired),
     },
-    qualityReview: createQualityReview(topCandidate, candidates, supplements, failedServices, dirtyRepos, missingRules),
+    qualityReview,
   }
 }
 
@@ -178,6 +187,7 @@ function createQualityReview(
   const improvements = checks
     .filter((check) => check.status !== 'pass')
     .map((check) => `${check.label}：${check.evidence}`)
+  const gaps = createQualityGaps(topCandidate, checks)
 
   return {
     verdict,
@@ -188,23 +198,73 @@ function createQualityReview(
         ? '這輪有部分 Kevin-style 判斷，但證據或最小下一步還不夠，不能宣稱完全合格。'
         : '這輪不夠像 Kevin 的產品工程判斷；缺少真實痛點、證據或可執行下一步。',
     checks,
+    gaps,
     improvements: improvements.length > 0 ? improvements : ['維持現有品質門檻，下一輪繼續用 evidence 驗證。'],
+    nextReviewFocus: gaps[0]?.neededEvidence ?? (topCandidate ? `用 read-only evidence 驗證「${topCandidate.title}」是否是真問題。` : '增加 CI status、允許的 health endpoint，或請 Kevin 補充真實卡點。'),
   }
+}
+
+function createQualityGaps(
+  topCandidate: ObservationCandidate | undefined,
+  checks: MainAgentBrief['qualityReview']['checks'],
+): MainAgentBrief['qualityReview']['gaps'] {
+  const gaps: MainAgentBrief['qualityReview']['gaps'] = []
+  if (!topCandidate) {
+    gaps.push({
+      severity: 'high',
+      gap: '沒有可判斷的候選項',
+      neededEvidence: '增加 CI status、允許的 health endpoint，或請 Kevin 補充真實痛點。',
+      upgradeCondition: '至少出現一個 likely/confirmed 候選，且有可驗證 expected/actual 差異。',
+    })
+    return gaps
+  }
+
+  if (topCandidate.confidence === 'suspected') {
+    gaps.push({
+      severity: 'medium',
+      gap: '目前只是 suspected 弱訊號',
+      neededEvidence: `先用 read-only 方式確認「${topCandidate.title}」是否是進行中正常工作、 stale work，或真的影響 UX/穩定/可驗證。`,
+      upgradeCondition: '同一問題有重複訊號、health/CI 失敗、明確使用者痛點，或 Kevin 補充確認它是問題。',
+    })
+  }
+
+  if (topCandidate.category === 'improvement_candidate' && topCandidate.risk === 'low') {
+    gaps.push({
+      severity: 'low',
+      gap: '改善候選還沒有證明 why now',
+      neededEvidence: '確認它是否阻塞目前工作流，或是否只是可延後整理的 housekeeping。',
+      upgradeCondition: '能說清楚不處理會造成哪個使用者流程、穩定性或驗證成本問題。',
+    })
+  }
+
+  if (checks.some((check) => check.label === '安全邊界與 approval gate' && check.status === 'fail')) {
+    gaps.push({
+      severity: 'high',
+      gap: '安全或 approval gate 不合格',
+      neededEvidence: '先拆出不碰 secrets、不部署、不改 repo 的 planning scope。',
+      upgradeCondition: 'Kevin 明確批准對應 gate，且仍先產生可 review 的 proposal。',
+    })
+  }
+
+  return gaps
 }
 
 function createActiveTaskState(
   candidates: ObservationCandidate[],
   supplements: UserSupplement[],
   topCandidate: ObservationCandidate | undefined,
+  needsMoreEvidence: boolean,
+  nextReviewFocus: string,
 ): MainAgentBrief['activeTask'] {
   return {
     objective: '把 read-only observation 轉成 Kevin 可決策的下一步，而不是自動動手。',
-    currentStep: topCandidate ? `準備候選項 ${topCandidate.id} 的 read-only handoff` : '等待更強觀察訊號或 Kevin 補充',
+    currentStep: topCandidate ? needsMoreEvidence ? `補證據：${nextReviewFocus}` : `準備候選項 ${topCandidate.id} 的 read-only handoff` : '等待更強觀察訊號或 Kevin 補充',
     checkpoints: [
       { id: 'collect-signals', content: '收集 rule source、repo、service 的 read-only 訊號', status: 'completed', priority: 'high' },
       { id: 'merge-supplements', content: '合併 Kevin 補充到下一輪推理', status: supplements.length > 0 ? 'completed' : 'pending', priority: 'high' },
       { id: 'rank-candidates', content: '依 UX、穩定、可驗證性排序候選項', status: candidates.length > 0 ? 'completed' : 'pending', priority: 'high' },
-      { id: 'handoff', content: '產生 bounded OpenCode prompt 或保持觀察', status: topCandidate ? 'completed' : 'pending', priority: 'medium' },
+      { id: 'evidence-gap', content: '補足 quality gaps，確認不是弱訊號或 housekeeping', status: topCandidate && needsMoreEvidence ? 'in_progress' : topCandidate ? 'completed' : 'pending', priority: 'high' },
+      { id: 'handoff', content: '產生 bounded OpenCode prompt 或保持觀察', status: topCandidate && !needsMoreEvidence ? 'completed' : 'pending', priority: 'medium' },
     ],
     blockers: [],
     updatedAt: new Date().toISOString(),

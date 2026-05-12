@@ -70,6 +70,10 @@ now includes a Kevin-style review score and verdict, so weak thinking is labeled
 as needing more context or not qualified instead of being presented as if it were
 Kevin-quality judgment.
 
+v0.5.18 makes the quality gate actionable by recording what evidence is missing
+and what condition would upgrade the signal. Weak suspected candidates are routed
+to evidence collection instead of read-only handoff.
+
 Kevin can add a supplement during or between observation cycles. The supplement
 is stored as Autopilot-owned data and merged into the next cycle as context; it
 does not reset the main task, overwrite the observation backlog, or authorize

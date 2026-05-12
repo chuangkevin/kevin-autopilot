@@ -124,7 +124,16 @@ export interface MainAgentQualityReview {
   score: number
   summary: string
   checks: MainAgentQualityCheck[]
+  gaps: MainAgentQualityGap[]
   improvements: string[]
+  nextReviewFocus: string
+}
+
+export interface MainAgentQualityGap {
+  severity: 'low' | 'medium' | 'high'
+  gap: string
+  neededEvidence: string
+  upgradeCondition: string
 }
 
 export interface MainAgentQualityCheck {
@@ -150,7 +159,7 @@ export interface MainAgentCheckpoint {
 }
 
 export interface MainAgentRound {
-  agent: 'Kevin 子人格' | 'Kevin 補充' | '探索者' | '懷疑者' | '建造者'
+  agent: 'Kevin 子人格' | 'Kevin 補充' | '探索者' | '懷疑者' | '品質審查官' | '建造者'
   role: string
   observation: string
   argument: string

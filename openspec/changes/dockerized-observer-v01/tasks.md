@@ -23,3 +23,4 @@
 21. [x] Add read-only background observation loop with dashboard/API status.
 22. [x] Add visible auditable thinking trace to dashboard and API.
 23. [x] Add Kevin-style thinking quality review with pass/warn/fail checks.
+24. [x] Add explicit evidence gaps and upgrade conditions for weak thinking.

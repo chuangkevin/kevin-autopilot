@@ -363,7 +363,7 @@ function renderPage(
     <h2 class="main-action">${topCandidate ? '現在重點：做這件' : '現在重點：先不要做'}</h2>
     <p class="plain-answer">${topCandidate ? escapeHtml(topCandidate.title) : '這輪沒有足夠明確的候選項。先維持觀察，或補充真正卡住的地方。'}</p>
     <p class="muted">為什麼：${escapeHtml(report.mainAgent.recommendation.reason)}</p>
-    ${topCandidate ? renderPrimaryCandidate(topCandidate) : '<div class="primary-card"><strong>唯一動作</strong><div>如果這個判斷不對，在下方補一句修正下一輪推理。</div></div>'}
+    ${topCandidate ? renderPrimaryCandidate(report, topCandidate) : '<div class="primary-card"><strong>唯一動作</strong><div>如果這個判斷不對，在下方補一句修正下一輪推理。</div></div>'}
     <div class="focus-grid">
       <aside class="side-panel">
         <h2>修正這輪判斷</h2>
@@ -617,7 +617,16 @@ function renderKeySection(keyStatus: KeyStatusSummary): string {
   </section>`
 }
 
-function renderPrimaryCandidate(candidate: ObservationReport['candidates'][number]): string {
+function renderPrimaryCandidate(report: ObservationReport, candidate: ObservationReport['candidates'][number]): string {
+  if (report.mainAgent.recommendation.decision === 'collect-more-evidence') {
+    return `<div class="primary-card">
+      <strong>唯一主要操作：先補證據</strong>
+      <div>${escapeHtml(report.mainAgent.recommendation.nextAction)}</div>
+      <div class="muted">目前還沒有達到 Kevin-quality handoff 門檻，所以不提供實作 prompt 當主操作。</div>
+      ${report.mainAgent.qualityReview.gaps.slice(0, 2).map(renderQualityGap).join('')}
+    </div>`
+  }
+
   return `<div class="primary-card">
     <strong>唯一主要操作</strong>
     <div>${escapeHtml(candidate.suggestedNextStep)}</div>
@@ -692,6 +701,8 @@ function renderThinkingTrace(report: ObservationReport): string {
           <div>${escapeHtml(mainAgent.qualityReview.summary)}</div>
         </div>
         ${mainAgent.qualityReview.checks.map(renderQualityCheck).join('')}
+        <h2>差在哪</h2>
+        ${mainAgent.qualityReview.gaps.length === 0 ? '<p class="muted">目前沒有品質缺口。</p>' : mainAgent.qualityReview.gaps.map(renderQualityGap).join('')}
         <h2>可行方案</h2>
         ${mainAgent.feasibleOptions.slice(0, 3).map(renderFeasibleOption).join('')}
         <h2>證據摘要</h2>
@@ -715,6 +726,14 @@ function renderQualityCheck(check: ObservationReport['mainAgent']['qualityReview
   return `<div class="checkpoint ${check.status === 'pass' ? 'completed' : check.status === 'warn' ? 'pending' : 'cancelled'}">
     <strong>${escapeHtml(check.label)} · ${escapeHtml(check.status)}</strong>
     <div class="muted">${escapeHtml(check.evidence)}</div>
+  </div>`
+}
+
+function renderQualityGap(gap: ObservationReport['mainAgent']['qualityReview']['gaps'][number]): string {
+  return `<div class="checkpoint ${gap.severity === 'high' ? 'cancelled' : gap.severity === 'medium' ? 'pending' : 'completed'}">
+    <strong>${escapeHtml(gap.gap)} · ${escapeHtml(gap.severity)}</strong>
+    <div>${escapeHtml(gap.neededEvidence)}</div>
+    <div class="muted">升級條件：${escapeHtml(gap.upgradeCondition)}</div>
   </div>`
 }
 
