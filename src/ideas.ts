@@ -126,7 +126,7 @@ export function analyzeExistingProjects(config: AutopilotConfig, rawText: string
   return {
     recommendation,
     summary: recommendation === 'extend-existing'
-      ? `最像既有專案「${best.projectName}」，下一步應優先評估延伸既有 repo/service。`
+      ? `最像既有專案「${best.projectName}」，下一步應一併評估延伸既有 repo/service。`
       : `有一些相似訊號，但不足以直接併入「${best.projectName}」；先做 read-only 釐清。`,
     matches,
   }

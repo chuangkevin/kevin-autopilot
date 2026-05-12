@@ -27,7 +27,7 @@ export function createAgentHandoff(record: Omit<IdeaRecord, 'agentHandoff'> | Om
       {
         from: 'spec-planner',
         to: 'kevin-persona',
-        question: '是否符合 Kevin 的 UX、穩定性、可驗證性排序？',
+        question: '是否保留 Kevin 的 UX、穩定性、可驗證性脈絡？',
         answer: '先保留原始意圖，避免過度設計；下一步必須能被測試或人工檢查。',
       },
     ],

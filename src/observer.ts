@@ -58,12 +58,12 @@ function createMainAgentBrief(
   const dirtyRepos = repositories.filter((repo) => repo.dirty)
   const missingRules = ruleSources.filter((source) => !source.exists || source.missingFiles.length > 0)
   const failedServices = services.filter((service) => service.healthStatus === 'failed')
-  const topCandidate = selectTopCandidate(candidates)
+  const topCandidate = selectOperationalFocus(candidates)
 
   const latestSupplement = supplements[0]
   const supplementSummary = latestSupplement ? `Kevin 最新補充：「${latestSupplement.summary}」。` : 'Kevin 這輪沒有新增補充。'
   const summary = topCandidate
-    ? `${supplementSummary} 我先處理「${topCandidate.title}」，因為它最符合使用者體驗、穩定與可驗證性的優先序。`
+    ? `${supplementSummary} 目前操作焦點是「${topCandidate.title}」；其他線索仍保留在工作桌，不代表比較不重要。`
     : `${supplementSummary} 這一輪沒有明顯候選項；保持觀察，不要硬找事情做。`
   const qualityReview = createQualityReview(topCandidate, candidates, supplements, failedServices, dirtyRepos, missingRules)
   const needsMoreEvidence = qualityReview.verdict !== 'qualified' || qualityReview.gaps.length > 0
@@ -80,7 +80,7 @@ function createMainAgentBrief(
         role: '產品工程腦',
         observation: `這輪看到 ${candidates.length} 個候選項、${bugCandidates.length} 個疑似 bug、${dirtyRepos.length} 個 dirty repo。`,
         argument: '先找會影響使用者、穩定性或後續驗證的事，不把清單當成果。',
-        output: topCandidate ? `優先候選：${topCandidate.title}` : '暫不主動開新工作，避免製造假待辦。',
+        output: topCandidate ? `目前操作焦點：${topCandidate.title}` : '暫不主動開新工作，避免製造假待辦。',
       },
       {
         agent: 'Kevin 補充',
@@ -107,7 +107,7 @@ function createMainAgentBrief(
         agent: '品質審查官',
         role: 'Kevin persona fit gate',
         observation: `品質 verdict=${qualityReview.verdict}，score=${qualityReview.score}/100，缺口 ${qualityReview.gaps.length} 個。`,
-        argument: '分身不能只挑到候選就自稱像 Kevin；弱訊號要先補證據，安全失敗要直接擋下。',
+        argument: '分身不能只看到候選就自稱像 Kevin；弱訊號要先補證據，安全失敗要直接擋下。',
         output: needsMoreEvidence ? `先補強：${qualityReview.nextReviewFocus}` : '這輪可以進入 read-only handoff。',
       },
       {
@@ -122,7 +122,7 @@ function createMainAgentBrief(
     recommendation: {
       decision: topCandidate ? needsMoreEvidence ? 'collect-more-evidence' : 'prepare-read-only-handoff' : 'observe-only',
       reason: topCandidate
-        ? needsMoreEvidence ? `目前候選還沒有達到 Kevin-style 品質門檻：${qualityReview.summary}` : '它是目前最小、最安全、最能產生證據的下一步；Kevin 補充只作為排序與脈絡，不會直接放大權限。'
+        ? needsMoreEvidence ? `目前操作焦點還沒有達到 Kevin-style 品質門檻：${qualityReview.summary}` : '它是目前最小、最安全、最能產生證據的操作焦點；Kevin 補充只作為脈絡，不會直接放大權限。'
         : '沒有足夠訊號支持主動插手，硬做會變成垃圾自動化。',
       nextAction: topCandidate ? needsMoreEvidence ? qualityReview.nextReviewFocus : `複製「${topCandidate.title}」的 OpenCode prompt。` : '保留觀察，下一步增加安全觀察來源或補充真實痛點。',
       candidateId: topCandidate?.id,
@@ -153,10 +153,10 @@ function createQualityReview(
           : '目前沒有候選項，不能假裝已找到痛點。',
     },
     {
-      label: 'UX / 穩定 / 可驗證排序',
+      label: 'UX / 穩定 / 可驗證脈絡',
       status: topCandidate && topCandidate.confidence !== 'suspected' && ['bug_watch', 'bug_fix_candidate', 'needs_kevin_decision', 'improvement_candidate'].includes(topCandidate.category) ? 'pass' : topCandidate ? 'warn' : 'fail',
       evidence: topCandidate
-        ? `目前優先 ${topCandidate.category} / ${topCandidate.confidence}，風險 ${topCandidate.risk}。`
+        ? `目前操作焦點 ${topCandidate.category} / ${topCandidate.confidence}，風險 ${topCandidate.risk}。`
         : `服務失敗 ${failedServices.length}、dirty repo ${dirtyRepos.length}、規則異常 ${missingRules.length}。`,
     },
     {
@@ -174,7 +174,7 @@ function createQualityReview(
     {
       label: '避免硬做垃圾自動化',
       status: topCandidate || candidates.length === 0 ? 'pass' : 'warn',
-      evidence: topCandidate ? '只挑一個主要候選，不把清單當成果。' : '目前選擇 observe-only，避免硬找工作。',
+      evidence: topCandidate ? '保留一個操作焦點，但不把其他問題或想法降級。' : '目前選擇 observe-only，避免硬找工作。',
     },
   ]
   const score = checks.reduce((sum, check) => sum + (check.status === 'pass' ? 20 : check.status === 'warn' ? 8 : 0), 0)
@@ -264,7 +264,7 @@ function createActiveTaskState(
     checkpoints: [
       { id: 'collect-signals', content: '收集 rule source、repo、service 的 read-only 訊號', status: 'completed', priority: 'high' },
       { id: 'merge-supplements', content: '合併 Kevin 補充到下一輪推理', status: supplements.length > 0 ? 'completed' : 'pending', priority: 'high' },
-      { id: 'rank-candidates', content: '依 UX、穩定、可驗證性排序候選項', status: candidates.length > 0 ? 'completed' : 'pending', priority: 'high' },
+      { id: 'organize-signals', content: '把 read-only 訊號整理成並列工作桌', status: candidates.length > 0 ? 'completed' : 'pending', priority: 'high' },
       { id: 'evidence-gap', content: '補足 quality gaps，確認不是弱訊號或 housekeeping', status: topCandidate && needsMoreEvidence ? 'in_progress' : topCandidate ? 'completed' : 'pending', priority: 'high' },
       { id: 'handoff', content: '產生 bounded OpenCode prompt 或保持觀察', status: topCandidate && !needsMoreEvidence ? 'completed' : 'pending', priority: 'medium' },
     ],
@@ -274,27 +274,8 @@ function createActiveTaskState(
   }
 }
 
-function selectTopCandidate(candidates: ObservationCandidate[]): ObservationCandidate | undefined {
-  const score = (candidate: ObservationCandidate): number => {
-    const categoryScore: Record<ObservationCandidate['category'], number> = {
-      bug_fix_candidate: 90,
-      bug_watch: 80,
-      needs_kevin_decision: 70,
-      improvement_candidate: 60,
-      prototype_candidate: 50,
-      blocked: 0,
-    }
-    const confidenceScore: Record<ObservationCandidate['confidence'], number> = {
-      confirmed: 20,
-      likely: 12,
-      suspected: 4,
-    }
-    const riskPenalty = candidate.risk === 'high' ? 25 : candidate.risk === 'medium' ? 12 : 0
-    const approvalPenalty = candidate.approvalRequired ? 8 : 0
-    return categoryScore[candidate.category] + confidenceScore[candidate.confidence] - riskPenalty - approvalPenalty
-  }
-
-  return [...candidates].sort((a, b) => score(b) - score(a))[0]
+function selectOperationalFocus(candidates: ObservationCandidate[]): ObservationCandidate | undefined {
+  return candidates[0]
 }
 
 function makeFeasibleOptions(
@@ -324,16 +305,16 @@ function makeFeasibleOptions(
     },
     {
       label: '先累積更多觀察',
-      why: supplements.length > 0 ? '可把 Kevin 補充當排序線索，但仍需要 read-only 證據避免誤判。' : '避免單一訊號誤判，特別是 suspected 類型。',
+        why: supplements.length > 0 ? '可把 Kevin 補充當脈絡，但仍需要 read-only 證據避免誤判。' : '避免單一訊號誤判，特別是 suspected 類型。',
       firstStep: '再跑一次 observe 或新增安全 health/CI 訊號。',
       tradeoff: '比較穩，但推進較慢。',
       approvalRequired: false,
     },
     {
-      label: '暫時忽略低價值項',
-      why: `目前共有 ${candidates.length} 個候選，應避免被低價值雜訊拖走。`,
-      firstStep: '只保留高信心 bug 或會影響穩定性的項目。',
-      tradeoff: '可能延後小改善。',
+        label: '全部保留在工作桌',
+        why: `目前共有 ${candidates.length} 個候選；每個想法或問題都先保留，等 Kevin 決定怎麼處理。`,
+        firstStep: '不要刪掉或降級候選，只標出缺什麼證據。',
+        tradeoff: '畫面會比較滿，但不會替 Kevin 判斷哪件比較重要。',
       approvalRequired: false,
     },
   ]

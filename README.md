@@ -18,9 +18,9 @@ Build an AI system that can proactively:
 
 1. Notice repeated pain, broken workflows, stale docs, failing checks, and small
    improvement opportunities.
-2. Rank work using Kevin's priorities: user experience, stability, and
-   verifiability.
-3. Decide whether a task can be done automatically, needs Kevin approval, or must
+2. Preserve each observed problem or idea with UX, stability, and verifiability
+   context, without deciding which one matters most for Kevin.
+3. Decide whether a task can be prepared read-only, needs Kevin approval, or must
    be blocked.
 4. Produce bounded OpenCode prompts for safe implementation.
 5. Verify, commit, and push completed low-risk changes when allowed.
@@ -65,7 +65,7 @@ Version 0.1 observes and reports:
 5. Collect git status, recent commits, TODO/FIXME notes, docs drift signals, and
    build/test command availability.
 6. Generate candidate tasks.
-7. Score and classify tasks.
+7. Classify tasks and record missing evidence.
 8. Show a daily or on-demand report.
 9. Generate OpenCode prompts, but do not automatically run implementation.
 
@@ -194,6 +194,12 @@ shows up to twelve ranked candidates at once, labels whether each item should
 collect evidence or can use a read-only handoff prompt, and keeps prompts tucked
 behind details so ten-plus items remain scannable.
 
+Version 0.5.21 corrects the product semantics: the dashboard no longer presents
+candidates as an importance ranking. It uses an Observation Workbench that keeps
+all observed candidates in place, labels evidence-first versus read-only handoff
+work, and makes room for past problems, ideas, and research directions without
+deciding which one matters most to Kevin.
+
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.
 
@@ -270,7 +276,7 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
-v0.5.20 multi-item Priority Board prototype. See `docs/` for architecture,
+v0.5.21 non-prioritized Observation Workbench prototype. See `docs/` for architecture,
 safety, and OpenCode workflow.
 
 ## Deployment

@@ -41,7 +41,13 @@ test('web server exposes health and idea intake', async () => {
       { name: 'missing-repo', path: join(dataDir, 'missing') },
       ...Array.from({ length: 12 }, (_, index) => ({ name: `missing-repo-${index + 2}`, path: join(dataDir, `missing-${index + 2}`) })),
     ],
-    services: [],
+    services: [
+      {
+        name: 'Broken Service',
+        source: 'test',
+        healthCheck: { enabled: true, url: 'http://127.0.0.1:1/health', timeoutMs: 50 },
+      },
+    ],
   }
   const server = createWebServer(config)
   try {
@@ -61,16 +67,16 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(page.headers.get('cache-control'), 'no-store, max-age=0')
     const pageBody = await page.text()
     assert.equal(pageBody.includes('設定 Gemini Keys'), true)
-    assert.equal(pageBody.includes('這頁的目標：幫你把多件事排成可讀優先序'), true)
+    assert.equal(pageBody.includes('這頁的目標：把問題、想法、研究放到同一張工作桌'), true)
     assert.equal(pageBody.includes('不是聊天頁、不是自動修復器'), true)
     assert.equal(pageBody.includes('背景分身已開始 read-only 觀察'), true)
     assert.equal(pageBody.includes('目前背景觀察已關閉'), true)
     assert.equal(pageBody.includes('不會自己改 repo、commit、push、部署'), true)
-    assert.equal(pageBody.includes('第一優先'), true)
-    assert.equal(pageBody.includes('Priority Board'), true)
-    assert.equal(pageBody.includes('一次看多件，但每件都有下一步'), true)
+    assert.equal(pageBody.includes('目前操作焦點'), true)
+    assert.equal(pageBody.includes('Observation Workbench'), true)
+    assert.equal(pageBody.includes('一次看多件，每件都保留位置'), true)
     assert.equal(pageBody.includes('建議模式：先補證據'), true)
-    assert.equal(pageBody.match(/class="priority-card/g)?.length, 12)
+    assert.equal(pageBody.match(/class="workbench-card/g)?.length, 14)
     assert.equal(pageBody.includes('分身思考過程'), true)
     assert.equal(pageBody.includes('我怎麼判斷下一步'), true)
     assert.equal(pageBody.includes('這不是模型私有 chain-of-thought'), true)
@@ -78,7 +84,7 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(pageBody.includes('差在哪'), true)
     assert.equal(pageBody.includes('/100'), true)
     assert.equal(pageBody.includes('/api/main-agent/thinking'), true)
-    assert.equal(pageBody.includes('現在重點：做這件'), true)
+    assert.equal(pageBody.includes('這件正在補證據'), true)
     assert.equal(pageBody.includes('唯一主要操作：先補證據'), true)
     assert.equal(pageBody.includes('不提供實作 prompt 當主操作'), true)
     assert.equal(pageBody.includes('修正這輪判斷'), true)
@@ -91,7 +97,7 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(pageBody.includes('複製 Prompt'), true)
     assert.equal(pageBody.includes('Project Radar'), true)
     assert.equal(pageBody.includes('所有專案都在雷達上'), true)
-    assert.equal(pageBody.includes('不是只觀察一個專案'), true)
+    assert.equal(pageBody.includes('不替你判斷哪個想法比較重要'), true)
     assert.equal(pageBody.includes('missing-repo'), true)
 
     const loopStatus = await fetch(`${baseUrl}/api/observation-loop`)
@@ -107,11 +113,10 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(typeof thinkingBody.mainAgent.qualityReview.score, 'number')
     assert.equal(thinkingBody.mainAgent.qualityReview.checks.length > 0, true)
     assert.equal(Array.isArray(thinkingBody.mainAgent.qualityReview.gaps), true)
-    assert.equal(thinkingBody.projectRadar[0].name, 'missing-repo')
-    assert.equal(thinkingBody.projectRadar[0].status, 'needs_attention')
-    assert.equal(thinkingBody.candidates.length, 12)
+    assert.equal(thinkingBody.projectRadar.some((project: { name: string; status: string }) => project.name === 'missing-repo' && project.status === 'needs_attention'), true)
+    assert.equal(thinkingBody.candidates.length, 14)
     assert.equal(thinkingBody.candidates[0].id, 'repository-missing-repo-missing-repo')
-    assert.equal(thinkingBody.candidates[0].id, thinkingBody.mainAgent.recommendation.candidateId)
+    assert.equal(thinkingBody.candidates.findIndex((candidate: { id: string }) => candidate.id === 'service-broken-service-health-failed') > 0, true)
     assert.equal(thinkingBody.note, 'This is an auditable reasoning trace, not private chain-of-thought.')
 
     const settings = await fetch(`${baseUrl}/settings`)

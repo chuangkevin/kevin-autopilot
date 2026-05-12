@@ -84,6 +84,12 @@ single visible candidate to a multi-item Priority Board. A run can now surface
 ten-plus ranked candidates without hiding them in debug tables; each card still
 uses read-only evidence and collapsed bounded prompts.
 
+v0.5.21 removes importance-ranking semantics from that board. The Observation
+Workbench lists all candidates from the run in observation order, exposes the
+same full candidate list through `/api/main-agent/thinking`, and frames the page
+as a workspace for past problems, ideas, and research directions rather than a
+system that decides which idea matters most.
+
 Kevin can add a supplement during or between observation cycles. The supplement
 is stored as Autopilot-owned data and merged into the next cycle as context; it
 does not reset the main task, overwrite the observation backlog, or authorize

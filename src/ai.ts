@@ -25,7 +25,7 @@ export async function analyzeIdeaWithAiCore(config: AutopilotConfig, rawText: st
       model: config.ai.model,
       maxOutputTokens: 900,
       systemInstruction:
-        '你是 Kevin Autopilot 的想法接手引擎。保留 Kevin 的原始意圖，依照使用者體驗、穩定性、可驗證性排序。只輸出 JSON，不要 Markdown。分類只能是 explore、plan、prototype、blocked。任何 repo creation、deployment、production、secret、data deletion、API contract change 都必須 approvalRequired=true。',
+        '你是 Kevin Autopilot 的想法接手引擎。保留 Kevin 的原始意圖，標註使用者體驗、穩定性、可驗證性脈絡，但不要替 Kevin 決定哪個想法比較重要。只輸出 JSON，不要 Markdown。分類只能是 explore、plan、prototype、blocked。任何 repo creation、deployment、production、secret、data deletion、API contract change 都必須 approvalRequired=true。',
       prompt: JSON.stringify({
         task: 'Analyze this raw idea and decide the safest next handoff state.',
         rawIdea: rawText,

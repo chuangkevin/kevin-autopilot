@@ -143,8 +143,9 @@ expected behavior, actual behavior, and the smallest verification step.
 
 Finds non-bug work worth planning, such as docs drift, missing verification,
 hard-coded paths, workflow friction, untested behavior, or prototype hardening.
-It should score candidates using Kevin's priorities and classify whether the work
-can be auto-prepared, needs approval, should only be observed, or is blocked.
+It should preserve candidates with Kevin-relevant context and classify whether
+the work can be prepared read-only, needs approval, should only be observed, or
+is blocked.
 
 ### Persona Loader
 
@@ -281,6 +282,12 @@ command center still highlights the first priority, but the board ranks up to
 twelve candidates, separates evidence-first items from read-only handoff items,
 and keeps bounded prompts collapsed to preserve scanability.
 
+v0.5.21 changes that visible board into a non-prioritized Observation Workbench.
+The main agent may keep one operational focus for evidence collection, but the UI
+and thinking API keep every observed candidate visible without ranking or
+truncation, because Kevin treats each idea as important until he decides
+otherwise.
+
 The first persisted loop status is `observation-loop-state.json`, which records
 enabled/running state, interval, run count, last run, next run, report paths, and
 last error. This is status telemetry only, not permission to execute changes.
@@ -289,7 +296,7 @@ last error. This is status telemetry only, not permission to execute changes.
 
 Kevin's mid-run supplements are app-owned data. v0.5.9 stores them under
 `data/supplements` and merges recent supplements into the next observation run.
-Supplements may influence ranking and context, but they do not grant new write,
+Supplements may influence context, but they do not grant new write,
 commit, push, deployment, secret, or destructive permissions.
 
 ### Docker Runtime
