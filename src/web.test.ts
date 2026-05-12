@@ -147,7 +147,9 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(pageBody.includes("document.execCommand('copy')"), true)
     assert.equal(pageBody.includes('Prompt 已複製'), true)
     assert.equal(pageBody.includes('.cockpit-panel { max-height: clamp(520px, 62vh, 720px); overflow-y: auto; overflow-x: hidden; touch-action: pan-y; }'), true)
-    assert.equal(pageBody.includes('.node-actions { position: sticky; top: 0;'), true)
+    assert.equal(pageBody.includes('id="node-action-bar"'), true)
+    assert.equal(pageBody.indexOf('id="node-action-bar"') < pageBody.indexOf('分身現在在想'), true)
+    assert.equal(pageBody.includes('setTimeout(() => location.reload(), 900)'), false)
 
     const graph = await fetch(`${baseUrl}/api/graph`)
     assert.equal(graph.status, 200)

@@ -437,7 +437,8 @@ function renderPage(
     .thought-line { font-size: clamp(18px, 3vw, 26px); line-height: 1.38; color: #fef3c7; }
     .node-drawer { display: grid; gap: 10px; margin-top: 12px; min-width: 0; width: 100%; max-width: 100%; overflow-x: hidden; touch-action: pan-y; }
     .node-drawer > * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
-    .node-actions { position: sticky; top: 0; z-index: 8; display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; padding: 0 0 10px; background: linear-gradient(180deg, rgba(11,9,7,0.96), rgba(11,9,7,0.78)); backdrop-filter: blur(10px); }
+    .node-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; padding: 0 0 10px; }
+    .node-action-bar { margin: 0 0 12px; border-bottom: 1px solid rgba(148,163,184,0.14); }
     .node-actions button, .node-actions .node-action-disabled { margin: 0; max-width: 100%; white-space: normal; text-align: left; }
     .node-actions button:disabled { opacity: 0.44; cursor: not-allowed; }
     .node-action-disabled { display: inline-flex; flex-direction: column; gap: 2px; border-radius: 999px; padding: 8px 13px; background: rgba(148,163,184,0.12); color: #94a3b8; font-weight: 700; }
@@ -547,7 +548,7 @@ function renderPage(
     .idea-meta { color: #93a4bd; font-size: 13px; margin-top: 4px; overflow-wrap: anywhere; }
     .idea-status { border-top: 1px solid rgba(148,163,184,0.16); padding-top: 10px; }
     @media (max-width: 820px) { header { display: block; } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .command-grid, .focus-grid, .agent-board, .thinking-grid, .neural-shell, .backlog-evidence { grid-template-columns: minmax(0, 1fr); } .neural-stage { min-height: 430px; } table { font-size: 13px; } }
-    @media (max-width: 520px) { .grid { grid-template-columns: 1fr 1fr; } .value { font-size: 24px; } a.button, button { min-height: 44px; } .cockpit-panel { max-height: 72vh; padding: 12px; } .node-actions { margin: -2px 0 2px; } }
+    @media (max-width: 520px) { .grid { grid-template-columns: 1fr 1fr; } .value { font-size: 24px; } a.button, button { min-height: 44px; } .cockpit-panel { max-height: 72vh; padding: 12px; } .node-action-bar { margin: 0 0 12px; } }
   </style>
 </head>
 <body>
@@ -747,7 +748,6 @@ function renderPage(
           return;
         }
         renderNodeDrawer(await response.json());
-        setTimeout(() => location.reload(), 900);
         return;
       }
       if (action === 'copy-opencode-prompt') {
@@ -890,11 +890,17 @@ function renderPage(
     if (thought) thought.textContent = node.thinking.understanding;
     const keywordHtml = node.keywords.length === 0 ? '<span class="muted">尚未抽到關鍵字</span>' : node.keywords.map((keyword) => '<span class="pill">' + htmlEscape(keyword) + '</span>').join('');
     const connectedHtml = detail.connectedNodes.length === 0 ? '<p class="muted">目前沒有相連節點。</p>' : '<div class="workbench-meta">' + detail.connectedNodes.slice(0, 6).map((item) => '<span class="pill">' + htmlEscape(item.title) + '</span>').join('') + '</div>';
-    const actionHtml = node.actions.map((action) => renderBrowserNodeAction(node.id, action)).join('');
+    renderNodeActionBar(node);
     const promptHtml = node.prompt ? '<details><summary>OpenCode prompt</summary><button type="button" class="secondary copy-prompt">複製 Prompt</button><span class="copy-status" aria-live="polite"></span><pre>' + htmlEscape(node.prompt) + '</pre></details>' : '';
     const evidenceHtml = node.thinking.evidence.length === 0 ? '<p class="muted">目前沒有證據。</p>' : '<ul class="radar-signals">' + node.thinking.evidence.slice(0, 4).map((item) => '<li>' + htmlEscape(item) + '</li>').join('') + '</ul>';
     const missingHtml = node.thinking.missingEvidence.length === 0 ? '<p class="muted">目前沒有明確缺口。</p>' : '<ul class="radar-signals">' + node.thinking.missingEvidence.slice(0, 4).map((item) => '<li>' + htmlEscape(item) + '</li>').join('') + '</ul>';
-    drawer.innerHTML = '<div class="node-actions">' + actionHtml + '</div><div class="recommendation"><strong>' + htmlEscape(node.title) + '</strong><div>' + htmlEscape(node.summary) + '</div><div class="muted">' + htmlEscape(node.type) + ' · ' + htmlEscape(node.confidence) + ' · ' + htmlEscape(node.source) + '</div></div><div class="trace-note"><strong>我怎麼理解它</strong><div>' + htmlEscape(node.thinking.understanding) + '</div><div class="muted">為什麼有關：' + htmlEscape(node.thinking.whyItMatters) + '</div><div class="muted">下一步：' + htmlEscape(node.thinking.nextExploration) + '</div></div><div><strong>關鍵字</strong><div class="workbench-meta">' + keywordHtml + '</div></div><div><strong>相連節點</strong>' + connectedHtml + '</div><div><strong>證據</strong>' + evidenceHtml + '</div><div><strong>缺的證據</strong>' + missingHtml + '</div>' + promptHtml;
+    drawer.innerHTML = '<div class="recommendation"><strong>' + htmlEscape(node.title) + '</strong><div>' + htmlEscape(node.summary) + '</div><div class="muted">' + htmlEscape(node.type) + ' · ' + htmlEscape(node.confidence) + ' · ' + htmlEscape(node.source) + '</div></div><div class="trace-note"><strong>我怎麼理解它</strong><div>' + htmlEscape(node.thinking.understanding) + '</div><div class="muted">為什麼有關：' + htmlEscape(node.thinking.whyItMatters) + '</div><div class="muted">下一步：' + htmlEscape(node.thinking.nextExploration) + '</div></div><div><strong>關鍵字</strong><div class="workbench-meta">' + keywordHtml + '</div></div><div><strong>相連節點</strong>' + connectedHtml + '</div><div><strong>證據</strong>' + evidenceHtml + '</div><div><strong>缺的證據</strong>' + missingHtml + '</div>' + promptHtml;
+  }
+
+  function renderNodeActionBar(node) {
+    const actionBar = document.getElementById('node-action-bar');
+    if (!actionBar || !node) return;
+    actionBar.innerHTML = node.actions.map((action) => renderBrowserNodeAction(node.id, action)).join('');
   }
 
   function htmlEscape(value) {
@@ -1016,6 +1022,9 @@ function renderNeuralCockpit(graph: IdeaGraph, loopState: ObservationLoopState):
         }).join('')}
       </div>
       <aside class="cockpit-panel">
+        <div class="node-actions node-action-bar" id="node-action-bar">
+          ${firstNode ? firstNode.actions.map((action) => renderNodeAction(firstNode.id, action)).join('') : ''}
+        </div>
         <div class="eyebrow">分身現在在想</div>
         <h2>${escapeHtml(firstNode?.title ?? 'Kevin Autopilot')}</h2>
         <p class="thought-line" id="node-understanding">${escapeHtml(firstNode?.thinking.understanding ?? graph.focus.headline)}</p>
@@ -1051,10 +1060,7 @@ function renderSelectedNode(node: IdeaGraphNode, graph: IdeaGraph): string {
     .slice(0, 5)
     .map((edge) => graph.nodes.find((item) => item.id === (edge.from === node.id ? edge.to : edge.from)))
     .filter((item): item is IdeaGraphNode => Boolean(item))
-  return `<div class="node-actions">
-    ${node.actions.map((action) => renderNodeAction(node.id, action)).join('')}
-  </div>
-  <div class="recommendation">
+  return `<div class="recommendation">
     <strong>${escapeHtml(node.title)}</strong>
     <div>${escapeHtml(node.summary)}</div>
     <div class="muted">${escapeHtml(node.type)} · ${escapeHtml(node.confidence)} · ${escapeHtml(node.source)}</div>

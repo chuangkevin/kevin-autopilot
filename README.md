@@ -250,6 +250,10 @@ Version 0.9.1 hardens mobile node details: the selected-node drawer no longer
 expands horizontally on long pills/prompts, and node action buttons stay at the
 top of the drawer.
 
+Version 0.9.2 moves graph node actions to the top of the cockpit panel directly
+below the brain graph on mobile, and graph actions update the selected-node panel
+in place without refreshing the page or moving focus.
+
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.
 
@@ -326,7 +330,7 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
-v0.9.1 Neural Cockpit web-research prototype. See `docs/` for architecture, safety,
+v0.9.2 Neural Cockpit web-research prototype. See `docs/` for architecture, safety,
 and OpenCode workflow.
 
 ## Deployment
