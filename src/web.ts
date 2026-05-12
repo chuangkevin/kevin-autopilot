@@ -747,7 +747,9 @@ function renderPage(
           actionButton.textContent = await response.text();
           return;
         }
-        renderNodeDrawer(await response.json());
+        const detail = await response.json();
+        renderNodeDrawer(detail);
+        await refreshGraphInPlace(detail.node.id);
         return;
       }
       if (action === 'copy-opencode-prompt') {
@@ -895,6 +897,49 @@ function renderPage(
     const evidenceHtml = node.thinking.evidence.length === 0 ? '<p class="muted">目前沒有證據。</p>' : '<ul class="radar-signals">' + node.thinking.evidence.slice(0, 4).map((item) => '<li>' + htmlEscape(item) + '</li>').join('') + '</ul>';
     const missingHtml = node.thinking.missingEvidence.length === 0 ? '<p class="muted">目前沒有明確缺口。</p>' : '<ul class="radar-signals">' + node.thinking.missingEvidence.slice(0, 4).map((item) => '<li>' + htmlEscape(item) + '</li>').join('') + '</ul>';
     drawer.innerHTML = '<div class="recommendation"><strong>' + htmlEscape(node.title) + '</strong><div>' + htmlEscape(node.summary) + '</div><div class="muted">' + htmlEscape(node.type) + ' · ' + htmlEscape(node.confidence) + ' · ' + htmlEscape(node.source) + '</div></div><div class="trace-note"><strong>我怎麼理解它</strong><div>' + htmlEscape(node.thinking.understanding) + '</div><div class="muted">為什麼有關：' + htmlEscape(node.thinking.whyItMatters) + '</div><div class="muted">下一步：' + htmlEscape(node.thinking.nextExploration) + '</div></div><div><strong>關鍵字</strong><div class="workbench-meta">' + keywordHtml + '</div></div><div><strong>相連節點</strong>' + connectedHtml + '</div><div><strong>證據</strong>' + evidenceHtml + '</div><div><strong>缺的證據</strong>' + missingHtml + '</div>' + promptHtml;
+  }
+
+  async function refreshGraphInPlace(selectedNodeId) {
+    const response = await fetch('/api/graph', { cache: 'no-store' });
+    if (!response.ok) return;
+    const graph = await response.json();
+    const graphData = document.getElementById('graph-data');
+    if (graphData) graphData.textContent = JSON.stringify(graph).replaceAll('<', '\\u003c').replaceAll('&', '\\u0026');
+    renderGraphStage(graph, selectedNodeId);
+  }
+
+  function renderGraphStage(graph, selectedNodeId) {
+    const stage = document.getElementById('neural-stage');
+    if (!stage || !graph || !Array.isArray(graph.nodes)) return;
+    const layout = createBrowserGraphLayout(graph);
+    const edgeHtml = (graph.edges || []).map((edge) => {
+      const from = layout.get(edge.from);
+      const to = layout.get(edge.to);
+      if (!from || !to) return '';
+      return '<line class="neural-edge ' + (edge.confidence === 'strong' ? 'strong' : '') + '" x1="' + from.x + '" y1="' + from.y + '" x2="' + to.x + '" y2="' + to.y + '"><title>' + htmlEscape(edge.rationale) + '</title></line>';
+    }).join('');
+    const nodeHtml = graph.nodes.map((node) => {
+      const point = layout.get(node.id) || { x: 50, y: 50 };
+      return '<button type="button" class="brain-node ' + htmlEscape(node.type) + (node.id === selectedNodeId ? ' active' : '') + '" data-node-id="' + htmlEscape(node.id) + '" style="left:' + point.x + '%;top:' + point.y + '%"><span class="node-type">' + htmlEscape(node.type) + '</span><span class="node-title">' + htmlEscape(node.title) + '</span></button>';
+    }).join('');
+    stage.innerHTML = '<svg class="neural-map" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">' + edgeHtml + '</svg>' + nodeHtml;
+  }
+
+  function createBrowserGraphLayout(graph) {
+    const positions = new Map();
+    const center = graph.nodes.find((node) => node.id === graph.centerNodeId) || graph.nodes[0];
+    if (center) positions.set(center.id, { x: 50, y: 50 });
+    const others = graph.nodes.filter((node) => node.id !== (center && center.id));
+    others.forEach((node, index) => {
+      const ring = index < 12 ? 1 : 2;
+      const ringIndex = ring === 1 ? index : index - 12;
+      const ringCount = ring === 1 ? Math.min(12, others.length) : Math.max(1, others.length - 12);
+      const angle = (Math.PI * 2 * ringIndex) / ringCount - Math.PI / 2;
+      const radiusX = ring === 1 ? 32 : 43;
+      const radiusY = ring === 1 ? 31 : 41;
+      positions.set(node.id, { x: Math.round((50 + Math.cos(angle) * radiusX) * 10) / 10, y: Math.round((50 + Math.sin(angle) * radiusY) * 10) / 10 });
+    });
+    return positions;
   }
 
   function renderNodeActionBar(node) {

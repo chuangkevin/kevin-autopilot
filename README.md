@@ -254,6 +254,11 @@ Version 0.9.2 moves graph node actions to the top of the cockpit panel directly
 below the brain graph on mobile, and graph actions update the selected-node panel
 in place without refreshing the page or moving focus.
 
+Version 0.9.3 makes graph action updates feel immediate by refreshing the graph
+stage in place, suppresses stopped keyword projections so rejected keywords do not
+return after reload, varies automatic extension prompts with creative lenses, and
+falls back to DuckDuckGo HTML search results when Instant Answer has no summary.
+
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.
 
@@ -330,7 +335,7 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
-v0.9.2 Neural Cockpit web-research prototype. See `docs/` for architecture, safety,
+v0.9.3 Neural Cockpit web-research prototype. See `docs/` for architecture, safety,
 and OpenCode workflow.
 
 ## Deployment

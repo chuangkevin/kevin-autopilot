@@ -88,9 +88,14 @@ async function fetchDuckDuckGoFinding(seed: WebResearchSeed, query: string, time
     if (!response.ok) return undefined
     const parsed = await response.json() as DuckDuckGoResponse
     const topic = firstRelatedTopic(parsed.RelatedTopics ?? [])
-    const title = parsed.Heading || topic?.Name || topic?.Text?.split(' - ')[0] || `網路搜尋：${query}`
-    const summary = parsed.AbstractText || topic?.Text || '公開搜尋沒有回傳可摘要的結果；保留這個查詢作為待研究線索。'
+    const instantTitle = parsed.Heading || topic?.Name || topic?.Text?.split(' - ')[0]
+    const instantSummary = parsed.AbstractText || topic?.Text
     const resultUrl = parsed.AbstractURL || topic?.FirstURL
+    if (!instantSummary && !resultUrl) {
+      return await fetchDuckDuckGoHtmlFinding(seed, query, timeoutMs, now, controller.signal)
+    }
+    const title = instantTitle || `網路搜尋：${query}`
+    const summary = instantSummary || `公開搜尋找到可追的來源：${resultUrl}`
     return {
       id: `web-${safeId(`${seed.id}-${query}`)}`,
       seedId: seed.id,
@@ -107,6 +112,55 @@ async function fetchDuckDuckGoFinding(seed: WebResearchSeed, query: string, time
     return undefined
   } finally {
     clearTimeout(timeout)
+  }
+}
+
+async function fetchDuckDuckGoHtmlFinding(seed: WebResearchSeed, query: string, timeoutMs: number, now: Date, signal: AbortSignal): Promise<WebResearchFinding | undefined> {
+  const searchUrl = `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`
+  try {
+    const response = await fetch(searchUrl, {
+      headers: { accept: 'text/html', 'user-agent': 'kevin-autopilot/0.9 read-only research' },
+      signal,
+    })
+    if (!response.ok) return fallbackSearchFinding(seed, query, now, searchUrl)
+    const html = await response.text()
+    const titleMatch = html.match(/<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i)
+    const snippetMatch = html.match(/<a[^>]*class="result__snippet"[^>]*>[\s\S]*?<\/a>|<div[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/div>/i)
+    if (!titleMatch) return fallbackSearchFinding(seed, query, now, searchUrl)
+    const resultUrl = decodeDuckDuckGoUrl(htmlDecode(titleMatch[1] ?? ''))
+    const title = htmlDecode(stripTags(titleMatch[2] ?? '')).trim() || `網路搜尋：${query}`
+    const summary = htmlDecode(stripTags(snippetMatch?.[1] ?? snippetMatch?.[0] ?? '')).trim() || `公開搜尋找到「${title}」，可打開來源繼續查證。`
+    return {
+      id: `web-${safeId(`${seed.id}-${query}`)}`,
+      seedId: seed.id,
+      seedNodeId: seed.nodeId,
+      query,
+      title,
+      summary,
+      url: resultUrl || searchUrl,
+      sourceName: 'DuckDuckGo HTML Search',
+      fetchedAt: now.toISOString(),
+      keywords: [...new Set([...seed.keywords, ...extractWords(`${title} ${summary}`).slice(0, 4)])].slice(0, 8),
+    }
+  } catch {
+    return fallbackSearchFinding(seed, query, now, searchUrl)
+  }
+}
+
+function fallbackSearchFinding(seed: WebResearchSeed, query: string, now: Date, searchUrl: string): WebResearchFinding {
+  const title = `搜尋結果頁：${query}`
+  const summary = '公開搜尋 API 沒有提供摘要，但已保留可打開的搜尋結果頁，讓分身下一輪換關鍵字或由 Kevin 直接查證。'
+  return {
+    id: `web-${safeId(`${seed.id}-${query}`)}`,
+    seedId: seed.id,
+    seedNodeId: seed.nodeId,
+    query,
+    title,
+    summary,
+    url: searchUrl,
+    sourceName: 'DuckDuckGo Search Page',
+    fetchedAt: now.toISOString(),
+    keywords: [...new Set([...seed.keywords, ...extractWords(`${title} ${summary}`).slice(0, 4)])].slice(0, 8),
   }
 }
 
@@ -130,6 +184,30 @@ function extractWords(value: string): string[] {
     .split(/[^\p{L}\p{N}]+/u)
     .map((token) => token.trim())
     .filter((token) => token.length >= 3)
+}
+
+function stripTags(value: string): string {
+  return value.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')
+}
+
+function htmlDecode(value: string): string {
+  return value
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+}
+
+function decodeDuckDuckGoUrl(value: string): string | undefined {
+  if (!value) return undefined
+  try {
+    const parsed = new URL(value, 'https://duckduckgo.com')
+    const uddg = parsed.searchParams.get('uddg')
+    return uddg ? decodeURIComponent(uddg) : parsed.toString()
+  } catch {
+    return value
+  }
 }
 
 async function loadStoredWebResearch(config: AutopilotConfig): Promise<StoredWebResearch> {

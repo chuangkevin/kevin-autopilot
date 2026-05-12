@@ -33,8 +33,9 @@ interface StoredIdeaGraph {
 export async function getIdeaGraph(config: AutopilotConfig, report: ObservationReport, ideas: IdeaRecord[]): Promise<IdeaGraph> {
   const stored = await loadStoredGraph(config)
   const backlogLookup = loadBacklogLookup(config)
-  const webFindings = await refreshWebResearch(config, makeWebResearchSeeds(ideas))
-  const graph = mergeGraph(stored, createProjectedGraph(config, report, ideas, backlogLookup, webFindings))
+  const suppressedKeywords = suppressedKeywordSet(stored)
+  const webFindings = await refreshWebResearch(config, makeWebResearchSeeds(ideas, suppressedKeywords))
+  const graph = mergeGraph(stored, createProjectedGraph(config, report, ideas, backlogLookup, webFindings, suppressedKeywords))
   await saveStoredGraph(config, graph)
   return toFocusedGraph(graph, report)
 }
@@ -155,14 +156,20 @@ export async function stopExploringIdeaGraphNode(config: AutopilotConfig, report
   const stored = await loadStoredGraph(config)
   const backlogLookup = loadBacklogLookup(config)
   const graph = mergeGraph(stored, createProjectedGraph(config, report, ideas, backlogLookup))
+  const selected = graph.nodes.find((node) => node.id === nodeId)
+  if (!selected || selected.type === 'double') return undefined
+  const suppressedKeywords = selected.type === 'keyword' ? new Set(selected.keywords.map((keyword) => keyword.toLowerCase())) : new Set<string>()
   const now = new Date().toISOString()
   let hidden: IdeaGraphNode | undefined
   const nextGraph: StoredIdeaGraph = {
     nodes: graph.nodes.map((node) => {
-      if (node.id !== nodeId) return node
-      if (node.type === 'double') return node
-      hidden = normalizeNodeActions({ ...node, ignored: true, updatedAt: now })
-      return hidden
+      const shouldHideRelatedKeywordNode = suppressedKeywords.size > 0
+        && (node.type === 'keyword' || node.type === 'research')
+        && (node.keywords.some((keyword) => isSuppressedKeyword(keyword, suppressedKeywords)) || hasSuppressedKeyword(node.title, suppressedKeywords))
+      if (node.id !== nodeId && !shouldHideRelatedKeywordNode) return node
+      const ignored = normalizeNodeActions({ ...node, ignored: true, updatedAt: now })
+      if (node.id === nodeId) hidden = ignored
+      return ignored
     }),
     edges: graph.edges,
   }
@@ -199,6 +206,7 @@ function createProjectedGraph(
   ideas: IdeaRecord[],
   backlogLookup: Map<string, BacklogItem> = new Map(),
   webFindings: WebResearchFinding[] = [],
+  suppressedKeywords: Set<string> = new Set(),
 ): StoredIdeaGraph {
   const now = new Date().toISOString()
   const nowDate = new Date(now)
@@ -230,7 +238,7 @@ function createProjectedGraph(
   }
 
   for (const idea of ideas) {
-    const keywords = extractIdeaKeywords(idea.rawText)
+    const keywords = filterSuppressedKeywords(extractIdeaKeywords(idea.rawText), suppressedKeywords)
     const ideaNode = makeNode({
       id: `idea-${safeId(idea.id)}`,
       type: 'idea',
@@ -289,7 +297,7 @@ function createProjectedGraph(
     }
   }
 
-  for (const keyword of recurrentKeywords(ideas, report).slice(0, 6)) {
+  for (const keyword of recurrentKeywords(ideas, report).filter((keyword) => !isSuppressedKeyword(keyword, suppressedKeywords)).slice(0, 6)) {
     nodes.push(makeKeywordNode(keyword, now))
     const research = makeResearchSeed(keyword, now)
     nodes.push(research)
@@ -297,7 +305,7 @@ function createProjectedGraph(
     edges.push(makeEdge(research.id, `keyword-${safeId(keyword)}`, 'contains_keyword', `研究種子連到關鍵字「${keyword}」。`, 'weak', 'deterministic-research-seed', now))
   }
 
-  for (const finding of webFindings.slice(0, 10)) {
+  for (const finding of webFindings.filter((finding) => !hasSuppressedKeyword(`${finding.title} ${finding.summary}`, suppressedKeywords) && !finding.keywords.some((keyword) => isSuppressedKeyword(keyword, suppressedKeywords))).slice(0, 10)) {
     const findingNode = makeWebFindingNode(finding)
     nodes.push(findingNode)
     if (nodes.some((node) => node.id === finding.seedNodeId)) {
@@ -312,12 +320,15 @@ function createProjectedGraph(
   return { nodes, edges }
 }
 
-function makeWebResearchSeeds(ideas: IdeaRecord[]): WebResearchSeed[] {
-  return ideas.slice(0, 8).map((idea) => ({
+function makeWebResearchSeeds(ideas: IdeaRecord[], suppressedKeywords: Set<string>): WebResearchSeed[] {
+  return ideas
+    .filter((idea) => !hasSuppressedKeyword(idea.rawText, suppressedKeywords))
+    .slice(0, 8)
+    .map((idea) => ({
     id: idea.id,
     nodeId: `idea-${safeId(idea.id)}`,
     title: idea.title,
-    keywords: extractIdeaKeywords(idea.rawText),
+    keywords: filterSuppressedKeywords(extractIdeaKeywords(idea.rawText), suppressedKeywords),
   }))
 }
 
@@ -498,9 +509,8 @@ function makeNode(input: {
 }
 
 function makeIdeaExtensionNodes(idea: IdeaRecord, keywords: string[], now: string): IdeaGraphNode[] {
-  const steps = idea.suggestedNextSteps.length > 0
-    ? idea.suggestedNextSteps.slice(0, 2)
-    : ['先把這個想法拆成可探索的問題與成功條件。']
+  const firstStep = idea.suggestedNextSteps[0] ?? '先把這個想法拆成可探索的問題與成功條件。'
+  const steps = [firstStep, creativeExplorationStep(idea, keywords)]
   return steps.map((step, index) => makeNode({
     id: `extension-${safeId(idea.id)}-${index + 1}`,
     type: 'extension',
@@ -519,6 +529,45 @@ function makeIdeaExtensionNodes(idea: IdeaRecord, keywords: string[], now: strin
       missingEvidence: idea.classification === 'explore' ? ['需要 Kevin 補更多使用情境或判斷標準。'] : [],
     },
   }))
+}
+
+function creativeExplorationStep(idea: IdeaRecord, keywords: string[]): string {
+  const primary = keywords[0] ?? idea.title
+  const secondary = keywords.find((keyword) => keyword !== primary) ?? 'Kevin 的實際工作流'
+  const lenses = [
+    `反過來想：如果「${primary}」完全沒用，最可能是哪個前提錯了？先找反例和警訊。`,
+    `把「${primary}」接到「${secondary}」：想一個不是功能清單、而是每天會自然打開的使用情境。`,
+    `找外部參照：搜尋跟「${primary}」相似的 agent / dashboard / research workflow，挑一個可偷學的互動模式。`,
+    `做一個怪但可驗證的 prototype：只用一個畫面證明「${primary}」真的會幫 Kevin 少想一步。`,
+  ]
+  return lenses[Math.abs(hashString(`${idea.id}:${idea.title}`)) % lenses.length]
+}
+
+function suppressedKeywordSet(graph: StoredIdeaGraph): Set<string> {
+  return new Set(graph.nodes
+    .filter((node) => node.ignored && node.type === 'keyword')
+    .flatMap((node) => node.keywords.length > 0 ? node.keywords : [node.title])
+    .map((keyword) => keyword.toLowerCase()))
+}
+
+function filterSuppressedKeywords(keywords: string[], suppressedKeywords: Set<string>): string[] {
+  return keywords.filter((keyword) => !isSuppressedKeyword(keyword, suppressedKeywords))
+}
+
+function isSuppressedKeyword(keyword: string, suppressedKeywords: Set<string>): boolean {
+  const normalized = keyword.toLowerCase()
+  return suppressedKeywords.has(normalized) || [...suppressedKeywords].some((suppressed) => normalized.includes(suppressed) || suppressed.includes(normalized))
+}
+
+function hasSuppressedKeyword(value: string, suppressedKeywords: Set<string>): boolean {
+  const normalized = value.toLowerCase()
+  return [...suppressedKeywords].some((keyword) => normalized.includes(keyword))
+}
+
+function hashString(value: string): number {
+  let hash = 0
+  for (const char of value) hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0
+  return hash
 }
 
 function shortTitle(value: string): string {

@@ -150,6 +150,8 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(pageBody.includes('id="node-action-bar"'), true)
     assert.equal(pageBody.indexOf('id="node-action-bar"') < pageBody.indexOf('分身現在在想'), true)
     assert.equal(pageBody.includes('setTimeout(() => location.reload(), 900)'), false)
+    assert.equal(pageBody.includes('refreshGraphInPlace(detail.node.id)'), true)
+    assert.equal(pageBody.includes("fetch('/api/graph', { cache: 'no-store' })"), true)
 
     const graph = await fetch(`${baseUrl}/api/graph`)
     assert.equal(graph.status, 200)

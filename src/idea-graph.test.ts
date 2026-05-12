@@ -187,6 +187,32 @@ test('graph node actions can mark interesting, find relationships, create prompt
   }
 })
 
+test('stopped keyword nodes suppress future keyword research projections', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-graph-suppress-keyword-'))
+  const config: AutopilotConfig = {
+    environment: 'test',
+    dataDir,
+    ruleSources: [],
+    repositories: [],
+    services: [],
+  }
+  try {
+    const idea = await createIdea(config, 'git agent workflow cockpit')
+    const report = await observe(config)
+    const graph = await getIdeaGraph(config, report, [idea])
+    const gitKeyword = graph.nodes.find((node) => node.type === 'keyword' && node.title === 'git')
+    assert.ok(gitKeyword)
+
+    await stopExploringIdeaGraphNode(config, report, [idea], gitKeyword.id)
+    const refreshed = await getIdeaGraph(config, report, [idea])
+
+    assert.equal(refreshed.nodes.some((node) => node.id === gitKeyword.id), false)
+    assert.equal(refreshed.nodes.some((node) => node.type === 'research' && node.keywords.includes('git')), false)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
 test('graph node actions only mutate Autopilot-owned graph metadata', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-graph-action-scope-'))
   const targetRepo = join(dataDir, 'target-repo')
