@@ -23,18 +23,18 @@
 
 - [x] 4.1 `GET /api/backlog?status=active|snoozed|resolved|dismissed|all` returns `{ items, counts }`; counts reflect effective status (expired snoozes count as active).
 - [x] 4.2 `POST /api/backlog/:id/{dismiss,snooze,resolve}` works behind the same trusted-settings check used by graph extension. Snooze validates `days ∈ {1, 7, 30}` and returns 400 otherwise; unknown id returns 404.
-- [ ] 4.3 Replace the per-cycle Observation Workbench section in `renderNeuralCockpit` with a `Durable Backlog` panel (filter chips, sort, evidence-side-by-side, action buttons). **Not started — UI still shows the old Workbench.**
-- [ ] 4.4 Client-side dismiss / snooze / resolve handlers that update rows inline. **Not started.**
-- [ ] 4.5 `src/web.test.ts` coverage for `/api/backlog` GET, the three POST actions, snooze validation, and 404. **Not started.**
+- [x] 4.3 Add a visible `Durable Backlog` cockpit panel with filter chips, recent-seen sort copy, current/previous evidence, recurrence metadata, and action buttons. The old per-cycle Observation Workbench remains folded under legacy details for debugging only.
+- [x] 4.4 Client-side dismiss / snooze / resolve handlers update the list inline through `/api/backlog` and keep changes metadata-only.
+- [x] 4.5 `src/web.test.ts` covers `/api/backlog` GET, snooze/resolve/dismiss POST actions, snooze validation, 404, dashboard rendering, and non-ranking wording.
 
 ## 5. Documentation And Release
 
-- [ ] 5.1 Bump `package.json`, `package-lock.json`, `src/version.ts`, and `.github/workflows/deploy-dev.yml` `EXPECTED_APP_VERSION` to `0.7.0`. **Hold until Section 4 is complete; release stays on v0.6.1 for now.**
-- [ ] 5.2 Add the v0.7.0 entry to `README.md` and `AGENTS.md`. **Same hold.**
+- [x] 5.1 Bump `package.json`, `package-lock.json`, `src/version.ts`, and `.github/workflows/deploy-dev.yml` `EXPECTED_APP_VERSION` to `0.7.0`.
+- [x] 5.2 Add the v0.7.0 entry to `README.md` and `AGENTS.md`.
 - [x] 5.3 Capability spec at `specs/durable-backlog/spec.md` is in place (proposal + design also committed).
 
 ## 6. Verification And Release
 
-- [x] 6.1 `npm run build` and `npm test` green at this checkpoint: 59/59 (38 baseline + 17 backlog + 1 observation-loop + 3 idea-graph).
-- [ ] 6.2 Smoke test in a locally-built Docker container. **Deferred until UI lands.**
-- [ ] 6.3 Commit + push + verify CI / Docker / Deploy. **Deferred until UI lands so the released image is end-to-end useful.**
+- [x] 6.1 `npm run build`, `npm test`, `docker compose -f docker-compose.kevinhome.yml config`, and `git diff --check` are green for the UI release checkpoint: 59/59 tests.
+- [ ] 6.2 Local Docker container smoke is not run on this corporate dev box unless an untracked `Dockerfile.local` MITM workaround is present; use CI-built image plus deploy health checks for the release smoke.
+- [ ] 6.3 Commit + push + verify CI / Docker / Deploy for v0.7.0.

@@ -17,7 +17,8 @@ The system should behave like an always-on observer:
 2. Detect possible bugs, regressions, stale behavior, and broken checks.
 3. Notice places that can be simplified, hardened, documented, tested, or turned
    into a better workflow.
-4. Keep a living backlog of things worth doing.
+4. Keep a living backlog of observed signals without deciding which one matters
+   most for Kevin.
 5. Decide whether each item is safe to auto-prepare, needs Kevin approval, or
    should only be observed.
 
@@ -89,6 +90,14 @@ Workbench lists all candidates from the run in observation order, exposes the
 same full candidate list through `/api/main-agent/thinking`, and frames the page
 as a workspace for past problems, ideas, and research directions rather than a
 system that decides which idea matters most.
+
+v0.7.0 makes repeated observations durable. The background loop merges each
+candidate into `data/autopilot.db`, the Neural Cockpit graph reads recurrence
+strength from that store, and the dashboard shows a Durable Backlog panel with
+filters, current/previous evidence, `seen_count`, `miss_count`, strength, and
+inline snooze/resolve/dismiss actions. These actions are metadata-only; they do
+not authorize repo edits, commits, pushes, deployment, service changes, or secret
+access.
 
 Kevin can add a supplement during or between observation cycles. The supplement
 is stored as Autopilot-owned data and merged into the next cycle as context; it

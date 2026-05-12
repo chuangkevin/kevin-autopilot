@@ -62,6 +62,11 @@ export function createWebServer(config: AutopilotConfig, observationLoop?: Obser
   })
 }
 
+interface BacklogPanelData {
+  items: BacklogItem[]
+  counts: Record<BacklogStatus | 'all', number>
+}
+
 async function handleRequest(config: AutopilotConfig, request: IncomingMessage, response: ServerResponse, observationLoop?: ObservationLoop): Promise<void> {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
 
@@ -214,7 +219,14 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
       } else if (action === 'resolve') {
         item = resolveBacklogItem(db, id, now)
       } else {
-        const body = JSON.parse(await readBody(request)) as { days?: unknown }
+        let body: { days?: unknown }
+        try {
+          const rawBody = await readBody(request)
+          body = rawBody.trim() ? JSON.parse(rawBody) as { days?: unknown } : {}
+        } catch {
+          writeText(response, 'snooze request body must be JSON with days 1, 7, or 30', 400)
+          return
+        }
         const days = typeof body.days === 'number' ? body.days : Number(body.days)
         if (!Number.isFinite(days) || ![1, 7, 30].includes(days)) {
           writeText(response, 'snooze days must be 1, 7, or 30', 400)
@@ -237,8 +249,9 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
     const report = await getVisibleReport(config, observationLoop)
     const ideas = await listIdeas(config, 12)
     const graph = await getIdeaGraph(config, report, ideas)
+    const backlog = loadBacklogResponse(config, 'active')
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', ...NO_STORE_HEADERS })
-    response.end(renderPage(report, ideas, Boolean(config.ai?.enabled), observationLoop?.getState() ?? createManualLoopState(), graph))
+    response.end(renderPage(report, ideas, Boolean(config.ai?.enabled), observationLoop?.getState() ?? createManualLoopState(), graph, backlog))
     return
   }
 
@@ -326,10 +339,7 @@ function parseBacklogFilter(raw: string | null): BacklogStatusFilter {
   return 'active'
 }
 
-function loadBacklogResponse(config: AutopilotConfig, filter: BacklogStatusFilter): {
-  items: BacklogItem[]
-  counts: Record<BacklogStatus | 'all', number>
-} {
+function loadBacklogResponse(config: AutopilotConfig, filter: BacklogStatusFilter): BacklogPanelData {
   const db = openBacklogDatabase(config)
   const now = new Date()
   try {
@@ -366,6 +376,7 @@ function renderPage(
   aiEnabled: boolean,
   loopState: ObservationLoopState,
   graph: IdeaGraph,
+  backlog: BacklogPanelData,
 ): string {
   const dirtyRepos = report.repositories.filter((repo) => repo.dirty).length
   const bugCandidates = report.candidates.filter((candidate) => candidate.category === 'bug_watch' || candidate.category === 'bug_fix_candidate').length
@@ -473,6 +484,21 @@ function renderPage(
     .source-badge { flex: 0 0 auto; display: inline-grid; place-items: center; min-width: 34px; height: 34px; padding: 0 8px; border-radius: 12px; background: rgba(96,165,250,0.18); color: #dbeafe; font: 800 13px/1 ui-monospace, "Cascadia Code", monospace; }
     .workbench-title { font-weight: 800; line-height: 1.28; overflow-wrap: anywhere; }
     .workbench-meta { display: flex; flex-wrap: wrap; gap: 6px; }
+    .durable-backlog { border-color: rgba(45,212,191,0.34); background: radial-gradient(circle at top left, rgba(45,212,191,0.13), transparent 34%), linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.035)); }
+    .backlog-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
+    .backlog-filter { background: rgba(148,163,184,0.18); color: #e5eefc; margin: 0; }
+    .backlog-filter.active { background: #2dd4bf; color: #042f2e; }
+    .backlog-list { display: grid; gap: 12px; }
+    .backlog-card { display: grid; gap: 12px; border: 1px solid rgba(45,212,191,0.22); border-left: 5px solid #2dd4bf; border-radius: 18px; padding: 14px; background: rgba(15,23,42,0.54); min-width: 0; }
+    .backlog-card.medium { border-left-color: #fbbf24; }
+    .backlog-card.strong { border-left-color: #f87171; }
+    .backlog-title { font-weight: 900; font-size: 17px; line-height: 1.3; overflow-wrap: anywhere; }
+    .backlog-evidence { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .evidence-box { border: 1px solid rgba(148,163,184,0.16); border-radius: 14px; padding: 10px; background: rgba(8,13,25,0.42); min-width: 0; }
+    .evidence-box strong { display: block; margin-bottom: 6px; }
+    .backlog-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .backlog-actions button { margin: 0; }
+    .backlog-result { min-height: 20px; }
     .radar-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
     .radar-card { border: 1px solid rgba(148,163,184,0.18); border-left: 5px solid #64748b; border-radius: 16px; padding: 14px; background: rgba(15,23,42,0.5); min-width: 0; }
     .radar-card.needs_attention { border-left-color: #f87171; }
@@ -500,7 +526,7 @@ function renderPage(
     .idea-title { font-weight: 800; font-size: 17px; line-height: 1.35; overflow-wrap: anywhere; }
     .idea-meta { color: #93a4bd; font-size: 13px; margin-top: 4px; overflow-wrap: anywhere; }
     .idea-status { border-top: 1px solid rgba(148,163,184,0.16); padding-top: 10px; }
-    @media (max-width: 820px) { header { display: block; } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .command-grid, .focus-grid, .agent-board, .thinking-grid, .neural-shell { grid-template-columns: 1fr; } .neural-stage { min-height: 430px; } table { font-size: 13px; } }
+    @media (max-width: 820px) { header { display: block; } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .command-grid, .focus-grid, .agent-board, .thinking-grid, .neural-shell, .backlog-evidence { grid-template-columns: 1fr; } .neural-stage { min-height: 430px; } table { font-size: 13px; } }
     @media (max-width: 520px) { .grid { grid-template-columns: 1fr 1fr; } .value { font-size: 24px; } a.button, button { min-height: 44px; } }
   </style>
 </head>
@@ -516,6 +542,8 @@ function renderPage(
   </header>
 
   ${renderNeuralCockpit(graph, loopState)}
+
+  ${renderDurableBacklogPanel(backlog)}
 
   <details class="detail-block">
     <summary>補充或修正分身這輪判斷</summary>
@@ -725,8 +753,89 @@ function renderPage(
       } catch {
         if (status) status.textContent = '複製失敗，請手動選取';
       }
+      return;
+    }
+
+    const backlogFilter = target.closest('.backlog-filter');
+    if (backlogFilter) {
+      const status = backlogFilter.getAttribute('data-status') || 'active';
+      await loadBacklog(status);
+      return;
+    }
+
+    const backlogAction = target.closest('.backlog-action');
+    if (backlogAction) {
+      const id = backlogAction.getAttribute('data-id');
+      const action = backlogAction.getAttribute('data-action');
+      if (!id || !action) return;
+      const result = document.getElementById('backlog-result');
+      if (result) result.textContent = '更新 durable backlog 中...';
+      const body = action === 'snooze' ? JSON.stringify({ days: Number(backlogAction.getAttribute('data-days') || '7') }) : undefined;
+      const response = await fetch('/api/backlog/' + encodeURIComponent(id) + '/' + action, {
+        method: 'POST',
+        headers: body ? { 'content-type': 'application/json' } : undefined,
+        body
+      });
+      if (!response.ok) {
+        if (result) result.textContent = await response.text();
+        return;
+      }
+      if (result) result.textContent = '已更新；這只改 Autopilot 自己的 backlog metadata。';
+      await loadBacklog(currentBacklogStatus);
     }
   });
+
+  let currentBacklogStatus = 'active';
+
+  async function loadBacklog(status) {
+    currentBacklogStatus = status;
+    const result = document.getElementById('backlog-result');
+    if (result) result.textContent = '讀取 durable backlog...';
+    const response = await fetch('/api/backlog?status=' + encodeURIComponent(status), { cache: 'no-store' });
+    if (!response.ok) {
+      if (result) result.textContent = await response.text();
+      return;
+    }
+    const payload = await response.json();
+    renderBacklog(payload.items || [], payload.counts || {});
+    updateBacklogCounts(payload.counts || {});
+    document.querySelectorAll('.backlog-filter').forEach((button) => button.classList.toggle('active', button.getAttribute('data-status') === status));
+    if (result) result.textContent = payload.items.length === 0 ? '這個狀態目前沒有 backlog item。' : '排序：最近再次看見的線索在前面。';
+  }
+
+  function renderBacklog(items) {
+    const list = document.getElementById('backlog-list');
+    if (!list) return;
+    if (items.length === 0) {
+      list.innerHTML = '<p class="muted">目前沒有符合這個狀態的 durable backlog。</p>';
+      return;
+    }
+    list.innerHTML = items.map(renderBacklogItem).join('');
+  }
+
+  function updateBacklogCounts(counts) {
+    document.querySelectorAll('[data-backlog-count]').forEach((node) => {
+      const key = node.getAttribute('data-backlog-count');
+      node.textContent = String(counts[key] ?? 0);
+    });
+  }
+
+  function renderBacklogItem(item) {
+    const effective = item.status === 'snoozed' && item.snoozedUntil && item.snoozedUntil <= new Date().toISOString() ? 'active' : item.status;
+    return '<article class="backlog-card ' + htmlEscape(item.strength) + '">' +
+      '<div><div class="backlog-title">' + htmlEscape(item.title) + '</div>' +
+      '<div class="workbench-meta"><span class="pill">' + htmlEscape(item.kind) + '</span><span class="pill ' + (effective === 'active' ? 'ok' : 'warn') + '">' + htmlEscape(effective) + '</span><span class="pill">strength ' + htmlEscape(item.strength) + '</span><span class="pill">seen ' + htmlEscape(item.seenCount) + '</span><span class="pill">miss ' + htmlEscape(item.missCount) + '</span></div></div>' +
+      '<div>' + htmlEscape(item.summary) + '</div>' +
+      '<div class="muted">來源：' + htmlEscape(item.sourceType) + ' / ' + htmlEscape(item.sourceName) + ' · 第一次：' + htmlEscape(item.firstSeenAt) + ' · 最近：' + htmlEscape(item.lastSeenAt) + (item.snoozedUntil ? ' · snooze 到：' + htmlEscape(item.snoozedUntil) : '') + '</div>' +
+      '<div class="backlog-evidence">' + renderEvidenceBox('這次看到的證據', item.evidence) + renderEvidenceBox('上次留下的證據', item.prevEvidence || []) + '</div>' +
+      '<div class="backlog-actions"><button type="button" class="secondary backlog-action" data-action="snooze" data-days="1" data-id="' + htmlEscape(item.id) + '">Snooze 1 天</button><button type="button" class="secondary backlog-action" data-action="snooze" data-days="7" data-id="' + htmlEscape(item.id) + '">Snooze 7 天</button><button type="button" class="secondary backlog-action" data-action="snooze" data-days="30" data-id="' + htmlEscape(item.id) + '">Snooze 30 天</button><button type="button" class="secondary backlog-action" data-action="resolve" data-id="' + htmlEscape(item.id) + '">標成已處理</button><button type="button" class="secondary backlog-action" data-action="dismiss" data-id="' + htmlEscape(item.id) + '">不要再提醒</button></div>' +
+      '</article>';
+  }
+
+  function renderEvidenceBox(title, evidence) {
+    const rows = evidence.length === 0 ? '<p class="muted">沒有留下上一版證據。</p>' : '<ul class="radar-signals">' + evidence.slice(0, 5).map((entry) => '<li>' + htmlEscape(entry) + '</li>').join('') + '</ul>';
+    return '<div class="evidence-box"><strong>' + htmlEscape(title) + '</strong>' + rows + '</div>';
+  }
 
   function renderNodeDrawer(detail) {
     const drawer = document.getElementById('node-drawer');
@@ -765,6 +874,75 @@ function renderPage(
 </script>
 </body>
 </html>`
+}
+
+function renderDurableBacklogPanel(backlog: BacklogPanelData): string {
+  return `<section class="durable-backlog" id="durable-backlog">
+    <div class="eyebrow">Durable Backlog</div>
+    <h2 class="mission-title">過去反覆看過的問題</h2>
+    <p class="muted">這裡不是重要性排名；它只把分身多輪觀察留下的線索累積起來，讓你看到「已經看過幾次、最近是否還出現、上一輪證據有沒有變」。動作只改 Autopilot 自己的 <code>data/autopilot.db</code> metadata，不會動 target repo、commit、push、部署。</p>
+    <div class="status-strip">
+      <div class="status-item"><span class="label">Active</span><strong data-backlog-count="active">${backlog.counts.active}</strong></div>
+      <div class="status-item"><span class="label">Snoozed</span><strong data-backlog-count="snoozed">${backlog.counts.snoozed}</strong></div>
+      <div class="status-item"><span class="label">Resolved</span><strong data-backlog-count="resolved">${backlog.counts.resolved}</strong></div>
+      <div class="status-item"><span class="label">All</span><strong data-backlog-count="all">${backlog.counts.all}</strong></div>
+    </div>
+    <div class="backlog-toolbar" aria-label="Durable backlog filters">
+      ${(['active', 'snoozed', 'resolved', 'dismissed', 'all'] as BacklogStatusFilter[]).map((status) => `<button type="button" class="backlog-filter${status === 'active' ? ' active' : ''}" data-status="${status}">${escapeHtml(backlogFilterLabel(status))} <span data-backlog-count="${status}">${backlog.counts[status]}</span></button>`).join('')}
+    </div>
+    <div id="backlog-result" class="muted backlog-result" aria-live="polite">排序：最近再次看見的線索在前面。</div>
+    <div class="backlog-list" id="backlog-list">
+      ${backlog.items.length === 0 ? '<p class="muted">目前沒有 active durable backlog；下一輪觀察會繼續累積。</p>' : backlog.items.map((item) => renderBacklogCard(item)).join('')}
+    </div>
+  </section>`
+}
+
+function renderBacklogCard(item: BacklogItem): string {
+  const status = effectiveStatus(item, new Date())
+  return `<article class="backlog-card ${escapeHtml(item.strength)}">
+    <div>
+      <div class="backlog-title">${escapeHtml(item.title)}</div>
+      <div class="workbench-meta">
+        <span class="pill">${escapeHtml(item.kind)}</span>
+        <span class="pill ${status === 'active' ? 'ok' : 'warn'}">${escapeHtml(backlogStatusLabel(status))}</span>
+        <span class="pill">strength ${escapeHtml(item.strength)}</span>
+        <span class="pill">seen ${item.seenCount}</span>
+        <span class="pill">miss ${item.missCount}</span>
+      </div>
+    </div>
+    <div>${escapeHtml(item.summary)}</div>
+    <div class="muted">來源：${escapeHtml(item.sourceType)} / ${escapeHtml(item.sourceName)} · 第一次：${escapeHtml(formatTaipeiTime(item.firstSeenAt))} · 最近：${escapeHtml(formatTaipeiTime(item.lastSeenAt))}${item.snoozedUntil ? ` · snooze 到：${escapeHtml(formatTaipeiTime(item.snoozedUntil))}` : ''}</div>
+    <div class="backlog-evidence">
+      ${renderBacklogEvidence('這次看到的證據', item.evidence)}
+      ${renderBacklogEvidence('上次留下的證據', item.prevEvidence ?? [])}
+    </div>
+    <div class="backlog-actions">
+      <button type="button" class="secondary backlog-action" data-action="snooze" data-days="1" data-id="${escapeHtml(item.id)}">Snooze 1 天</button>
+      <button type="button" class="secondary backlog-action" data-action="snooze" data-days="7" data-id="${escapeHtml(item.id)}">Snooze 7 天</button>
+      <button type="button" class="secondary backlog-action" data-action="snooze" data-days="30" data-id="${escapeHtml(item.id)}">Snooze 30 天</button>
+      <button type="button" class="secondary backlog-action" data-action="resolve" data-id="${escapeHtml(item.id)}">標成已處理</button>
+      <button type="button" class="secondary backlog-action" data-action="dismiss" data-id="${escapeHtml(item.id)}">不要再提醒</button>
+    </div>
+  </article>`
+}
+
+function renderBacklogEvidence(title: string, evidence: string[]): string {
+  return `<div class="evidence-box"><strong>${escapeHtml(title)}</strong>${evidence.length === 0 ? '<p class="muted">沒有留下上一版證據。</p>' : `<ul class="radar-signals">${evidence.slice(0, 5).map((entry) => `<li>${escapeHtml(entry)}</li>`).join('')}</ul>`}</div>`
+}
+
+function backlogFilterLabel(status: BacklogStatusFilter): string {
+  if (status === 'active') return '正在看'
+  if (status === 'snoozed') return '暫停'
+  if (status === 'resolved') return '已處理'
+  if (status === 'dismissed') return '不提醒'
+  return '全部'
+}
+
+function backlogStatusLabel(status: BacklogStatus): string {
+  if (status === 'active') return '正在看'
+  if (status === 'snoozed') return '暫停'
+  if (status === 'resolved') return '已處理'
+  return '不提醒'
 }
 
 function renderNeuralCockpit(graph: IdeaGraph, loopState: ObservationLoopState): string {

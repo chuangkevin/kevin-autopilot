@@ -288,6 +288,13 @@ and thinking API keep every observed candidate visible without ranking or
 truncation, because Kevin treats each idea as important until he decides
 otherwise.
 
+v0.7.0 adds a persisted Durable Backlog table in `data/autopilot.db`. Observation
+cycles upsert candidates by deterministic id, keep previous/current evidence,
+derive strength from recurrence, and expose `GET /api/backlog` plus trusted
+metadata-only action APIs for snooze, resolve, and dismiss. The dashboard renders
+this as a filterable cockpit panel so Kevin can inspect repeated signals across
+cycles without treating the list as an importance ranking.
+
 The first persisted loop status is `observation-loop-state.json`, which records
 enabled/running state, interval, run count, last run, next run, report paths, and
 last error. This is status telemetry only, not permission to execute changes.

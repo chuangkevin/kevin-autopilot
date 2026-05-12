@@ -217,6 +217,14 @@ each run, records `lastGraphAt`, and the open cockpit page checks for graph
 updates every minute so the visible double can continue feeling alive while Kevin
 is away.
 
+Version 0.7.0 adds the Durable Backlog cockpit panel. Repeated observation
+candidates are deduplicated in Autopilot-owned SQLite, accumulate `seen_count`,
+`miss_count`, and strength, and appear on the dashboard with current versus
+previous evidence. Kevin can filter active/snoozed/resolved/dismissed/all items
+and snooze, resolve, or dismiss a row inline; those actions only mutate
+`data/autopilot.db` metadata and never touch target repositories, commits, pushes,
+deployments, or secrets.
+
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.
 
@@ -293,8 +301,8 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
-v0.5.21 non-prioritized Observation Workbench prototype. See `docs/` for architecture,
-safety, and OpenCode workflow.
+v0.7.0 Durable Backlog cockpit prototype. See `docs/` for architecture, safety,
+and OpenCode workflow.
 
 ## Deployment
 

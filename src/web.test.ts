@@ -5,7 +5,8 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createWebServer, formatTaipeiTime, isTrustedSettingsAddress, isTrustedSettingsSource } from './web.js'
-import type { AutopilotConfig } from './types.js'
+import { mergeCandidatesIntoBacklog, openBacklogDatabase } from './backlog.js'
+import type { AutopilotConfig, ObservationCandidate } from './types.js'
 
 const GEMINI_KEY = `AIzaSy${'C'.repeat(33)}`
 
@@ -49,6 +50,32 @@ test('web server exposes health and idea intake', async () => {
       },
     ],
   }
+  const backlogCandidate: ObservationCandidate = {
+    id: 'repository-missing-repo-repeat-signal',
+    category: 'bug_watch',
+    confidence: 'likely',
+    title: 'Missing repo keeps recurring',
+    sourceType: 'repository',
+    sourceName: 'missing-repo',
+    evidence: ['first pass saw repository path missing'],
+    expectedBehavior: 'Configured repositories should be reachable for observation.',
+    actualBehavior: 'The same missing repository path appeared again.',
+    suggestedNextStep: 'Confirm whether the repository mapping is still correct.',
+    approvalRequired: false,
+    risk: 'medium',
+    boundedPrompt: 'Inspect the missing repo mapping without changing target repos.',
+  }
+  const backlogDb = openBacklogDatabase(config)
+  try {
+    mergeCandidatesIntoBacklog(backlogDb, [backlogCandidate], new Date('2026-05-11T00:00:00.000Z'))
+    mergeCandidatesIntoBacklog(
+      backlogDb,
+      [{ ...backlogCandidate, evidence: ['second pass saw the same missing repository path'] }],
+      new Date('2026-05-12T00:00:00.000Z'),
+    )
+  } finally {
+    backlogDb.close()
+  }
   const server = createWebServer(config)
   try {
     server.listen(0, '127.0.0.1')
@@ -68,6 +95,14 @@ test('web server exposes health and idea intake', async () => {
     const pageBody = await page.text()
     assert.equal(pageBody.includes('設定 Gemini Keys'), true)
     assert.equal(pageBody.includes('Kevin Autopilot Neural Cockpit'), true)
+    assert.equal(pageBody.includes('Durable Backlog'), true)
+    assert.equal(pageBody.includes('過去反覆看過的問題'), true)
+    assert.equal(pageBody.includes('Missing repo keeps recurring'), true)
+    assert.equal(pageBody.includes('seen 2'), true)
+    assert.equal(pageBody.includes('上次留下的證據'), true)
+    assert.equal(pageBody.includes('Snooze 7 天'), true)
+    assert.equal(pageBody.includes('這裡不是重要性排名'), true)
+    assert.equal(pageBody.includes('Priority Board'), false)
     assert.equal(pageBody.includes('打開分身的大腦'), true)
     assert.equal(pageBody.includes('像作夢一樣的半醒聯想'), true)
     assert.equal(pageBody.includes('brain-node'), true)
@@ -122,6 +157,65 @@ test('web server exposes health and idea intake', async () => {
     const graphExtendBody = await graphExtend.json()
     assert.equal(graphExtendBody.node.type, 'extension')
     assert.equal(JSON.stringify(graphExtendBody).includes('不代表已經查過網路') || JSON.stringify(graphExtendBody).includes('未宣稱已搜尋 public web'), true)
+
+    const backlog = await fetch(`${baseUrl}/api/backlog?status=active`)
+    assert.equal(backlog.status, 200)
+    const backlogBody = await backlog.json()
+    assert.equal(backlogBody.counts.active, 1)
+    assert.equal(backlogBody.counts.all, 1)
+    assert.equal(backlogBody.items[0].id, 'repository-missing-repo-repeat-signal')
+    assert.equal(backlogBody.items[0].seenCount, 2)
+    assert.equal(backlogBody.items[0].strength, 'medium')
+    assert.deepEqual(backlogBody.items[0].prevEvidence, ['first pass saw repository path missing'])
+
+    const invalidSnooze = await fetch(`${baseUrl}/api/backlog/${encodeURIComponent(backlogBody.items[0].id)}/snooze`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ days: 2 }),
+    })
+    assert.equal(invalidSnooze.status, 400)
+    assert.match(await invalidSnooze.text(), /1, 7, or 30/)
+
+    const malformedSnooze = await fetch(`${baseUrl}/api/backlog/${encodeURIComponent(backlogBody.items[0].id)}/snooze`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{',
+    })
+    assert.equal(malformedSnooze.status, 400)
+    assert.match(await malformedSnooze.text(), /must be JSON/)
+
+    const unknownDismiss = await fetch(`${baseUrl}/api/backlog/missing-id/dismiss`, { method: 'POST' })
+    assert.equal(unknownDismiss.status, 404)
+
+    const untrustedDismiss = await fetch(`${baseUrl}/api/backlog/${encodeURIComponent(backlogBody.items[0].id)}/dismiss`, {
+      method: 'POST',
+      headers: { 'x-forwarded-for': '8.8.8.8' },
+    })
+    assert.equal(untrustedDismiss.status, 403)
+
+    const snooze = await fetch(`${baseUrl}/api/backlog/${encodeURIComponent(backlogBody.items[0].id)}/snooze`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ days: 1 }),
+    })
+    assert.equal(snooze.status, 200)
+    const snoozeBody = await snooze.json()
+    assert.equal(snoozeBody.status, 'snoozed')
+    assert.equal(typeof snoozeBody.snoozedUntil, 'string')
+
+    const afterSnooze = await fetch(`${baseUrl}/api/backlog?status=snoozed`)
+    const afterSnoozeBody = await afterSnooze.json()
+    assert.equal(afterSnoozeBody.counts.active, 0)
+    assert.equal(afterSnoozeBody.counts.snoozed, 1)
+    assert.equal(afterSnoozeBody.items.length, 1)
+
+    const resolve = await fetch(`${baseUrl}/api/backlog/${encodeURIComponent(backlogBody.items[0].id)}/resolve`, { method: 'POST' })
+    assert.equal(resolve.status, 200)
+    assert.equal((await resolve.json()).status, 'resolved')
+
+    const dismiss = await fetch(`${baseUrl}/api/backlog/${encodeURIComponent(backlogBody.items[0].id)}/dismiss`, { method: 'POST' })
+    assert.equal(dismiss.status, 200)
+    assert.equal((await dismiss.json()).status, 'dismissed')
 
     const loopStatus = await fetch(`${baseUrl}/api/observation-loop`)
     assert.equal(loopStatus.status, 200)
