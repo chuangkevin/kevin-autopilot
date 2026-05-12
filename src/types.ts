@@ -262,6 +262,76 @@ export interface ObservationLoopState {
   lastMarkdownPath?: string
 }
 
+export type IdeaGraphNodeType = 'double' | 'idea' | 'keyword' | 'project' | 'signal' | 'research' | 'extension' | 'task'
+
+export type IdeaGraphEdgeType = 'contains_keyword' | 'resembles_project' | 'extends' | 'integrates_with' | 'needs_evidence' | 'can_research' | 'can_become_task' | 'observed_in'
+
+export type IdeaGraphConfidence = 'weak' | 'medium' | 'strong'
+
+export interface IdeaGraphThinkingSummary {
+  understanding: string
+  whyItMatters: string
+  nextExploration: string
+  evidence: string[]
+  missingEvidence: string[]
+}
+
+export interface IdeaGraphAction {
+  id: 'extend' | 'find-relationships' | 'copy-opencode-prompt' | 'mark-interesting' | 'stop-exploring'
+  label: string
+  description: string
+  enabled: boolean
+}
+
+export interface IdeaGraphNode {
+  id: string
+  type: IdeaGraphNodeType
+  title: string
+  summary: string
+  source: string
+  createdAt: string
+  updatedAt: string
+  confidence: IdeaGraphConfidence
+  safety: 'read-only'
+  keywords: string[]
+  relatedProjectNames: string[]
+  thinking: IdeaGraphThinkingSummary
+  actions: IdeaGraphAction[]
+  archived?: boolean
+  ignored?: boolean
+  prompt?: string
+}
+
+export interface IdeaGraphEdge {
+  id: string
+  type: IdeaGraphEdgeType
+  from: string
+  to: string
+  rationale: string
+  confidence: IdeaGraphConfidence
+  source: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface IdeaGraph {
+  generatedAt: string
+  centerNodeId: string
+  nodes: IdeaGraphNode[]
+  edges: IdeaGraphEdge[]
+  focus: {
+    status: string
+    headline: string
+    nextThought: string
+  }
+}
+
+export interface IdeaGraphNodeDetail {
+  node: IdeaGraphNode
+  connectedNodes: IdeaGraphNode[]
+  edges: IdeaGraphEdge[]
+}
+
 export type ExistingProjectRecommendation = 'extend-existing' | 'new-project' | 'unclear'
 
 export interface ExistingProjectAnalysis {

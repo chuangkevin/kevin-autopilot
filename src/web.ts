@@ -1,11 +1,12 @@
 import { createServer } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import { createIdea, getIdea, listIdeas } from './ideas.js'
+import { extendIdeaGraphNode, getIdeaGraph, getIdeaGraphNodeDetail } from './idea-graph.js'
 import { clearStoredGeminiKeys, getKeyStatus, importGeminiKeys } from './keys.js'
 import { createObservationLoop, type ObservationLoop } from './observation-loop.js'
 import { observe } from './observer.js'
 import { createSupplement, listSupplements } from './supplements.js'
-import type { AutopilotConfig, IdeaRecord, KeyStatusSummary, ObservationLoopState, ObservationReport, UserSupplement } from './types.js'
+import type { AutopilotConfig, IdeaGraph, IdeaGraphNode, IdeaRecord, KeyStatusSummary, ObservationLoopState, ObservationReport, UserSupplement } from './types.js'
 import { APP_VERSION } from './version.js'
 
 const DEFAULT_PORT = 3023
@@ -133,11 +134,49 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
     return
   }
 
+  if (url.pathname === '/api/graph' && request.method === 'GET') {
+    const report = await getVisibleReport(config, observationLoop)
+    const ideas = await listIdeas(config, 40)
+    writeJson(response, await getIdeaGraph(config, report, ideas))
+    return
+  }
+
+  const graphNodeMatch = url.pathname.match(/^\/api\/graph\/nodes\/([^/]+)$/)
+  if (graphNodeMatch && request.method === 'GET') {
+    const report = await getVisibleReport(config, observationLoop)
+    const ideas = await listIdeas(config, 40)
+    const detail = await getIdeaGraphNodeDetail(config, report, ideas, decodeURIComponent(graphNodeMatch[1] ?? ''))
+    if (!detail) {
+      writeText(response, 'Graph node not found', 404)
+      return
+    }
+    writeJson(response, detail)
+    return
+  }
+
+  const graphExtendMatch = url.pathname.match(/^\/api\/graph\/nodes\/([^/]+)\/extend$/)
+  if (graphExtendMatch && request.method === 'POST') {
+    if (!isTrustedSettingsRequest(request)) {
+      writeText(response, 'Graph extension writes require loopback, private LAN, Docker, or Tailscale access', 403)
+      return
+    }
+    const report = await getVisibleReport(config, observationLoop)
+    const ideas = await listIdeas(config, 40)
+    const detail = await extendIdeaGraphNode(config, report, ideas, decodeURIComponent(graphExtendMatch[1] ?? ''))
+    if (!detail) {
+      writeText(response, 'Graph node not found', 404)
+      return
+    }
+    writeJson(response, detail, 201)
+    return
+  }
+
   if (url.pathname === '/') {
     const report = await getVisibleReport(config, observationLoop)
-    const ideas = await listIdeas(config, 8)
+    const ideas = await listIdeas(config, 12)
+    const graph = await getIdeaGraph(config, report, ideas)
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', ...NO_STORE_HEADERS })
-    response.end(renderPage(report, ideas, Boolean(config.ai?.enabled), observationLoop?.getState() ?? createManualLoopState()))
+    response.end(renderPage(report, ideas, Boolean(config.ai?.enabled), observationLoop?.getState() ?? createManualLoopState(), graph))
     return
   }
 
@@ -235,13 +274,10 @@ function renderPage(
   ideas: IdeaRecord[],
   aiEnabled: boolean,
   loopState: ObservationLoopState,
+  graph: IdeaGraph,
 ): string {
   const dirtyRepos = report.repositories.filter((repo) => repo.dirty).length
-  const missingRuleFiles = report.ruleSources.reduce((sum, source) => sum + source.missingFiles.length, 0)
   const bugCandidates = report.candidates.filter((candidate) => candidate.category === 'bug_watch' || candidate.category === 'bug_fix_candidate').length
-  const topCandidate = report.mainAgent.recommendation.candidateId
-    ? report.candidates.find((candidate) => candidate.id === report.mainAgent.recommendation.candidateId)
-    : undefined
 
   return `<!doctype html>
 <html lang="zh-Hant">
@@ -250,7 +286,7 @@ function renderPage(
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Kevin Autopilot</title>
   <style>
-    :root { color-scheme: dark; font-family: "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif; background: #080d19; color: #e5eefc; }
+    :root { color-scheme: dark; font-family: "Noto Sans TC", "Microsoft JhengHei", "PingFang TC", system-ui, sans-serif; background: #0b0907; color: #f5ead7; }
     * { box-sizing: border-box; }
     html, body { width: 100%; max-width: 100%; overflow-x: hidden; }
     body { margin: 0; padding: clamp(14px, 4vw, 32px); }
@@ -261,6 +297,31 @@ function renderPage(
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 12px; margin-bottom: 20px; }
     .card, section { min-width: 0; background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.035)); border: 1px solid rgba(148,163,184,0.22); border-radius: 18px; padding: clamp(14px, 4vw, 18px); box-shadow: 0 18px 48px rgba(0,0,0,0.24); }
     .command-center { border-color: rgba(245,158,11,0.5); background: radial-gradient(circle at top left, rgba(245,158,11,0.2), transparent 34%), linear-gradient(180deg, rgba(255,255,255,0.09), rgba(255,255,255,0.035)); }
+    .neural-cockpit { position: relative; overflow: hidden; border-color: rgba(251,191,36,0.42); background: radial-gradient(circle at 20% 10%, rgba(251,191,36,0.18), transparent 28%), radial-gradient(circle at 80% 18%, rgba(45,212,191,0.13), transparent 26%), linear-gradient(135deg, rgba(41,25,13,0.96), rgba(13,18,20,0.94)); }
+    .neural-cockpit::before { content: ""; position: absolute; inset: 0; pointer-events: none; background-image: linear-gradient(rgba(245,234,215,0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(245,234,215,0.035) 1px, transparent 1px); background-size: 34px 34px; mask-image: radial-gradient(circle at center, black, transparent 74%); }
+    .neural-shell { position: relative; display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(290px, 0.75fr); gap: 16px; align-items: stretch; }
+    .neural-stage { position: relative; min-height: 520px; border: 1px solid rgba(251,191,36,0.18); border-radius: 28px; overflow: hidden; background: radial-gradient(circle at center, rgba(251,191,36,0.12), rgba(8,13,25,0.2) 42%, rgba(8,13,25,0.68)); }
+    .neural-map { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .neural-edge { stroke: rgba(245,234,215,0.22); stroke-width: 1.4; }
+    .neural-edge.strong { stroke: rgba(45,212,191,0.55); stroke-width: 2.2; }
+    .brain-node { position: absolute; transform: translate(-50%, -50%); display: grid; place-items: center; width: clamp(82px, 12vw, 126px); min-height: 72px; border: 1px solid rgba(245,234,215,0.24); border-radius: 26px; padding: 10px; background: rgba(11,9,7,0.74); color: #fef3c7; text-align: center; box-shadow: 0 0 34px rgba(251,191,36,0.14); backdrop-filter: blur(10px); cursor: pointer; transition: transform 160ms ease, border-color 160ms ease, background 160ms ease; }
+    .brain-node:hover, .brain-node.active { transform: translate(-50%, -50%) scale(1.05); border-color: rgba(251,191,36,0.85); background: rgba(42,28,13,0.9); }
+    .brain-node.double { width: clamp(138px, 20vw, 190px); min-height: 104px; border-radius: 999px; background: radial-gradient(circle, rgba(251,191,36,0.28), rgba(11,9,7,0.82)); }
+    .brain-node.keyword { border-style: dashed; color: #fde68a; }
+    .brain-node.project { color: #bbf7d0; }
+    .brain-node.signal { color: #fecaca; }
+    .brain-node.research, .brain-node.extension { color: #99f6e4; }
+    .brain-node.task { color: #bfdbfe; }
+    .node-type { display: block; font: 800 10px/1 ui-monospace, "Cascadia Code", monospace; letter-spacing: 0.12em; text-transform: uppercase; color: #a8a29e; margin-bottom: 5px; }
+    .node-title { display: block; font-weight: 900; line-height: 1.25; overflow-wrap: anywhere; }
+    .cockpit-panel { border: 1px solid rgba(245,234,215,0.16); border-radius: 24px; padding: 16px; background: rgba(11,9,7,0.72); min-width: 0; }
+    .cockpit-panel h2 { font-size: 24px; line-height: 1.18; margin-bottom: 8px; }
+    .thought-line { font-size: clamp(18px, 3vw, 26px); line-height: 1.38; color: #fef3c7; }
+    .node-drawer { display: grid; gap: 10px; margin-top: 12px; }
+    .node-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .node-actions button:disabled { opacity: 0.44; cursor: not-allowed; }
+    .capture-strip { position: relative; margin-top: 16px; border: 1px solid rgba(251,191,36,0.2); border-radius: 22px; padding: 14px; background: rgba(11,9,7,0.56); }
+    .capture-strip textarea { min-height: 86px; background: rgba(0,0,0,0.2); }
     .command-grid, .focus-grid { display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(280px, 0.82fr); gap: 16px; align-items: start; }
     .mission { border: 1px solid rgba(96,165,250,0.28); border-left: 5px solid #60a5fa; border-radius: 16px; padding: 14px; background: rgba(30,64,175,0.16); margin-bottom: 16px; }
     .mission-title { margin: 0 0 6px; font-size: clamp(20px, 4vw, 28px); line-height: 1.15; }
@@ -347,7 +408,7 @@ function renderPage(
     .idea-title { font-weight: 800; font-size: 17px; line-height: 1.35; overflow-wrap: anywhere; }
     .idea-meta { color: #93a4bd; font-size: 13px; margin-top: 4px; overflow-wrap: anywhere; }
     .idea-status { border-top: 1px solid rgba(148,163,184,0.16); padding-top: 10px; }
-    @media (max-width: 820px) { header { display: block; } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .command-grid, .focus-grid, .agent-board, .thinking-grid { grid-template-columns: 1fr; } table { font-size: 13px; } }
+    @media (max-width: 820px) { header { display: block; } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .command-grid, .focus-grid, .agent-board, .thinking-grid, .neural-shell { grid-template-columns: 1fr; } .neural-stage { min-height: 430px; } table { font-size: 13px; } }
     @media (max-width: 520px) { .grid { grid-template-columns: 1fr 1fr; } .value { font-size: 24px; } a.button, button { min-height: 44px; } }
   </style>
 </head>
@@ -362,35 +423,16 @@ function renderPage(
     <div class="pill ok">Read-only observer</div>
   </header>
 
-  <section class="command-center">
-    <div class="mission">
-      <h2 class="mission-title">這頁的目標：把問題、想法、研究放到同一張工作桌</h2>
-      <p>它會看 read-only 訊號，並列所有候選；不替你決定哪個想法比較重要。</p>
-      <p class="muted">它不是聊天頁、不是自動修復器，也不會自己改 repo、commit、push、部署。</p>
-    </div>
-    <div class="truth-box">
-      <strong>背景分身已開始 read-only 觀察</strong>
-      <div>${escapeHtml(renderLoopPlainStatus(loopState))}</div>
-      <div class="muted">它只會自動觀察、產生報告與候選項；不會自己改 repo、commit、push、部署或執行 destructive action。</div>
-      <div class="status-strip">
-        <div class="status-item"><span class="label">背景狀態</span><strong>${loopState.running ? 'Running' : loopState.enabled ? 'Idle' : 'Off'}</strong></div>
-        <div class="status-item"><span class="label">已跑次數</span><strong>${loopState.runCount}</strong></div>
-        <div class="status-item"><span class="label">上次執行</span><strong>${escapeHtml(loopState.lastFinishedAt ? formatTaipeiTime(loopState.lastFinishedAt) : '-')}</strong></div>
-        <div class="status-item"><span class="label">下次執行</span><strong>${escapeHtml(loopState.nextRunAt ? formatTaipeiTime(loopState.nextRunAt) : '-')}</strong></div>
-      </div>
-      ${loopState.lastError ? `<div class="muted">最近錯誤：${escapeHtml(loopState.lastError)}</div>` : ''}
-    </div>
-    <div class="eyebrow">目前操作焦點</div>
-    <h2 class="main-action">${topCandidate ? '這件正在補證據' : '目前先維持觀察'}</h2>
-    <p class="plain-answer">${topCandidate ? escapeHtml(topCandidate.title) : '這輪沒有足夠明確的候選項。先維持觀察，或補充真正卡住的地方。'}</p>
-    <p class="muted">為什麼：${escapeHtml(report.mainAgent.recommendation.reason)}</p>
-    ${topCandidate ? renderPrimaryCandidate(report, topCandidate) : '<div class="primary-card"><strong>唯一動作</strong><div>如果這個判斷不對，在下方補一句修正下一輪推理。</div></div>'}
+  ${renderNeuralCockpit(graph, loopState)}
+
+  <details class="detail-block">
+    <summary>補充或修正分身這輪判斷</summary>
     <div class="focus-grid">
       <aside class="side-panel">
         <h2>修正這輪判斷</h2>
         <p class="muted">這裡不是提新產品目標，只是告訴 Autopilot 這次判斷哪裡不對。不要貼 key、token、.env。</p>
         <form id="supplement-form">
-          <textarea id="supplement-text" placeholder="例：這個 dirty repo 是我正在做的，不要當成問題。這次先看 dashboard UX。"></textarea>
+          <textarea id="supplement-text" placeholder="例：這個 dirty repo 是我正在做的，不要當成問題。這次先看 Neural Cockpit UX。"></textarea>
           <button type="submit">修正下一輪判斷</button>
         </form>
         <div id="supplement-result" class="muted"></div>
@@ -398,21 +440,23 @@ function renderPage(
       <aside class="side-panel">
         <h2>目前訊號</h2>
         <div class="status-strip">
+          <div class="status-item"><span class="label">圖節點</span><strong>${graph.nodes.length}</strong></div>
           <div class="status-item"><span class="label">候選</span><strong>${report.candidates.length}</strong></div>
           <div class="status-item"><span class="label">疑似 Bug</span><strong>${bugCandidates}</strong></div>
           <div class="status-item"><span class="label">Dirty</span><strong>${dirtyRepos}</strong></div>
-          <div class="status-item"><span class="label">補充</span><strong>${report.supplements.length}</strong></div>
         </div>
         ${report.supplements.length === 0 ? '<p class="debug-note">目前沒有補充。</p>' : `<div class="agent-stack">${report.supplements.slice(0, 2).map(renderSupplement).join('')}</div>`}
       </aside>
     </div>
-  </section>
+  </details>
 
-  ${renderObservationWorkbench(report)}
-
-  ${renderThinkingTrace(report)}
-
-  ${renderProjectRadar(report)}
+  <details class="detail-block">
+    <summary>舊版觀察報表 / 雷達 / 思考 trace，先收起來</summary>
+    <p class="muted">Neural Cockpit 是主畫面；這些是完整觀察證據，需要追細節時再打開。</p>
+    ${renderObservationWorkbench(report)}
+    ${renderThinkingTrace(report)}
+    ${renderProjectRadar(report)}
+  </details>
 
   <details class="detail-block">
     <summary>除錯/證據/完整清單，不用先看</summary>
@@ -468,16 +512,6 @@ function renderPage(
   </details>
 
   <details class="detail-block">
-    <summary>提出新目標/新想法，不是修正這輪判斷</summary>
-    <p class="muted">AI thinking: ${aiEnabled ? 'enabled via ai-core' : 'disabled / fallback'}。送出後只會收件、分類、列出下一步，不會開 repo、不會部署。</p>
-    <form id="idea-form">
-      <textarea id="idea-text" placeholder="把腦中的想法直接貼在這裡，例如：我想做一個每天自動幫我整理新專案想法、判斷要不要開 repo、部署在哪裡的工具..."></textarea>
-      <button type="submit">交給 Autopilot 思考</button>
-    </form>
-    <div id="idea-result" class="muted"></div>
-  </details>
-
-  <details class="detail-block">
     <summary>想法桌面：每個想法都是可進入的卡片</summary>
     <p class="muted">每張卡片都顯示目前分身狀態、handoff 階段，以及是否像既有 HomeProject 專案。</p>
     ${ideas.length === 0 ? '<p class="muted">尚未收到想法。</p>' : `<div class="idea-desktop">${ideas.map(renderIdea).join('')}</div>`}
@@ -485,7 +519,8 @@ function renderPage(
 
 </main>
 <script>
-  document.getElementById('supplement-form').addEventListener('submit', async (event) => {
+  const supplementForm = document.getElementById('supplement-form');
+  if (supplementForm) supplementForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     const rawText = document.getElementById('supplement-text').value;
     const result = document.getElementById('supplement-result');
@@ -505,7 +540,8 @@ function renderPage(
     setTimeout(() => location.reload(), 700);
   });
 
-  document.getElementById('idea-form').addEventListener('submit', async (event) => {
+  const ideaForm = document.getElementById('idea-form');
+  if (ideaForm) ideaForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     const rawText = document.getElementById('idea-text').value;
     const result = document.getElementById('idea-result');
@@ -524,34 +560,216 @@ function renderPage(
     setTimeout(() => location.reload(), 700);
   });
 
-  document.querySelectorAll('.copy-prompt').forEach((button) => {
-    button.addEventListener('click', async () => {
+  document.addEventListener('click', async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const nodeButton = target.closest('.brain-node');
+    if (nodeButton) {
+      const nodeId = nodeButton.getAttribute('data-node-id');
+      if (!nodeId) return;
+      document.querySelectorAll('.brain-node').forEach((item) => item.classList.remove('active'));
+      nodeButton.classList.add('active');
+      const response = await fetch('/api/graph/nodes/' + encodeURIComponent(nodeId));
+      if (!response.ok) return;
+      renderNodeDrawer(await response.json());
+      return;
+    }
+
+    const actionButton = target.closest('.node-action');
+    if (actionButton) {
+      const action = actionButton.getAttribute('data-action');
+      const nodeId = actionButton.getAttribute('data-node-id');
+      if (action === 'extend' && nodeId) {
+        actionButton.textContent = '延伸中...';
+        const response = await fetch('/api/graph/nodes/' + encodeURIComponent(nodeId) + '/extend', { method: 'POST' });
+        if (!response.ok) {
+          actionButton.textContent = await response.text();
+          return;
+        }
+        renderNodeDrawer(await response.json());
+        setTimeout(() => location.reload(), 900);
+      }
+      if (action === 'copy-opencode-prompt') {
+        const prompt = document.getElementById('node-drawer')?.querySelector('pre')?.textContent || '';
+        if (!prompt) {
+          actionButton.textContent = '目前沒有 prompt';
+          return;
+        }
+        await copyText(prompt);
+        actionButton.textContent = 'Prompt 已複製';
+      }
+      return;
+    }
+
+    const copyButton = target.closest('.copy-prompt');
+    if (copyButton) {
+      const button = copyButton;
       const container = button.closest('.prompt-block') || button.closest('details');
       const prompt = container ? container.querySelector('pre')?.textContent || '' : '';
       const status = container ? container.querySelector('.copy-status') : null;
       try {
-        if (navigator.clipboard && window.isSecureContext) {
-          await navigator.clipboard.writeText(prompt);
-        } else {
-          const textArea = document.createElement('textarea');
-          textArea.value = prompt;
-          textArea.style.position = 'fixed';
-          textArea.style.left = '-9999px';
-          document.body.appendChild(textArea);
-          textArea.focus();
-          textArea.select();
-          document.execCommand('copy');
-          textArea.remove();
-        }
+        await copyText(prompt);
         if (status) status.textContent = '已複製';
       } catch {
         if (status) status.textContent = '複製失敗，請手動選取';
       }
-    });
+    }
   });
+
+  function renderNodeDrawer(detail) {
+    const drawer = document.getElementById('node-drawer');
+    const thought = document.getElementById('node-understanding');
+    if (!drawer || !detail || !detail.node) return;
+    const node = detail.node;
+    if (thought) thought.textContent = node.thinking.understanding;
+    const keywordHtml = node.keywords.length === 0 ? '<span class="muted">尚未抽到關鍵字</span>' : node.keywords.map((keyword) => '<span class="pill">' + htmlEscape(keyword) + '</span>').join('');
+    const connectedHtml = detail.connectedNodes.length === 0 ? '<p class="muted">目前沒有相連節點。</p>' : '<div class="workbench-meta">' + detail.connectedNodes.slice(0, 6).map((item) => '<span class="pill">' + htmlEscape(item.title) + '</span>').join('') + '</div>';
+    const actionHtml = node.actions.map((action) => '<button type="button" class="secondary node-action" data-action="' + htmlEscape(action.id) + '" data-node-id="' + htmlEscape(node.id) + '" ' + (action.enabled ? '' : 'disabled') + '>' + htmlEscape(action.label) + '</button>').join('');
+    const promptHtml = node.prompt ? '<details><summary>OpenCode prompt</summary><button type="button" class="secondary copy-prompt">複製 Prompt</button><span class="copy-status" aria-live="polite"></span><pre>' + htmlEscape(node.prompt) + '</pre></details>' : '';
+    const evidenceHtml = node.thinking.evidence.length === 0 ? '<p class="muted">目前沒有證據。</p>' : '<ul class="radar-signals">' + node.thinking.evidence.slice(0, 4).map((item) => '<li>' + htmlEscape(item) + '</li>').join('') + '</ul>';
+    const missingHtml = node.thinking.missingEvidence.length === 0 ? '<p class="muted">目前沒有明確缺口。</p>' : '<ul class="radar-signals">' + node.thinking.missingEvidence.slice(0, 4).map((item) => '<li>' + htmlEscape(item) + '</li>').join('') + '</ul>';
+    drawer.innerHTML = '<div class="recommendation"><strong>' + htmlEscape(node.title) + '</strong><div>' + htmlEscape(node.summary) + '</div><div class="muted">' + htmlEscape(node.type) + ' · ' + htmlEscape(node.confidence) + ' · ' + htmlEscape(node.source) + '</div></div><div class="trace-note"><strong>我怎麼理解它</strong><div>' + htmlEscape(node.thinking.understanding) + '</div><div class="muted">為什麼有關：' + htmlEscape(node.thinking.whyItMatters) + '</div><div class="muted">下一步：' + htmlEscape(node.thinking.nextExploration) + '</div></div><div><strong>關鍵字</strong><div class="workbench-meta">' + keywordHtml + '</div></div><div><strong>相連節點</strong>' + connectedHtml + '</div><div><strong>證據</strong>' + evidenceHtml + '</div><div><strong>缺的證據</strong>' + missingHtml + '</div><div class="node-actions">' + actionHtml + '</div>' + promptHtml;
+  }
+
+  function htmlEscape(value) {
+    return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
+  }
+
+  async function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.left = '-9999px';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    document.execCommand('copy');
+    textArea.remove();
+  }
 </script>
 </body>
 </html>`
+}
+
+function renderNeuralCockpit(graph: IdeaGraph, loopState: ObservationLoopState): string {
+  const layout = createGraphLayout(graph)
+  const firstNode = graph.nodes.find((node) => node.id === graph.centerNodeId) ?? graph.nodes[0]
+  return `<section class="neural-cockpit">
+    <div class="eyebrow">Kevin Autopilot Neural Cockpit</div>
+    <h2 class="main-action">打開分身的大腦</h2>
+    <p class="plain-answer">我會把想法、關鍵字、專案異常、研究種子，甚至「夢到電子羊」那種半夢半醒的聯想接成一張圖。你可以不輸入，只看我今天長出什麼；也可以點一個節點讓我繼續延伸。</p>
+    <div class="neural-shell">
+      <div class="neural-stage" id="neural-stage" aria-label="Kevin Autopilot neural graph">
+        <svg class="neural-map" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+          ${graph.edges.map((edge) => {
+            const from = layout.get(edge.from)
+            const to = layout.get(edge.to)
+            if (!from || !to) return ''
+            return `<line class="neural-edge ${edge.confidence === 'strong' ? 'strong' : ''}" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"><title>${escapeHtml(edge.rationale)}</title></line>`
+          }).join('')}
+        </svg>
+        ${graph.nodes.map((node) => {
+          const point = layout.get(node.id) ?? { x: 50, y: 50 }
+          return `<button type="button" class="brain-node ${escapeHtml(node.type)}${node.id === firstNode?.id ? ' active' : ''}" data-node-id="${escapeHtml(node.id)}" style="left:${point.x}%;top:${point.y}%">
+            <span class="node-type">${escapeHtml(node.type)}</span>
+            <span class="node-title">${escapeHtml(node.title)}</span>
+          </button>`
+        }).join('')}
+      </div>
+      <aside class="cockpit-panel">
+        <div class="eyebrow">分身現在在想</div>
+        <h2>${escapeHtml(firstNode?.title ?? 'Kevin Autopilot')}</h2>
+        <p class="thought-line" id="node-understanding">${escapeHtml(firstNode?.thinking.understanding ?? graph.focus.headline)}</p>
+        <div class="status-strip">
+          <div class="status-item"><span class="label">背景</span><strong>${loopState.running ? '思考中' : loopState.enabled ? '醒著' : '手動'}</strong></div>
+          <div class="status-item"><span class="label">節點</span><strong>${graph.nodes.length}</strong></div>
+          <div class="status-item"><span class="label">關聯</span><strong>${graph.edges.length}</strong></div>
+        </div>
+        <p class="muted">${escapeHtml(renderLoopPlainStatus(loopState))}</p>
+        <p class="muted">安全邊界：我可以做夢、聯想、觀察、整理、延伸、產生 prompt；但夢不是事實，我也不會自己改 repo、commit、push、部署或讀 secrets。</p>
+        <div class="node-drawer" id="node-drawer">
+          ${firstNode ? renderSelectedNode(firstNode, graph) : '<p class="muted">目前還沒有節點。</p>'}
+        </div>
+      </aside>
+    </div>
+    <div class="capture-strip">
+      <div class="eyebrow">快速丟一段文字，不必整理格式</div>
+      <form id="idea-form">
+        <textarea id="idea-text" placeholder="把爆炸想法貼這裡。例：我想要 Autopilot 像另一個 Kevin 的大腦，可以自己找新東西、長出關聯圖、延伸成 OpenCode 任務..."></textarea>
+        <button type="submit">丟給分身整理成節點</button>
+      </form>
+      <div id="idea-result" class="muted"></div>
+    </div>
+    <script id="graph-data" type="application/json">${jsonForScript(graph)}</script>
+  </section>`
+}
+
+function renderSelectedNode(node: IdeaGraphNode, graph: IdeaGraph): string {
+  const connected = graph.edges
+    .filter((edge) => edge.from === node.id || edge.to === node.id)
+    .slice(0, 5)
+    .map((edge) => graph.nodes.find((item) => item.id === (edge.from === node.id ? edge.to : edge.from)))
+    .filter((item): item is IdeaGraphNode => Boolean(item))
+  return `<div class="recommendation">
+    <strong>${escapeHtml(node.title)}</strong>
+    <div>${escapeHtml(node.summary)}</div>
+    <div class="muted">${escapeHtml(node.type)} · ${escapeHtml(node.confidence)} · ${escapeHtml(node.source)}</div>
+  </div>
+  <div class="trace-note">
+    <strong>我怎麼理解它</strong>
+    <div>${escapeHtml(node.thinking.understanding)}</div>
+    <div class="muted">為什麼有關：${escapeHtml(node.thinking.whyItMatters)}</div>
+    <div class="muted">下一步：${escapeHtml(node.thinking.nextExploration)}</div>
+  </div>
+  <div>
+    <strong>關鍵字</strong>
+    <div class="workbench-meta">${node.keywords.length === 0 ? '<span class="muted">尚未抽到關鍵字</span>' : node.keywords.map((keyword) => `<span class="pill">${escapeHtml(keyword)}</span>`).join('')}</div>
+  </div>
+  <div>
+    <strong>相連節點</strong>
+    ${connected.length === 0 ? '<p class="muted">目前沒有相連節點。</p>' : `<div class="workbench-meta">${connected.map((item) => `<span class="pill">${escapeHtml(item.title)}</span>`).join('')}</div>`}
+  </div>
+  <div>
+    <strong>證據</strong>
+    ${node.thinking.evidence.length === 0 ? '<p class="muted">目前沒有證據。</p>' : `<ul class="radar-signals">${node.thinking.evidence.slice(0, 4).map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`}
+  </div>
+  <div>
+    <strong>缺的證據</strong>
+    ${node.thinking.missingEvidence.length === 0 ? '<p class="muted">目前沒有明確缺口。</p>' : `<ul class="radar-signals">${node.thinking.missingEvidence.slice(0, 4).map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`}
+  </div>
+  <div class="node-actions">
+    ${node.actions.map((action) => `<button type="button" class="secondary node-action" data-action="${escapeHtml(action.id)}" data-node-id="${escapeHtml(node.id)}" ${action.enabled ? '' : 'disabled'}>${escapeHtml(action.label)}</button>`).join('')}
+  </div>
+  ${node.prompt ? `<details><summary>OpenCode prompt</summary><button type="button" class="secondary copy-prompt">複製 Prompt</button><span class="copy-status" aria-live="polite"></span><pre>${escapeHtml(node.prompt)}</pre></details>` : ''}`
+}
+
+function createGraphLayout(graph: IdeaGraph): Map<string, { x: number; y: number }> {
+  const positions = new Map<string, { x: number; y: number }>()
+  const centerIndex = Math.max(0, graph.nodes.findIndex((node) => node.id === graph.centerNodeId))
+  const center = graph.nodes[centerIndex]
+  if (center) positions.set(center.id, { x: 50, y: 50 })
+  const others = graph.nodes.filter((node) => node.id !== center?.id)
+  others.forEach((node, index) => {
+    const ring = index < 12 ? 1 : 2
+    const ringIndex = ring === 1 ? index : index - 12
+    const ringCount = ring === 1 ? Math.min(12, others.length) : Math.max(1, others.length - 12)
+    const angle = (Math.PI * 2 * ringIndex) / ringCount - Math.PI / 2
+    const radiusX = ring === 1 ? 32 : 43
+    const radiusY = ring === 1 ? 31 : 41
+    positions.set(node.id, {
+      x: Math.round((50 + Math.cos(angle) * radiusX) * 10) / 10,
+      y: Math.round((50 + Math.sin(angle) * radiusY) * 10) / 10,
+    })
+  })
+  return positions
+}
+
+function jsonForScript(value: unknown): string {
+  return JSON.stringify(value).replaceAll('<', '\\u003c').replaceAll('&', '\\u0026')
 }
 
 function renderSettingsPage(config: AutopilotConfig, keyStatus: KeyStatusSummary): string {
