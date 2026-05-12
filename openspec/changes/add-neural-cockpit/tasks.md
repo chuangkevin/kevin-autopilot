@@ -19,6 +19,7 @@
 - [x] 3.1 Add an API endpoint to return the focused graph for the home cockpit.
 - [x] 3.2 Add an API endpoint to select or inspect a node and return its details, connected nodes, edges, thinking summary, and safe actions.
 - [x] 3.3 Add an API endpoint to extend a selected node by creating or previewing Autopilot-owned extension nodes.
+- [x] 3.3a Add metadata-only action APIs for finding relationships, marking a node interesting, and stopping exploration of a node.
 - [x] 3.4 Keep existing report, idea, thinking, and observation-loop APIs compatible.
 - [x] 3.5 Add API tests for graph read, node detail, extension, and read-only safety behavior.
 
@@ -27,6 +28,7 @@
 - [x] 4.1 Replace the home first screen with a graph-first Neural Cockpit using lightweight SVG or DOM rendering without an external graph service.
 - [x] 4.2 Add a concise double status panel showing what Kevin Autopilot is currently thinking about, last/next observation, and read-only boundary.
 - [x] 4.3 Add a selected-node panel with summary, source, connected nodes, visible thinking, confidence, evidence gaps, and safe actions.
+- [x] 4.3a Make all selected-node actions functional: relationship finding adds graph edges, OpenCode task copies a bounded prompt, marking interesting persists, and stop-exploring hides the node from the focused graph.
 - [x] 4.4 Keep fast plain-text capture as a secondary input that creates idea nodes and updates graph relationships.
 - [x] 4.5 Move existing report/debug/workbench/radar sections behind secondary details so they do not compete with the graph metaphor.
 - [x] 4.6 Add responsive mobile behavior for graph exploration, selected-node drawer, and typed capture with 16px+ input text.

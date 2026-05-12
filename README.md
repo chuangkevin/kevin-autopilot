@@ -230,6 +230,12 @@ clickable buttons, while planned-but-not-yet-implemented actions are shown as
 disabled chips with the reason, such as missing prompt/evidence or not-yet-open
 relationship search.
 
+Version 0.8.0 makes the Neural Cockpit actions real. Nodes can find additional
+relationships by shared keywords/projects, copy a generated read-only OpenCode
+prompt, persist an `interesting` mark so the thought stays visible, or stop
+exploring a node by hiding it from the focused graph. These actions only write
+Autopilot-owned graph metadata under `data/idea-graph.json`.
+
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.
 
@@ -306,7 +312,7 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
-v0.7.1 Durable Backlog cockpit prototype. See `docs/` for architecture, safety,
+v0.8.0 Neural Cockpit action prototype. See `docs/` for architecture, safety,
 and OpenCode workflow.
 
 ## Deployment

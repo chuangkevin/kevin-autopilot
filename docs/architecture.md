@@ -295,6 +295,13 @@ metadata-only action APIs for snooze, resolve, and dismiss. The dashboard render
 this as a filterable cockpit panel so Kevin can inspect repeated signals across
 cycles without treating the list as an importance ranking.
 
+v0.8.0 turns the Neural Cockpit node actions into metadata-backed operations.
+Finding relationships writes Autopilot-owned graph edges, OpenCode task conversion
+copies a bounded read-only prompt for any node, marking interesting persists on
+the node and boosts its focused-graph weight, and stop-exploring persists an
+ignored flag so the node leaves the focused graph. These actions do not mutate
+target repositories or external services.
+
 The first persisted loop status is `observation-loop-state.json`, which records
 enabled/running state, interval, run count, last run, next run, report paths, and
 last error. This is status telemetry only, not permission to execute changes.

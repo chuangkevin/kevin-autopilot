@@ -97,6 +97,78 @@ export async function extendIdeaGraphNode(config: AutopilotConfig, report: Obser
   return selectGraphNode({ ...toFocusedGraph(nextGraph, report), nodes: nextGraph.nodes, edges: nextGraph.edges }, extensionNode.id)
 }
 
+export async function markIdeaGraphNodeInteresting(config: AutopilotConfig, report: ObservationReport, ideas: IdeaRecord[], nodeId: string): Promise<IdeaGraphNodeDetail | undefined> {
+  const stored = await loadStoredGraph(config)
+  const backlogLookup = loadBacklogLookup(config)
+  const graph = mergeGraph(stored, createProjectedGraph(config, report, ideas, backlogLookup))
+  const now = new Date().toISOString()
+  let found = false
+  const nextGraph: StoredIdeaGraph = {
+    nodes: graph.nodes.map((node) => {
+      if (node.id !== nodeId) return node
+      found = true
+      const nextNode: IdeaGraphNode = {
+        ...node,
+        interesting: true,
+        interestingAt: node.interestingAt ?? now,
+        updatedAt: now,
+      }
+      return normalizeNodeActions(nextNode)
+    }),
+    edges: graph.edges,
+  }
+  if (!found) return undefined
+  await saveStoredGraph(config, nextGraph)
+  return selectGraphNode({ ...toFocusedGraph(nextGraph, report), nodes: nextGraph.nodes, edges: nextGraph.edges }, nodeId)
+}
+
+export async function findIdeaGraphNodeRelationships(config: AutopilotConfig, report: ObservationReport, ideas: IdeaRecord[], nodeId: string): Promise<IdeaGraphNodeDetail | undefined> {
+  const stored = await loadStoredGraph(config)
+  const backlogLookup = loadBacklogLookup(config)
+  const graph = mergeGraph(stored, createProjectedGraph(config, report, ideas, backlogLookup))
+  const selected = graph.nodes.find((node) => node.id === nodeId)
+  if (!selected) return undefined
+  const now = new Date().toISOString()
+  const relationships = graph.nodes
+    .filter((node) => node.id !== selected.id && !node.ignored && !node.archived)
+    .map((node) => ({ node, score: relationshipScore(selected, node) }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score || b.node.updatedAt.localeCompare(a.node.updatedAt))
+    .slice(0, 6)
+  const edges = relationships.map(({ node, score }) => makeEdge(
+    selected.id,
+    node.id,
+    sharedKeywords(selected, node).length > 0 ? 'contains_keyword' : 'resembles_project',
+    relationshipRationale(selected, node),
+    score >= 3 ? 'medium' : 'weak',
+    `relationship:${selected.id}`,
+    now,
+  ))
+  const nextGraph = mergeGraph(graph, { nodes: [], edges })
+  await saveStoredGraph(config, nextGraph)
+  return selectGraphNode({ ...toFocusedGraph(nextGraph, report), nodes: nextGraph.nodes, edges: nextGraph.edges }, nodeId)
+}
+
+export async function stopExploringIdeaGraphNode(config: AutopilotConfig, report: ObservationReport, ideas: IdeaRecord[], nodeId: string): Promise<IdeaGraphNodeDetail | undefined> {
+  const stored = await loadStoredGraph(config)
+  const backlogLookup = loadBacklogLookup(config)
+  const graph = mergeGraph(stored, createProjectedGraph(config, report, ideas, backlogLookup))
+  const now = new Date().toISOString()
+  let hidden: IdeaGraphNode | undefined
+  const nextGraph: StoredIdeaGraph = {
+    nodes: graph.nodes.map((node) => {
+      if (node.id !== nodeId) return node
+      if (node.type === 'double') return node
+      hidden = normalizeNodeActions({ ...node, ignored: true, updatedAt: now })
+      return hidden
+    }),
+    edges: graph.edges,
+  }
+  if (!hidden) return undefined
+  await saveStoredGraph(config, nextGraph)
+  return selectGraphNode({ ...toFocusedGraph(nextGraph, report), nodes: nextGraph.nodes, edges: nextGraph.edges }, nodeId)
+}
+
 export function selectGraphNode(graph: IdeaGraph, nodeId: string): IdeaGraphNodeDetail | undefined {
   const node = graph.nodes.find((item) => item.id === nodeId)
   if (!node) return undefined
@@ -367,19 +439,78 @@ function makeNode(input: {
     keywords: input.keywords,
     relatedProjectNames: input.relatedProjectNames,
     thinking: input.thinking,
-    actions: makeActions(input.type, Boolean(input.prompt), input.confidence),
-    prompt: input.prompt,
+    actions: makeActions(input.type, true, input.confidence),
+    prompt: input.prompt ?? makeNodePrompt(input),
   }
 }
 
-function makeActions(type: IdeaGraphNodeType, hasPrompt: boolean, confidence: IdeaGraphConfidence): IdeaGraphAction[] {
+function makeActions(type: IdeaGraphNodeType, hasPrompt: boolean, confidence: IdeaGraphConfidence, interesting = false): IdeaGraphAction[] {
   return [
     { id: 'extend', label: '延伸這個節點', description: '從這個節點長出 research / prototype / integration 方向。', enabled: type !== 'task' },
-    { id: 'find-relationships', label: '找更多關聯', description: '從關鍵字、專案、訊號再找相似節點。', enabled: false },
-    { id: 'copy-opencode-prompt', label: '變成 OpenCode 任務', description: '只複製 bounded prompt，不自動執行。', enabled: hasPrompt && confidence !== 'weak' },
-    { id: 'mark-interesting', label: '標記有趣', description: '保留這條線，之後讓分身繼續想。', enabled: false },
-    { id: 'stop-exploring', label: '先不要想這條', description: '未來可降低或隱藏這類節點。', enabled: false },
+    { id: 'find-relationships', label: '找更多關聯', description: '從關鍵字、專案、訊號再找相似節點。', enabled: type !== 'task' },
+    { id: 'copy-opencode-prompt', label: '變成 OpenCode 任務', description: '只複製 bounded prompt，不自動執行。', enabled: hasPrompt },
+    { id: 'mark-interesting', label: interesting ? '已標記有趣' : '標記有趣', description: '保留這條線，之後讓分身繼續想。', enabled: !interesting },
+    { id: 'stop-exploring', label: '先不要想這條', description: '隱藏這個節點，之後不再放進可見腦圖。', enabled: type !== 'double' },
   ]
+}
+
+function makeNodePrompt(input: {
+  type: IdeaGraphNodeType
+  title: string
+  summary: string
+  source: string
+  confidence: IdeaGraphConfidence
+  keywords: string[]
+  relatedProjectNames: string[]
+  thinking: IdeaGraphNode['thinking']
+}): string {
+  return [
+    'Read HomeProject rules and Kevin Autopilot rules before acting.',
+    'Task: investigate this Neural Cockpit node and produce a read-only plan or evidence summary.',
+    `Node: ${input.title}`,
+    `Type: ${input.type}`,
+    `Source: ${input.source}`,
+    `Confidence: ${input.confidence}`,
+    `Summary: ${input.summary}`,
+    `Why it matters: ${input.thinking.whyItMatters}`,
+    `Next exploration: ${input.thinking.nextExploration}`,
+    `Keywords: ${input.keywords.join(', ') || 'none'}`,
+    `Related projects: ${input.relatedProjectNames.join(', ') || 'none'}`,
+    `Evidence: ${input.thinking.evidence.join(' | ') || 'none yet'}`,
+    `Missing evidence: ${input.thinking.missingEvidence.join(' | ') || 'none listed'}`,
+    'Constraints: do not edit target repositories, do not commit/push/deploy other projects, do not read secrets, and do not perform destructive actions. If implementation seems useful, return a bounded proposal and verification checklist first.',
+  ].join('\n')
+}
+
+function normalizeNodeActions(node: IdeaGraphNode): IdeaGraphNode {
+  const prompt = node.prompt ?? makeNodePrompt(node)
+  return {
+    ...node,
+    prompt,
+    actions: makeActions(node.type, Boolean(prompt), node.confidence, Boolean(node.interesting)),
+  }
+}
+
+function relationshipScore(a: IdeaGraphNode, b: IdeaGraphNode): number {
+  return sharedKeywords(a, b).length + sharedProjects(a, b).length * 2
+}
+
+function sharedKeywords(a: IdeaGraphNode, b: IdeaGraphNode): string[] {
+  const bKeywords = new Set(b.keywords.map((keyword) => keyword.toLowerCase()))
+  return a.keywords.filter((keyword) => bKeywords.has(keyword.toLowerCase()))
+}
+
+function sharedProjects(a: IdeaGraphNode, b: IdeaGraphNode): string[] {
+  const bProjects = new Set(b.relatedProjectNames.map((project) => project.toLowerCase()))
+  return a.relatedProjectNames.filter((project) => bProjects.has(project.toLowerCase()))
+}
+
+function relationshipRationale(a: IdeaGraphNode, b: IdeaGraphNode): string {
+  const keywords = sharedKeywords(a, b)
+  if (keywords.length > 0) return `共同關鍵字：${keywords.slice(0, 3).join(', ')}`
+  const projects = sharedProjects(a, b)
+  if (projects.length > 0) return `共同關聯專案：${projects.slice(0, 3).join(', ')}`
+  return '分身找到可一起觀察的相鄰節點。'
 }
 
 function makeEdge(from: string, to: string, type: IdeaGraphEdgeType, rationale: string, confidence: IdeaGraphConfidence, source: string, now: string): IdeaGraphEdge {
@@ -409,11 +540,26 @@ function recurrentKeywords(ideas: IdeaRecord[], report: ObservationReport): stri
 
 function mergeGraph(base: StoredIdeaGraph, projected: StoredIdeaGraph): StoredIdeaGraph {
   const nodes = new Map<string, IdeaGraphNode>()
+  const hiddenBaseIds = new Set(base.nodes.filter((node) => node.archived || node.ignored).map((node) => node.id))
   for (const node of [...base.nodes, ...projected.nodes]) {
+    if (hiddenBaseIds.has(node.id)) {
+      const hidden = base.nodes.find((item) => item.id === node.id)
+      if (hidden) nodes.set(hidden.id, normalizeNodeActions(hidden))
+      continue
+    }
     if (node.archived || node.ignored) continue
     if (isLegacyLiteralMetaphorNode(node)) continue
     const existing = nodes.get(node.id)
-    nodes.set(node.id, existing ? { ...existing, ...node, createdAt: existing.createdAt } : node)
+    const merged = existing
+      ? {
+          ...existing,
+          ...node,
+          createdAt: existing.createdAt,
+          interesting: existing.interesting,
+          interestingAt: existing.interestingAt,
+        }
+      : node
+    nodes.set(node.id, normalizeNodeActions(merged))
   }
   const edges = new Map<string, IdeaGraphEdge>()
   for (const edge of [...base.edges, ...projected.edges]) edges.set(edge.id, edges.get(edge.id) ? { ...edges.get(edge.id), ...edge } : edge)
@@ -453,7 +599,8 @@ function nodeWeight(node: IdeaGraphNode, centerId: string): number {
   if (node.id === centerId) return 1000
   const typeWeight: Record<IdeaGraphNodeType, number> = { double: 90, idea: 80, research: 72, extension: 70, signal: 68, project: 62, keyword: 55, task: 50 }
   const confidenceWeight: Record<IdeaGraphConfidence, number> = { strong: 12, medium: 7, weak: 3 }
-  return typeWeight[node.type] + confidenceWeight[node.confidence]
+  const interestingWeight = node.interesting ? 24 : 0
+  return typeWeight[node.type] + confidenceWeight[node.confidence] + interestingWeight
 }
 
 async function loadStoredGraph(config: AutopilotConfig): Promise<StoredIdeaGraph> {

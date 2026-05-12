@@ -333,6 +333,8 @@ export interface IdeaGraphNode {
   relatedProjectNames: string[]
   thinking: IdeaGraphThinkingSummary
   actions: IdeaGraphAction[]
+  interesting?: boolean
+  interestingAt?: string
   archived?: boolean
   ignored?: boolean
   prompt?: string

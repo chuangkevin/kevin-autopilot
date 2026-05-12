@@ -9,7 +9,14 @@ import {
   snoozeBacklogItem,
 } from './backlog.js'
 import { createIdea, getIdea, listIdeas } from './ideas.js'
-import { extendIdeaGraphNode, getIdeaGraph, getIdeaGraphNodeDetail } from './idea-graph.js'
+import {
+  extendIdeaGraphNode,
+  findIdeaGraphNodeRelationships,
+  getIdeaGraph,
+  getIdeaGraphNodeDetail,
+  markIdeaGraphNodeInteresting,
+  stopExploringIdeaGraphNode,
+} from './idea-graph.js'
 import { clearStoredGeminiKeys, getKeyStatus, importGeminiKeys } from './keys.js'
 import { createObservationLoop, type ObservationLoop } from './observation-loop.js'
 import { observe } from './observer.js'
@@ -179,15 +186,23 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
     return
   }
 
-  const graphExtendMatch = url.pathname.match(/^\/api\/graph\/nodes\/([^/]+)\/extend$/)
-  if (graphExtendMatch && request.method === 'POST') {
+  const graphActionMatch = url.pathname.match(/^\/api\/graph\/nodes\/([^/]+)\/(extend|find-relationships|mark-interesting|stop-exploring)$/)
+  if (graphActionMatch && request.method === 'POST') {
     if (!isTrustedSettingsRequest(request)) {
-      writeText(response, 'Graph extension writes require loopback, private LAN, Docker, or Tailscale access', 403)
+      writeText(response, 'Graph actions require loopback, private LAN, Docker, or Tailscale access', 403)
       return
     }
     const report = await getVisibleReport(config, observationLoop)
     const ideas = await listIdeas(config, 40)
-    const detail = await extendIdeaGraphNode(config, report, ideas, decodeURIComponent(graphExtendMatch[1] ?? ''))
+    const id = decodeURIComponent(graphActionMatch[1] ?? '')
+    const action = graphActionMatch[2]
+    const detail = action === 'extend'
+      ? await extendIdeaGraphNode(config, report, ideas, id)
+      : action === 'find-relationships'
+        ? await findIdeaGraphNodeRelationships(config, report, ideas, id)
+        : action === 'mark-interesting'
+          ? await markIdeaGraphNodeInteresting(config, report, ideas, id)
+          : await stopExploringIdeaGraphNode(config, report, ideas, id)
     if (!detail) {
       writeText(response, 'Graph node not found', 404)
       return
@@ -721,15 +736,16 @@ function renderPage(
     if (actionButton) {
       const action = actionButton.getAttribute('data-action');
       const nodeId = actionButton.getAttribute('data-node-id');
-      if (action === 'extend' && nodeId) {
-        actionButton.textContent = '延伸中...';
-        const response = await fetch('/api/graph/nodes/' + encodeURIComponent(nodeId) + '/extend', { method: 'POST' });
+      if (['extend', 'find-relationships', 'mark-interesting', 'stop-exploring'].includes(action) && nodeId) {
+        actionButton.textContent = graphActionProgressText(action);
+        const response = await fetch('/api/graph/nodes/' + encodeURIComponent(nodeId) + '/' + action, { method: 'POST' });
         if (!response.ok) {
           actionButton.textContent = await response.text();
           return;
         }
         renderNodeDrawer(await response.json());
         setTimeout(() => location.reload(), 900);
+        return;
       }
       if (action === 'copy-opencode-prompt') {
         const prompt = document.getElementById('node-drawer')?.querySelector('pre')?.textContent || '';
@@ -849,9 +865,17 @@ function renderPage(
   function nodeActionDisabledReason(actionId) {
     if (actionId === 'copy-opencode-prompt') return '缺 prompt 或證據太弱';
     if (actionId === 'find-relationships') return '尚未開放關聯搜尋';
-    if (actionId === 'mark-interesting') return '尚未開放持久標記';
-    if (actionId === 'stop-exploring') return '尚未開放隱藏/降權';
+    if (actionId === 'mark-interesting') return '已保留給分身';
+    if (actionId === 'stop-exploring') return '中心節點不可隱藏';
     return '尚未開放';
+  }
+
+  function graphActionProgressText(actionId) {
+    if (actionId === 'extend') return '延伸中...';
+    if (actionId === 'find-relationships') return '找關聯中...';
+    if (actionId === 'mark-interesting') return '標記中...';
+    if (actionId === 'stop-exploring') return '隱藏中...';
+    return '處理中...';
   }
 
   function renderNodeDrawer(detail) {
@@ -1066,8 +1090,8 @@ function renderNodeAction(nodeId: string, action: IdeaGraphNode['actions'][numbe
 function nodeActionDisabledReason(actionId: IdeaGraphNode['actions'][number]['id']): string {
   if (actionId === 'copy-opencode-prompt') return '缺 prompt 或證據太弱'
   if (actionId === 'find-relationships') return '尚未開放關聯搜尋'
-  if (actionId === 'mark-interesting') return '尚未開放持久標記'
-  if (actionId === 'stop-exploring') return '尚未開放隱藏/降權'
+  if (actionId === 'mark-interesting') return '已保留給分身'
+  if (actionId === 'stop-exploring') return '中心節點不可隱藏'
   return '尚未開放'
 }
 

@@ -10,7 +10,15 @@ import {
   snoozeBacklogItem,
 } from './backlog.js'
 import { createIdea } from './ideas.js'
-import { extendIdeaGraphNode, extractIdeaKeywords, getIdeaGraph, getIdeaGraphNodeDetail } from './idea-graph.js'
+import {
+  extendIdeaGraphNode,
+  extractIdeaKeywords,
+  findIdeaGraphNodeRelationships,
+  getIdeaGraph,
+  getIdeaGraphNodeDetail,
+  markIdeaGraphNodeInteresting,
+  stopExploringIdeaGraphNode,
+} from './idea-graph.js'
 import { observe } from './observer.js'
 import type { AutopilotConfig } from './types.js'
 
@@ -75,6 +83,43 @@ test('extending graph node creates read-only research seed without web claims', 
     assert.equal(detail?.node.safety, 'read-only')
     assert.equal(detail?.connectedNodes.some((node) => node.type === 'research'), true)
     assert.equal(JSON.stringify(detail).includes('不代表已經查過網路') || JSON.stringify(detail).includes('未宣稱已搜尋 public web'), true)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('graph node actions can mark interesting, find relationships, create prompts, and stop exploring', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-graph-actions-'))
+  const config: AutopilotConfig = {
+    environment: 'test',
+    dataDir,
+    ruleSources: [],
+    repositories: [],
+    services: [],
+  }
+  try {
+    const ideaA = await createIdea(config, '想做 agent cockpit 和 OpenCode prompt 工作流')
+    const ideaB = await createIdea(config, 'OpenCode prompt 可以接到 agent cockpit 節點')
+    const report = await observe(config)
+    const graph = await getIdeaGraph(config, report, [ideaA, ideaB])
+    const ideaNode = graph.nodes.find((node) => node.type === 'idea' && node.source === `idea:${ideaA.id}`)
+    assert.ok(ideaNode)
+    assert.equal(ideaNode.actions.find((action) => action.id === 'copy-opencode-prompt')?.enabled, true)
+    assert.equal(typeof ideaNode.prompt, 'string')
+    assert.match(ideaNode.prompt ?? '', /do not .*edit target repos/i)
+
+    const marked = await markIdeaGraphNodeInteresting(config, report, [ideaA, ideaB], ideaNode.id)
+    assert.equal(marked?.node.interesting, true)
+    assert.equal(marked?.node.actions.find((action) => action.id === 'mark-interesting')?.enabled, false)
+
+    const related = await findIdeaGraphNodeRelationships(config, report, [ideaA, ideaB], ideaNode.id)
+    assert.ok((related?.connectedNodes.length ?? 0) > 0)
+    assert.equal(related?.edges.some((edge) => edge.source === `relationship:${ideaNode.id}`), true)
+
+    const hidden = await stopExploringIdeaGraphNode(config, report, [ideaA, ideaB], ideaNode.id)
+    assert.equal(hidden?.node.ignored, true)
+    const refreshed = await getIdeaGraph(config, report, [ideaA, ideaB])
+    assert.equal(refreshed.nodes.some((node) => node.id === ideaNode.id), false)
   } finally {
     await rm(dataDir, { recursive: true, force: true })
   }
@@ -241,6 +286,54 @@ test('idea graph removes legacy literal metaphor seed nodes on refresh', async (
 
     assert.equal(JSON.stringify(graph).includes('電子羊'), false)
     assert.equal(persisted.includes('電子羊'), false)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('legacy stored graph nodes without prompt receive safe prompts on refresh', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-graph-legacy-prompt-'))
+  const config: AutopilotConfig = {
+    environment: 'test',
+    dataDir,
+    ruleSources: [],
+    repositories: [],
+    services: [],
+  }
+  try {
+    await writeFile(join(dataDir, 'idea-graph.json'), `${JSON.stringify({
+      nodes: [
+        {
+          id: 'extension-legacy-node',
+          type: 'extension',
+          title: 'Legacy extension without prompt',
+          summary: 'Stored before v0.8.0 prompt synthesis.',
+          source: 'extension:legacy',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+          confidence: 'weak',
+          safety: 'read-only',
+          keywords: ['legacy', 'prompt'],
+          relatedProjectNames: [],
+          thinking: {
+            understanding: 'legacy',
+            whyItMatters: 'legacy',
+            nextExploration: 'legacy',
+            evidence: [],
+            missingEvidence: [],
+          },
+          actions: [],
+        },
+      ],
+      edges: [],
+    }, null, 2)}\n`, 'utf8')
+
+    const report = await observe(config)
+    const graph = await getIdeaGraph(config, report, [])
+    const legacy = graph.nodes.find((node) => node.id === 'extension-legacy-node')
+    assert.ok(legacy)
+    assert.match(legacy.prompt ?? '', /do not edit target repositories/i)
+    assert.equal(legacy.actions.find((action) => action.id === 'copy-opencode-prompt')?.enabled, true)
   } finally {
     await rm(dataDir, { recursive: true, force: true })
   }

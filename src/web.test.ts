@@ -103,8 +103,10 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(pageBody.includes('Snooze 7 天'), true)
     assert.equal(pageBody.includes('這裡不是重要性排名'), true)
     assert.equal(pageBody.includes('Priority Board'), false)
-    assert.equal(pageBody.includes('尚未開放關聯搜尋'), true)
-    assert.equal(pageBody.includes('缺 prompt 或證據太弱'), true)
+    assert.equal(pageBody.includes('找更多關聯'), true)
+    assert.equal(pageBody.includes('變成 OpenCode 任務'), true)
+    assert.equal(pageBody.includes('標記有趣'), true)
+    assert.equal(pageBody.includes('先不要想這條'), true)
     assert.equal(pageBody.includes('打開分身的大腦'), true)
     assert.equal(pageBody.includes('像作夢一樣的半醒聯想'), true)
     assert.equal(pageBody.includes('brain-node'), true)
@@ -153,12 +155,37 @@ test('web server exposes health and idea intake', async () => {
     const graphNodeBody = await graphNode.json()
     assert.equal(graphNodeBody.node.thinking.understanding.includes('Kevin'), true)
     assert.equal(graphNodeBody.node.safety, 'read-only')
+    assert.equal(graphNodeBody.node.actions.find((action: { id: string; enabled: boolean }) => action.id === 'copy-opencode-prompt')?.enabled, true)
+    assert.match(graphNodeBody.node.prompt, /do not edit target repositories/i)
 
     const graphExtend = await fetch(`${baseUrl}/api/graph/nodes/${encodeURIComponent(graphBody.centerNodeId)}/extend`, { method: 'POST' })
     assert.equal(graphExtend.status, 201)
     const graphExtendBody = await graphExtend.json()
     assert.equal(graphExtendBody.node.type, 'extension')
     assert.equal(JSON.stringify(graphExtendBody).includes('不代表已經查過網路') || JSON.stringify(graphExtendBody).includes('未宣稱已搜尋 public web'), true)
+
+    const graphFind = await fetch(`${baseUrl}/api/graph/nodes/${encodeURIComponent(graphBody.centerNodeId)}/find-relationships`, { method: 'POST' })
+    assert.equal(graphFind.status, 201)
+    const graphFindBody = await graphFind.json()
+    assert.equal(graphFindBody.edges.some((edge: { source: string }) => edge.source === `relationship:${graphBody.centerNodeId}`), true)
+
+    const graphMark = await fetch(`${baseUrl}/api/graph/nodes/${encodeURIComponent(graphBody.centerNodeId)}/mark-interesting`, { method: 'POST' })
+    assert.equal(graphMark.status, 201)
+    const graphMarkBody = await graphMark.json()
+    assert.equal(graphMarkBody.node.interesting, true)
+    assert.equal(graphMarkBody.node.actions.find((action: { id: string; enabled: boolean }) => action.id === 'mark-interesting')?.enabled, false)
+
+    const untrustedGraphAction = await fetch(`${baseUrl}/api/graph/nodes/${encodeURIComponent(graphBody.centerNodeId)}/find-relationships`, {
+      method: 'POST',
+      headers: { 'x-forwarded-for': '8.8.8.8' },
+    })
+    assert.equal(untrustedGraphAction.status, 403)
+
+    const projectNode = graphBody.nodes.find((node: { id: string; type: string }) => node.type === 'project')
+    assert.ok(projectNode)
+    const graphStop = await fetch(`${baseUrl}/api/graph/nodes/${encodeURIComponent(projectNode.id)}/stop-exploring`, { method: 'POST' })
+    assert.equal(graphStop.status, 201)
+    assert.equal((await graphStop.json()).node.ignored, true)
 
     const backlog = await fetch(`${baseUrl}/api/backlog?status=active`)
     assert.equal(backlog.status, 200)
