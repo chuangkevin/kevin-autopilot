@@ -1,7 +1,7 @@
 import { once } from 'node:events'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createWebServer, formatTaipeiTime, isTrustedSettingsAddress, isTrustedSettingsSource } from './web.js'
@@ -107,6 +107,8 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(pageBody.includes('變成 OpenCode 任務'), true)
     assert.equal(pageBody.includes('標記有趣'), true)
     assert.equal(pageBody.includes('先不要想這條'), true)
+    assert.equal(pageBody.includes('尚未開放關聯搜尋'), false)
+    assert.equal(pageBody.includes('缺 prompt 或證據太弱'), false)
     assert.equal(pageBody.includes('打開分身的大腦'), true)
     assert.equal(pageBody.includes('像作夢一樣的半醒聯想'), true)
     assert.equal(pageBody.includes('brain-node'), true)
@@ -141,6 +143,9 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(pageBody.includes('所有專案都在雷達上'), true)
     assert.equal(pageBody.includes('不替你判斷哪個想法比較重要'), true)
     assert.equal(pageBody.includes('missing-repo'), true)
+    assert.equal(pageBody.includes('navigator.clipboard'), true)
+    assert.equal(pageBody.includes("document.execCommand('copy')"), true)
+    assert.equal(pageBody.includes('Prompt 已複製'), true)
 
     const graph = await fetch(`${baseUrl}/api/graph`)
     assert.equal(graph.status, 200)
@@ -352,3 +357,73 @@ test('web server exposes health and idea intake', async () => {
     await rm(dataDir, { recursive: true, force: true })
   }
 })
+
+test('graph action POST routes only mutate graph metadata', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-web-graph-scope-'))
+  const targetRepo = join(dataDir, 'target-repo')
+  const config: AutopilotConfig = {
+    environment: 'test',
+    dataDir,
+    ruleSources: [],
+    repositories: [{ name: 'target-repo', path: targetRepo }],
+    services: [],
+  }
+  const server = createWebServer(config)
+  try {
+    await mkdir(targetRepo, { recursive: true })
+    await writeFile(join(targetRepo, 'sentinel.txt'), 'target repo must remain untouched\n', 'utf8')
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const address = server.address()
+    assert.ok(address && typeof address === 'object' && 'port' in address)
+    const baseUrl = `http://127.0.0.1:${address.port}`
+
+    const idea = await fetch(`${baseUrl}/api/ideas`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rawText: 'target repo agent cockpit prompt 關聯' }),
+    })
+    assert.equal(idea.status, 201)
+
+    const graph = await fetch(`${baseUrl}/api/graph`)
+    assert.equal(graph.status, 200)
+    const graphBody = await graph.json()
+    const ideaNode = graphBody.nodes.find((node: { id: string; type: string }) => node.type === 'idea')
+    assert.ok(ideaNode)
+
+    const before = await snapshotFiles(dataDir)
+    for (const action of ['mark-interesting', 'find-relationships', 'stop-exploring']) {
+      const response = await fetch(`${baseUrl}/api/graph/nodes/${encodeURIComponent(ideaNode.id)}/${action}`, { method: 'POST' })
+      assert.equal(response.status, 201)
+    }
+    const after = await snapshotFiles(dataDir)
+
+    assert.deepEqual(changedFiles(before, after), ['idea-graph.json'])
+    assert.equal(after.get('target-repo/sentinel.txt'), before.get('target-repo/sentinel.txt'))
+  } finally {
+    if (server.listening) {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+    }
+    await rm(dataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 })
+  }
+})
+
+async function snapshotFiles(root: string, dir = root): Promise<Map<string, string>> {
+  const snapshot = new Map<string, string>()
+  const entries = await readdir(dir, { withFileTypes: true })
+  for (const entry of entries) {
+    const path = join(dir, entry.name)
+    if (entry.isDirectory()) {
+      for (const [file, content] of await snapshotFiles(root, path)) snapshot.set(file, content)
+      continue
+    }
+    if (!entry.isFile()) continue
+    snapshot.set(relative(root, path).replace(/\\/g, '/'), await readFile(path, 'base64'))
+  }
+  return snapshot
+}
+
+function changedFiles(before: Map<string, string>, after: Map<string, string>): string[] {
+  const files = new Set([...before.keys(), ...after.keys()])
+  return [...files].filter((file) => before.get(file) !== after.get(file)).sort()
+}

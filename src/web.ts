@@ -863,11 +863,12 @@ function renderPage(
   }
 
   function nodeActionDisabledReason(actionId) {
-    if (actionId === 'copy-opencode-prompt') return '缺 prompt 或證據太弱';
-    if (actionId === 'find-relationships') return '尚未開放關聯搜尋';
+    if (actionId === 'extend') return '任務節點已經是 handoff prompt';
+    if (actionId === 'copy-opencode-prompt') return '這個節點沒有 prompt';
+    if (actionId === 'find-relationships') return '任務節點不再展開關聯';
     if (actionId === 'mark-interesting') return '已保留給分身';
     if (actionId === 'stop-exploring') return '中心節點不可隱藏';
-    return '尚未開放';
+    return '這個動作目前不可用';
   }
 
   function graphActionProgressText(actionId) {
@@ -1088,11 +1089,12 @@ function renderNodeAction(nodeId: string, action: IdeaGraphNode['actions'][numbe
 }
 
 function nodeActionDisabledReason(actionId: IdeaGraphNode['actions'][number]['id']): string {
-  if (actionId === 'copy-opencode-prompt') return '缺 prompt 或證據太弱'
-  if (actionId === 'find-relationships') return '尚未開放關聯搜尋'
+  if (actionId === 'extend') return '任務節點已經是 handoff prompt'
+  if (actionId === 'copy-opencode-prompt') return '這個節點沒有 prompt'
+  if (actionId === 'find-relationships') return '任務節點不再展開關聯'
   if (actionId === 'mark-interesting') return '已保留給分身'
   if (actionId === 'stop-exploring') return '中心節點不可隱藏'
-  return '尚未開放'
+  return '這個動作目前不可用'
 }
 
 function createGraphLayout(graph: IdeaGraph): Map<string, { x: number; y: number }> {

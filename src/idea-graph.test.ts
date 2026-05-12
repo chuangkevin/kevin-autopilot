@@ -1,6 +1,6 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
@@ -57,6 +57,32 @@ test('idea graph persists nodes and explains relationships', async () => {
 
     const reloaded = await getIdeaGraph(config, report, [idea])
     assert.equal(reloaded.nodes.some((node) => node.id === ideaNode.id), true)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('idea graph automatically grows extension nodes from idea next steps', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-graph-auto-extend-'))
+  const config: AutopilotConfig = {
+    environment: 'test',
+    dataDir,
+    ruleSources: [],
+    repositories: [],
+    services: [],
+  }
+  try {
+    const idea = await createIdea(config, '我想讓分身依照我的想法自己延伸探索節點')
+    const report = await observe(config)
+    const graph = await getIdeaGraph(config, report, [idea])
+    const ideaNode = graph.nodes.find((node) => node.type === 'idea' && node.source === `idea:${idea.id}`)
+    assert.ok(ideaNode)
+    const extensionNodes = graph.nodes.filter((node) => node.type === 'extension' && node.source.startsWith(`idea-extension:${idea.id}:`))
+
+    assert.equal(extensionNodes.length > 0, true)
+    assert.equal(extensionNodes.every((node) => node.safety === 'read-only'), true)
+    assert.equal(extensionNodes.every((node) => node.actions.find((action) => action.id === 'copy-opencode-prompt')?.enabled), true)
+    assert.equal(graph.edges.some((edge) => edge.from === ideaNode.id && edge.to === extensionNodes[0].id && edge.type === 'extends'), true)
   } finally {
     await rm(dataDir, { recursive: true, force: true })
   }
@@ -120,6 +146,38 @@ test('graph node actions can mark interesting, find relationships, create prompt
     assert.equal(hidden?.node.ignored, true)
     const refreshed = await getIdeaGraph(config, report, [ideaA, ideaB])
     assert.equal(refreshed.nodes.some((node) => node.id === ideaNode.id), false)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('graph node actions only mutate Autopilot-owned graph metadata', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-graph-action-scope-'))
+  const targetRepo = join(dataDir, 'target-repo')
+  const config: AutopilotConfig = {
+    environment: 'test',
+    dataDir,
+    ruleSources: [],
+    repositories: [{ name: 'target-repo', path: targetRepo }],
+    services: [],
+  }
+  try {
+    await mkdir(targetRepo, { recursive: true })
+    await writeFile(join(targetRepo, 'sentinel.txt'), 'target repo must remain untouched\n', 'utf8')
+    const idea = await createIdea(config, 'target repo agent cockpit prompt 關聯')
+    const report = await observe(config)
+    const graph = await getIdeaGraph(config, report, [idea])
+    const ideaNode = graph.nodes.find((node) => node.type === 'idea')
+    assert.ok(ideaNode)
+
+    const before = await snapshotFiles(dataDir)
+    await markIdeaGraphNodeInteresting(config, report, [idea], ideaNode.id)
+    await findIdeaGraphNodeRelationships(config, report, [idea], ideaNode.id)
+    await stopExploringIdeaGraphNode(config, report, [idea], ideaNode.id)
+    const after = await snapshotFiles(dataDir)
+
+    assert.deepEqual(changedFiles(before, after), ['idea-graph.json'])
+    assert.equal(after.get('target-repo/sentinel.txt'), before.get('target-repo/sentinel.txt'))
   } finally {
     await rm(dataDir, { recursive: true, force: true })
   }
@@ -338,3 +396,23 @@ test('legacy stored graph nodes without prompt receive safe prompts on refresh',
     await rm(dataDir, { recursive: true, force: true })
   }
 })
+
+async function snapshotFiles(root: string, dir = root): Promise<Map<string, string>> {
+  const snapshot = new Map<string, string>()
+  const entries = await readdir(dir, { withFileTypes: true })
+  for (const entry of entries) {
+    const path = join(dir, entry.name)
+    if (entry.isDirectory()) {
+      for (const [file, content] of await snapshotFiles(root, path)) snapshot.set(file, content)
+      continue
+    }
+    if (!entry.isFile()) continue
+    snapshot.set(relative(root, path).replace(/\\/g, '/'), await readFile(path, 'base64'))
+  }
+  return snapshot
+}
+
+function changedFiles(before: Map<string, string>, after: Map<string, string>): string[] {
+  const files = new Set([...before.keys(), ...after.keys()])
+  return [...files].filter((file) => before.get(file) !== after.get(file)).sort()
+}

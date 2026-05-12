@@ -236,6 +236,11 @@ prompt, persist an `interesting` mark so the thought stays visible, or stop
 exploring a node by hiding it from the focused graph. These actions only write
 Autopilot-owned graph metadata under `data/idea-graph.json`.
 
+Version 0.8.1 makes the graph grow automatically from ideas. Each idea projects
+one or two read-only extension nodes from its next-step suggestions, so the
+cockpit shows the double continuing Kevin's thoughts without waiting for a manual
+extend click.
+
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.
 
@@ -312,7 +317,7 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
-v0.8.0 Neural Cockpit action prototype. See `docs/` for architecture, safety,
+v0.8.1 Neural Cockpit auto-extension prototype. See `docs/` for architecture, safety,
 and OpenCode workflow.
 
 ## Deployment

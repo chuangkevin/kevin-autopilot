@@ -302,6 +302,11 @@ the node and boosts its focused-graph weight, and stop-exploring persists an
 ignored flag so the node leaves the focused graph. These actions do not mutate
 target repositories or external services.
 
+v0.8.1 adds automatic idea extension nodes. During graph projection, each idea
+turns one or two suggested next steps into read-only extension nodes connected
+back to the original idea, so the cockpit visibly grows along Kevin's thoughts
+without requiring an initial manual extend action.
+
 The first persisted loop status is `observation-loop-state.json`, which records
 enabled/running state, interval, run count, last run, next run, report paths, and
 last error. This is status telemetry only, not permission to execute changes.

@@ -250,6 +250,14 @@ function createProjectedGraph(
     nodes.push(ideaNode)
     edges.push(makeEdge(CENTER_NODE_ID, ideaNode.id, 'extends', 'Kevin 的想法進入分身腦圖。', 'medium', `idea:${idea.id}`, idea.createdAt))
 
+    for (const extensionNode of makeIdeaExtensionNodes(idea, keywords, idea.createdAt).slice(0, 2)) {
+      nodes.push(extensionNode)
+      edges.push(makeEdge(ideaNode.id, extensionNode.id, 'extends', '分身依照這個想法自動長出的下一層探索節點。', 'medium', `idea-extension:${idea.id}`, idea.createdAt))
+      for (const keyword of extensionNode.keywords.slice(0, 2)) {
+        edges.push(makeEdge(extensionNode.id, `keyword-${safeId(keyword)}`, 'contains_keyword', `延伸節點保留關鍵字「${keyword}」。`, 'weak', `idea-extension:${idea.id}`, idea.createdAt))
+      }
+    }
+
     for (const keyword of keywords.slice(0, 5)) {
       const keywordNode = makeKeywordNode(keyword, now)
       nodes.push(keywordNode)
@@ -442,6 +450,35 @@ function makeNode(input: {
     actions: makeActions(input.type, true, input.confidence),
     prompt: input.prompt ?? makeNodePrompt(input),
   }
+}
+
+function makeIdeaExtensionNodes(idea: IdeaRecord, keywords: string[], now: string): IdeaGraphNode[] {
+  const steps = idea.suggestedNextSteps.length > 0
+    ? idea.suggestedNextSteps.slice(0, 2)
+    : ['先把這個想法拆成可探索的問題與成功條件。']
+  return steps.map((step, index) => makeNode({
+    id: `extension-${safeId(idea.id)}-${index + 1}`,
+    type: 'extension',
+    title: `延伸：${shortTitle(step)}`,
+    summary: step,
+    source: `idea-extension:${idea.id}:${index + 1}`,
+    confidence: idea.classification === 'blocked' ? 'weak' : 'medium',
+    keywords: extractIdeaKeywords(`${idea.title} ${step}`).filter((keyword) => keywords.includes(keyword) || keyword.length >= 3).slice(0, 6),
+    relatedProjectNames: idea.existingProjectAnalysis.matches.map((match) => match.projectName),
+    now,
+    thinking: {
+      understanding: `這是分身從「${idea.title}」自動延伸出的第 ${index + 1} 條探索線。`,
+      whyItMatters: 'Kevin 期待分身不是只顯示原始想法，而是能沿著想法繼續長出可追問、可研究、可交給 OpenCode 的節點。',
+      nextExploration: step,
+      evidence: [`來源想法：${idea.title}`, ...idea.reasons.slice(0, 2)],
+      missingEvidence: idea.classification === 'explore' ? ['需要 Kevin 補更多使用情境或判斷標準。'] : [],
+    },
+  }))
+}
+
+function shortTitle(value: string): string {
+  const normalized = value.replace(/\s+/g, ' ').trim()
+  return normalized.length > 32 ? `${normalized.slice(0, 29)}...` : normalized
 }
 
 function makeActions(type: IdeaGraphNodeType, hasPrompt: boolean, confidence: IdeaGraphConfidence, interesting = false): IdeaGraphAction[] {
