@@ -1,7 +1,10 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { effectiveStatus, listBacklog, openBacklogDatabase } from './backlog.js'
 import type {
   AutopilotConfig,
+  BacklogItem,
+  BacklogStrength,
   IdeaGraph,
   IdeaGraphAction,
   IdeaGraphConfidence,
@@ -12,6 +15,7 @@ import type {
   IdeaGraphNodeType,
   IdeaRecord,
   ObservationCandidate,
+  ObservationCandidateConfidence,
   ObservationReport,
 } from './types.js'
 
@@ -27,7 +31,8 @@ interface StoredIdeaGraph {
 
 export async function getIdeaGraph(config: AutopilotConfig, report: ObservationReport, ideas: IdeaRecord[]): Promise<IdeaGraph> {
   const stored = await loadStoredGraph(config)
-  const graph = mergeGraph(stored, createProjectedGraph(config, report, ideas))
+  const backlogLookup = loadBacklogLookup(config)
+  const graph = mergeGraph(stored, createProjectedGraph(config, report, ideas, backlogLookup))
   await saveStoredGraph(config, graph)
   return toFocusedGraph(graph, report)
 }
@@ -39,7 +44,8 @@ export async function getIdeaGraphNodeDetail(config: AutopilotConfig, report: Ob
 
 export async function extendIdeaGraphNode(config: AutopilotConfig, report: ObservationReport, ideas: IdeaRecord[], nodeId: string): Promise<IdeaGraphNodeDetail | undefined> {
   const stored = await loadStoredGraph(config)
-  const graph = mergeGraph(stored, createProjectedGraph(config, report, ideas))
+  const backlogLookup = loadBacklogLookup(config)
+  const graph = mergeGraph(stored, createProjectedGraph(config, report, ideas, backlogLookup))
   const selected = graph.nodes.find((node) => node.id === nodeId)
   if (!selected) return undefined
 
@@ -113,8 +119,14 @@ export function extractIdeaKeywords(value: string, limit = 8): string[] {
   return [...new Set(tokens)].slice(0, limit)
 }
 
-function createProjectedGraph(config: AutopilotConfig, report: ObservationReport, ideas: IdeaRecord[]): StoredIdeaGraph {
+function createProjectedGraph(
+  config: AutopilotConfig,
+  report: ObservationReport,
+  ideas: IdeaRecord[],
+  backlogLookup: Map<string, BacklogItem> = new Map(),
+): StoredIdeaGraph {
   const now = new Date().toISOString()
+  const nowDate = new Date(now)
   const nodes: IdeaGraphNode[] = [makeCenterNode(report, ideas, now)]
   const edges: IdeaGraphEdge[] = []
 
@@ -177,9 +189,12 @@ function createProjectedGraph(config: AutopilotConfig, report: ObservationReport
   }
 
   for (const candidate of report.candidates.slice(0, 18)) {
-    const signalNode = makeSignalNode(candidate, now)
+    const backlogItem = backlogLookup.get(candidate.id)
+    if (backlogItem && effectiveStatus(backlogItem, nowDate) !== 'active') continue
+    const strength = backlogItem ? backlogItem.strength : candidateStrength(candidate.confidence)
+    const signalNode = makeSignalNode(candidate, now, strength)
     nodes.push(signalNode)
-    edges.push(makeEdge(CENTER_NODE_ID, signalNode.id, candidate.confidence === 'suspected' ? 'needs_evidence' : 'observed_in', candidate.evidence[0] ?? 'read-only observation signal', candidate.confidence === 'confirmed' ? 'strong' : candidate.confidence === 'likely' ? 'medium' : 'weak', `candidate:${candidate.id}`, now))
+    edges.push(makeEdge(CENTER_NODE_ID, signalNode.id, candidate.confidence === 'suspected' ? 'needs_evidence' : 'observed_in', candidate.evidence[0] ?? 'read-only observation signal', strength, `candidate:${candidate.id}`, now))
     const projectId = `project-${safeId(candidate.sourceName)}`
     if (nodes.some((node) => node.id === projectId)) {
       edges.push(makeEdge(signalNode.id, projectId, 'observed_in', `訊號來自 ${candidate.sourceName}。`, 'medium', `candidate:${candidate.id}`, now))
@@ -187,7 +202,7 @@ function createProjectedGraph(config: AutopilotConfig, report: ObservationReport
     if (candidate.boundedPrompt) {
       const taskNode = makeTaskNode(candidate, now)
       nodes.push(taskNode)
-      edges.push(makeEdge(signalNode.id, taskNode.id, 'can_become_task', '這個訊號可以被整理成 bounded OpenCode prompt。', candidate.confidence === 'suspected' ? 'weak' : 'medium', `candidate:${candidate.id}`, now))
+      edges.push(makeEdge(signalNode.id, taskNode.id, 'can_become_task', '這個訊號可以被整理成 bounded OpenCode prompt。', strength === 'strong' ? 'medium' : 'weak', `candidate:${candidate.id}`, now))
     }
   }
 
@@ -244,7 +259,7 @@ function makeKeywordNode(keyword: string, now: string): IdeaGraphNode {
   })
 }
 
-function makeSignalNode(candidate: ObservationCandidate, now: string): IdeaGraphNode {
+function makeSignalNode(candidate: ObservationCandidate, now: string, strength: BacklogStrength): IdeaGraphNode {
   const keywords = extractIdeaKeywords(`${candidate.title} ${candidate.suggestedNextStep} ${candidate.evidence.join(' ')}`)
   return makeNode({
     id: `signal-${safeId(candidate.id)}`,
@@ -252,7 +267,7 @@ function makeSignalNode(candidate: ObservationCandidate, now: string): IdeaGraph
     title: candidate.title,
     summary: candidate.suggestedNextStep,
     source: `candidate:${candidate.id}`,
-    confidence: candidate.confidence === 'confirmed' ? 'strong' : candidate.confidence === 'likely' ? 'medium' : 'weak',
+    confidence: strength,
     keywords,
     relatedProjectNames: [candidate.sourceName],
     now,
@@ -265,6 +280,22 @@ function makeSignalNode(candidate: ObservationCandidate, now: string): IdeaGraph
     },
     prompt: candidate.boundedPrompt,
   })
+}
+
+function candidateStrength(confidence: ObservationCandidateConfidence): BacklogStrength {
+  if (confidence === 'confirmed') return 'strong'
+  if (confidence === 'likely') return 'medium'
+  return 'weak'
+}
+
+function loadBacklogLookup(config: AutopilotConfig): Map<string, BacklogItem> {
+  const db = openBacklogDatabase(config)
+  try {
+    const items = listBacklog(db, 'all', new Date())
+    return new Map(items.map((item) => [item.id, item]))
+  } finally {
+    db.close()
+  }
 }
 
 function makeTaskNode(candidate: ObservationCandidate, now: string): IdeaGraphNode {

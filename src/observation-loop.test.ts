@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createObservationLoop } from './observation-loop.js'
+import { listBacklog, openBacklogDatabase } from './backlog.js'
 import type { AutopilotConfig } from './types.js'
 
 test('ObservationLoop runs read-only observation and persists loop state', async () => {
@@ -38,6 +39,43 @@ test('ObservationLoop runs read-only observation and persists loop state', async
     assert.equal(persisted.lastSuccess, true)
     const graph = JSON.parse(await readFile(join(dataDir, 'idea-graph.json'), 'utf8'))
     assert.equal(graph.nodes.some((node: { type: string }) => node.type === 'double'), true)
+    assert.ok(state.lastBacklogAt)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('two observation cycles upsert the same candidate into the backlog with seen_count=2', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-loop-backlog-'))
+  try {
+    const config: AutopilotConfig = {
+      environment: 'test',
+      dataDir,
+      backgroundObservation: { enabled: true, intervalMs: 60_000 },
+      ruleSources: [],
+      repositories: [{ name: 'missing-repo', path: join(dataDir, 'missing') }],
+      services: [],
+    }
+
+    const loop = createObservationLoop(config)
+    const firstReport = await loop.runOnce()
+    await loop.runOnce()
+    loop.stop()
+
+    assert.ok(firstReport && firstReport.candidates.length > 0, 'first cycle should produce at least one candidate')
+
+    const db = openBacklogDatabase(config)
+    try {
+      const items = listBacklog(db, 'all', new Date())
+      assert.ok(items.length > 0, 'backlog should contain merged candidates')
+      const item = items.find((row) => row.id === firstReport!.candidates[0].id)
+      assert.ok(item)
+      assert.equal(item.seenCount, 2)
+      assert.equal(item.missCount, 0)
+      assert.equal(item.strength, 'medium')
+    } finally {
+      db.close()
+    }
   } finally {
     await rm(dataDir, { recursive: true, force: true })
   }

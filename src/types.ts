@@ -259,8 +259,43 @@ export interface ObservationLoopState {
   lastError?: string
   lastReportAt?: string
   lastGraphAt?: string
+  lastBacklogAt?: string
   lastReportPath?: string
   lastMarkdownPath?: string
+}
+
+export type BacklogKind = ObservationCandidateCategory | 'research_seed'
+
+export type BacklogStatus = 'active' | 'snoozed' | 'dismissed' | 'resolved'
+
+export type BacklogStrength = 'weak' | 'medium' | 'strong'
+
+export type BacklogStatusFilter = BacklogStatus | 'all'
+
+export interface BacklogItem {
+  id: string
+  kind: BacklogKind
+  sourceType: 'rule_source' | 'repository' | 'service' | 'graph'
+  sourceName: string
+  title: string
+  summary: string
+  evidence: string[]
+  prevEvidence: string[] | null
+  firstSeenAt: string
+  lastSeenAt: string
+  seenCount: number
+  missCount: number
+  status: BacklogStatus
+  snoozedUntil: string | null
+  strength: BacklogStrength
+  updatedAt: string
+}
+
+export interface BacklogMergeSummary {
+  inserted: number
+  updated: number
+  missed: number
+  autoStaled: number
 }
 
 export type IdeaGraphNodeType = 'double' | 'idea' | 'keyword' | 'project' | 'signal' | 'research' | 'extension' | 'task'

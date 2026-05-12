@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { listIdeas } from './ideas.js'
 import { getIdeaGraph } from './idea-graph.js'
 import { observe, writeReports } from './observer.js'
+import { mergeCandidatesIntoBacklog, openBacklogDatabase } from './backlog.js'
 import type { AutopilotConfig, ObservationLoopState, ObservationReport } from './types.js'
 
 const DEFAULT_INTERVAL_MS = 5 * 60 * 1000
@@ -75,6 +76,7 @@ export class ObservationLoop {
     try {
       const report = await observe(this.config)
       const written = await writeReports(report, this.config.dataDir)
+      const backlogAt = await this.mergeBacklogSafely(report)
       await getIdeaGraph(this.config, report, await listIdeas(this.config, 40))
       this.lastReport = report
       this.state = {
@@ -85,6 +87,7 @@ export class ObservationLoop {
         lastSuccess: true,
         lastReportAt: report.generatedAt,
         lastGraphAt: new Date().toISOString(),
+        lastBacklogAt: backlogAt,
         lastReportPath: written.jsonPath,
         lastMarkdownPath: written.markdownPath,
       }
@@ -114,6 +117,16 @@ export class ObservationLoop {
       void this.runOnce()
     }, this.state.intervalMs)
     this.timer.unref?.()
+  }
+
+  private async mergeBacklogSafely(report: ObservationReport): Promise<string | undefined> {
+    const db = openBacklogDatabase(this.config)
+    try {
+      mergeCandidatesIntoBacklog(db, report.candidates, new Date())
+      return new Date().toISOString()
+    } finally {
+      db.close()
+    }
   }
 
   private async persistState(): Promise<void> {

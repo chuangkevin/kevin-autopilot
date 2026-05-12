@@ -1,12 +1,32 @@
 import { createServer } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
+import {
+  dismissBacklogItem,
+  effectiveStatus,
+  listBacklog,
+  openBacklogDatabase,
+  resolveBacklogItem,
+  snoozeBacklogItem,
+} from './backlog.js'
 import { createIdea, getIdea, listIdeas } from './ideas.js'
 import { extendIdeaGraphNode, getIdeaGraph, getIdeaGraphNodeDetail } from './idea-graph.js'
 import { clearStoredGeminiKeys, getKeyStatus, importGeminiKeys } from './keys.js'
 import { createObservationLoop, type ObservationLoop } from './observation-loop.js'
 import { observe } from './observer.js'
 import { createSupplement, listSupplements } from './supplements.js'
-import type { AutopilotConfig, IdeaGraph, IdeaGraphNode, IdeaRecord, KeyStatusSummary, ObservationLoopState, ObservationReport, UserSupplement } from './types.js'
+import type {
+  AutopilotConfig,
+  BacklogItem,
+  BacklogStatus,
+  BacklogStatusFilter,
+  IdeaGraph,
+  IdeaGraphNode,
+  IdeaRecord,
+  KeyStatusSummary,
+  ObservationLoopState,
+  ObservationReport,
+  UserSupplement,
+} from './types.js'
 import { APP_VERSION } from './version.js'
 
 const DEFAULT_PORT = 3023
@@ -171,6 +191,48 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
     return
   }
 
+  if (url.pathname === '/api/backlog' && request.method === 'GET') {
+    const filter = parseBacklogFilter(url.searchParams.get('status'))
+    writeJson(response, loadBacklogResponse(config, filter))
+    return
+  }
+
+  const backlogActionMatch = url.pathname.match(/^\/api\/backlog\/([^/]+)\/(dismiss|snooze|resolve)$/)
+  if (backlogActionMatch && request.method === 'POST') {
+    if (!isTrustedSettingsRequest(request)) {
+      writeText(response, 'Backlog actions require loopback, private LAN, Docker, or Tailscale access', 403)
+      return
+    }
+    const id = decodeURIComponent(backlogActionMatch[1] ?? '')
+    const action = backlogActionMatch[2] as 'dismiss' | 'snooze' | 'resolve'
+    const db = openBacklogDatabase(config)
+    const now = new Date()
+    try {
+      let item: BacklogItem | null = null
+      if (action === 'dismiss') {
+        item = dismissBacklogItem(db, id, now)
+      } else if (action === 'resolve') {
+        item = resolveBacklogItem(db, id, now)
+      } else {
+        const body = JSON.parse(await readBody(request)) as { days?: unknown }
+        const days = typeof body.days === 'number' ? body.days : Number(body.days)
+        if (!Number.isFinite(days) || ![1, 7, 30].includes(days)) {
+          writeText(response, 'snooze days must be 1, 7, or 30', 400)
+          return
+        }
+        item = snoozeBacklogItem(db, id, days, now)
+      }
+      if (!item) {
+        writeText(response, 'Backlog item not found', 404)
+        return
+      }
+      writeJson(response, item)
+    } finally {
+      db.close()
+    }
+    return
+  }
+
   if (url.pathname === '/') {
     const report = await getVisibleReport(config, observationLoop)
     const ideas = await listIdeas(config, 12)
@@ -256,6 +318,35 @@ function headerAddresses(value: string | string[] | undefined): string[] {
   if (!value) return []
   const values = Array.isArray(value) ? value : [value]
   return values.flatMap((entry) => entry.split(',')).map((entry) => entry.trim()).filter(Boolean)
+}
+
+function parseBacklogFilter(raw: string | null): BacklogStatusFilter {
+  const allowed: BacklogStatusFilter[] = ['active', 'snoozed', 'resolved', 'dismissed', 'all']
+  if (raw && (allowed as string[]).includes(raw)) return raw as BacklogStatusFilter
+  return 'active'
+}
+
+function loadBacklogResponse(config: AutopilotConfig, filter: BacklogStatusFilter): {
+  items: BacklogItem[]
+  counts: Record<BacklogStatus | 'all', number>
+} {
+  const db = openBacklogDatabase(config)
+  const now = new Date()
+  try {
+    const all = listBacklog(db, 'all', now)
+    const counts: Record<BacklogStatus | 'all', number> = {
+      active: 0,
+      snoozed: 0,
+      resolved: 0,
+      dismissed: 0,
+      all: all.length,
+    }
+    for (const item of all) counts[effectiveStatus(item, now)] += 1
+    const items = filter === 'all' ? all : all.filter((item) => effectiveStatus(item, now) === filter)
+    return { items, counts }
+  } finally {
+    db.close()
+  }
 }
 
 async function readBody(request: IncomingMessage): Promise<string> {

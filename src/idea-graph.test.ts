@@ -3,6 +3,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import {
+  dismissBacklogItem,
+  mergeCandidatesIntoBacklog,
+  openBacklogDatabase,
+  snoozeBacklogItem,
+} from './backlog.js'
 import { createIdea } from './ideas.js'
 import { extendIdeaGraphNode, extractIdeaKeywords, getIdeaGraph, getIdeaGraphNodeDetail } from './idea-graph.js'
 import { observe } from './observer.js'
@@ -69,6 +75,91 @@ test('extending graph node creates read-only research seed without web claims', 
     assert.equal(detail?.node.safety, 'read-only')
     assert.equal(detail?.connectedNodes.some((node) => node.type === 'research'), true)
     assert.equal(JSON.stringify(detail).includes('不代表已經查過網路') || JSON.stringify(detail).includes('未宣稱已搜尋 public web'), true)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('signal node confidence comes from backlog strength when available', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-graph-strength-'))
+  const config: AutopilotConfig = {
+    environment: 'test',
+    dataDir,
+    ruleSources: [],
+    repositories: [{ name: 'kevin-autopilot', path: join(dataDir, 'missing-autopilot') }],
+    services: [],
+  }
+  try {
+    const report = await observe(config)
+    assert.ok(report.candidates.length > 0)
+    const targetId = report.candidates[0].id
+    const db = openBacklogDatabase(config)
+    try {
+      // Simulate 5 recurring cycles so this item is strong
+      for (let i = 0; i < 5; i++) {
+        mergeCandidatesIntoBacklog(db, report.candidates, new Date(Date.now() - (4 - i) * 60_000))
+      }
+    } finally {
+      db.close()
+    }
+    const graph = await getIdeaGraph(config, report, [])
+    const signalNode = graph.nodes.find((node) => node.source === `candidate:${targetId}`)
+    assert.ok(signalNode)
+    assert.equal(signalNode.confidence, 'strong')
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('dismissed backlog items produce no signal node on the graph', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-graph-dismiss-'))
+  const config: AutopilotConfig = {
+    environment: 'test',
+    dataDir,
+    ruleSources: [],
+    repositories: [{ name: 'kevin-autopilot', path: join(dataDir, 'missing-autopilot') }],
+    services: [],
+  }
+  try {
+    const report = await observe(config)
+    assert.ok(report.candidates.length > 0)
+    const targetId = report.candidates[0].id
+    const db = openBacklogDatabase(config)
+    try {
+      mergeCandidatesIntoBacklog(db, report.candidates, new Date())
+      dismissBacklogItem(db, targetId, new Date())
+    } finally {
+      db.close()
+    }
+    const graph = await getIdeaGraph(config, report, [])
+    assert.equal(graph.nodes.some((node) => node.source === `candidate:${targetId}`), false)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('snoozed backlog items disappear from graph until snooze expires', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-graph-snooze-'))
+  const config: AutopilotConfig = {
+    environment: 'test',
+    dataDir,
+    ruleSources: [],
+    repositories: [{ name: 'kevin-autopilot', path: join(dataDir, 'missing-autopilot') }],
+    services: [],
+  }
+  try {
+    const report = await observe(config)
+    assert.ok(report.candidates.length > 0)
+    const targetId = report.candidates[0].id
+    const db = openBacklogDatabase(config)
+    try {
+      mergeCandidatesIntoBacklog(db, report.candidates, new Date())
+      snoozeBacklogItem(db, targetId, 1, new Date())
+    } finally {
+      db.close()
+    }
+    const graph = await getIdeaGraph(config, report, [])
+    assert.equal(graph.nodes.some((node) => node.source === `candidate:${targetId}`), false)
   } finally {
     await rm(dataDir, { recursive: true, force: true })
   }
