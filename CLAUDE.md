@@ -54,6 +54,16 @@ Treat the following skill files as active workflow rules for this workspace, eve
 
 Mirror locations (`.claude/skills/`, `.gemini/skills/`, `.opencode/skills/`, `.github/skills/`) hold the same OpenSpec workflow skills so Claude Code, Gemini CLI, opencode, and GitHub Copilot all see them. The canonical source for general workflow skills lives in `skills/`.
 
+## Local Docker Build From The Corporate Dev Box
+
+The tracked `Dockerfile` fails `npm ci` on Kevin's company laptop because the
+corporate TLS MITM proxy intercepts `https://registry.npmjs.org`. The exact
+workaround and run command live in `AGENTS.md` under "Local Docker Build From
+The Corporate Dev Box" — read that section before attempting a local image
+build. Do not propose committing the workaround into the tracked `Dockerfile`;
+the CI/CD image is built on a clean GitHub Actions runner that does not need
+it.
+
 ## Persistent Standards
 
 - Every code change must update memory (if applicable), update OpenSpec (if applicable), commit, and push; larger work batches may commit in checkpoints and push once the batch is ready. Rule home: `skills/completion-checklist/SKILL.md`.

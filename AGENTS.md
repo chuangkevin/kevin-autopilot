@@ -44,3 +44,52 @@ Safety rules:
 5. Do not implement background execution that edits repos, commits, pushes, or
    deploys until scheduler state, permission gates, interrupt handling, pending
    actions, and health/status surfaces are explicitly designed and approved.
+
+## Local Docker Build From The Corporate Dev Box
+
+When building the kevin-autopilot image on Kevin's company laptop, the corporate
+TLS MITM proxy intercepts `https://registry.npmjs.org`, so the tracked
+`Dockerfile`'s `npm ci` fails with `SELF_SIGNED_CERT_IN_CHAIN`. Do not commit a
+fix that disables TLS verification globally; instead keep an untracked
+`Dockerfile.local` at the repo root that copies the tracked `Dockerfile` and
+adds one line in the `deps` stage:
+
+```dockerfile
+# (immediately after WORKDIR /app and apt-get install)
+RUN npm config set strict-ssl false
+```
+
+Build and run from a Git Bash shell on the corporate box:
+
+```bash
+docker build -f Dockerfile.local -t kevin-autopilot:local-test .
+
+# IMPORTANT: MSYS_NO_PATHCONV prevents git-bash from rewriting
+# in-container paths like /config/... to C:/Program Files/Git/config/...
+MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' docker run -d \
+  --name kevin-autopilot-local --restart unless-stopped \
+  -p 127.0.0.1:3033:3023 \
+  -e KEVIN_AUTOPILOT_CONFIG=/config/kevinhome.json \
+  -e PORT=3023 -e TZ=Asia/Taipei \
+  -v "D:/Projects/_HomeProject/kevin-autopilot/config/kevinhome.example.json:/config/kevinhome.json:ro" \
+  -v "D:/Projects/_HomeProject/kevin-autopilot/data:/data" \
+  -v "D:/Projects/_HomeProject/homelab-docs:/rules/homelab-docs:ro" \
+  -v "D:/Projects/_HomeProject:/repos/homeproject:ro" \
+  kevin-autopilot:local-test
+```
+
+Notes:
+
+- Bind to `127.0.0.1:3033`, not 3023. The dev box often runs a host
+  `node dist/index.js web` on 3023; both writing to the same `data/autopilot.db`
+  causes SQLite contention. Stop the host process (`Stop-Process -Id <pid>`) or
+  the container before running the other.
+- The mounted `data/` already contains 50 Gemini keys in `autopilot.db`, so AI
+  thinking is enabled without setting `GEMINI_API_KEY`.
+- Health: `curl http://127.0.0.1:3033/health` returns
+  `{"ok": true, "version": "<APP_VERSION>"}`. Public domain
+  `https://kevin.sisihome.org/health` is only reachable from inside the home
+  Tailnet; corporate-box curl to it timing out is expected.
+- `Dockerfile.local` stays untracked. Do not propose committing it; the corp
+  workaround is environment-specific and the published CI/CD image uses the
+  tracked `Dockerfile` from a clean GitHub Actions runner without the MITM.
