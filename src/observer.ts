@@ -25,6 +25,7 @@ export async function observe(config: AutopilotConfig): Promise<ObservationRepor
     listSupplements(config, 8),
   ])
   const candidates = createObservationCandidates(ruleSources, repositories, services)
+  const projectRadar = createProjectRadar(repositories, services, candidates)
 
   return {
     generatedAt: new Date().toISOString(),
@@ -33,6 +34,7 @@ export async function observe(config: AutopilotConfig): Promise<ObservationRepor
     ruleSources,
     repositories,
     services,
+    projectRadar,
     candidates,
     supplements,
     mainAgent: createMainAgentBrief(candidates, repositories, services, ruleSources, supplements),
@@ -519,6 +521,77 @@ function candidateId(sourceType: string, sourceName: string, reason: string): st
   return `${sourceType}-${sourceName}-${reason}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 }
 
+function createProjectRadar(
+  repositories: RepositoryObservation[],
+  services: ServiceObservation[],
+  candidates: ObservationCandidate[],
+): ObservationReport['projectRadar'] {
+  const byProject = new Map<string, { repository?: RepositoryObservation; services: ServiceObservation[] }>()
+
+  for (const repository of repositories) {
+    byProject.set(repository.name, { repository, services: [] })
+  }
+
+  for (const service of services) {
+    const projectName = service.repository ?? service.name
+    const project = byProject.get(projectName) ?? { services: [] }
+    project.services.push(service)
+    byProject.set(projectName, project)
+  }
+
+  return [...byProject.entries()]
+    .map(([name, project]) => {
+      const candidateIds = candidates
+        .filter((candidate) => (candidate.sourceType === 'repository' && candidate.sourceName === name) || project.services.some((service) => candidate.sourceType === 'service' && candidate.sourceName === service.name))
+        .map((candidate) => candidate.id)
+      const failedServices = project.services.filter((service) => service.healthStatus === 'failed')
+      const unconfiguredServices = project.services.filter((service) => service.healthStatus === 'not_configured')
+      const disabledServices = project.services.filter((service) => service.healthStatus === 'disabled')
+      const okServices = project.services.filter((service) => service.healthStatus === 'ok')
+      const signals = [
+        project.repository ? `repo ${project.repository.exists ? project.repository.dirty ? 'dirty' : 'clean' : 'missing'}` : 'repo not configured for local observation',
+        project.repository?.branch ? `branch ${project.repository.branch}` : undefined,
+        project.repository?.error ? `git error: ${project.repository.error}` : undefined,
+        failedServices.length > 0 ? `${failedServices.length} service health failed` : undefined,
+        unconfiguredServices.length > 0 ? `${unconfiguredServices.length} service health not configured` : undefined,
+        disabledServices.length > 0 ? `${disabledServices.length} service health disabled` : undefined,
+        candidateIds.length > 0 ? `${candidateIds.length} observation candidate(s)` : undefined,
+      ].filter((signal): signal is string => Boolean(signal))
+      const status: ObservationReport['projectRadar'][number]['status'] = project.repository && (!project.repository.exists || project.repository.error) || failedServices.length > 0
+        ? 'needs_attention'
+        : candidateIds.length > 0 || Boolean(project.repository?.dirty) || unconfiguredServices.length > 0
+          ? 'watching'
+          : (project.repository?.exists || okServices.length > 0) && !project.repository?.dirty && project.services.every((service) => service.healthStatus === 'ok' || service.healthStatus === 'disabled')
+            ? 'healthy'
+            : 'unknown'
+      const nextObservation = status === 'needs_attention'
+        ? '先用 read-only evidence 確認 repo/service 異常是否影響使用者或部署健康。'
+        : status === 'watching'
+          ? '補齊 dirty work、health policy，或確認這只是正常進行中的工作。'
+          : status === 'healthy'
+            ? '維持背景觀察；除非 Kevin 補充新痛點，不主動開工。'
+            : '補上 repo mapping 或允許的 health endpoint，讓這個專案可被判斷。'
+
+      return {
+        name,
+        status,
+        repository: project.repository,
+        services: project.services,
+        candidateIds,
+        signals,
+        nextObservation,
+      }
+    })
+    .sort((a, b) => projectStatusScore(b.status) - projectStatusScore(a.status) || a.name.localeCompare(b.name))
+}
+
+function projectStatusScore(status: ObservationReport['projectRadar'][number]['status']): number {
+  if (status === 'needs_attention') return 3
+  if (status === 'watching') return 2
+  if (status === 'unknown') return 1
+  return 0
+}
+
 export async function writeReports(report: ObservationReport, dataDir: string): Promise<{ jsonPath: string; markdownPath: string }> {
   await mkdir(dataDir, { recursive: true })
   const safeTimestamp = report.generatedAt.replaceAll(':', '-').replaceAll('.', '-')
@@ -674,6 +747,13 @@ function renderMarkdown(report: ObservationReport): string {
     ...report.services.map(
       (service) =>
         `- ${service.name}: host=${service.host ?? 'unknown'}, domain=${service.domain ?? 'unknown'}, port=${service.port ?? 'unknown'}, health=${service.healthStatus}`,
+    ),
+    '',
+    '## Project Radar',
+    '',
+    ...report.projectRadar.map(
+      (project) =>
+        `- ${project.name}: status=${project.status}, repo=${project.repository?.exists ?? 'none'}, services=${project.services.length}, candidates=${project.candidateIds.length}\n  - Next: ${project.nextObservation}`,
     ),
     '',
     '## Observation Backlog',

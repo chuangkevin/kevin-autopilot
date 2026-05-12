@@ -61,6 +61,7 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
       environment: report.environment,
       loop: observationLoop?.getState() ?? createManualLoopState(),
       mainAgent: report.mainAgent,
+      projectRadar: report.projectRadar,
       candidates: report.candidates.slice(0, 5),
       note: 'This is an auditable reasoning trace, not private chain-of-thought.',
     })
@@ -309,6 +310,16 @@ function renderPage(
     .trace-step strong { display: block; margin-bottom: 5px; }
     .trace-note { border: 1px solid rgba(148,163,184,0.18); border-radius: 14px; padding: 12px; background: rgba(8,13,25,0.42); }
     .candidate-action { margin-top: 8px; color: #cbd5e1; font-size: 13px; }
+    .radar-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+    .radar-card { border: 1px solid rgba(148,163,184,0.18); border-left: 5px solid #64748b; border-radius: 16px; padding: 14px; background: rgba(15,23,42,0.5); min-width: 0; }
+    .radar-card.needs_attention { border-left-color: #f87171; }
+    .radar-card.watching { border-left-color: #f59e0b; }
+    .radar-card.healthy { border-left-color: #22c55e; }
+    .radar-card.unknown { border-left-color: #94a3b8; }
+    .radar-title { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; margin-bottom: 8px; }
+    .radar-title strong { overflow-wrap: anywhere; }
+    .radar-signals { margin: 8px 0 0; padding-left: 18px; color: #cbd5e1; font-size: 13px; }
+    .radar-signals li { margin: 3px 0; overflow-wrap: anywhere; }
     .copy-status { display: inline-block; margin-left: 8px; color: #bbf7d0; font-size: 13px; }
     .pill { display: inline-block; white-space: nowrap; border-radius: 999px; padding: 4px 9px; font-size: 12px; background: rgba(59,130,246,0.18); color: #bfdbfe; }
     .warn { background: rgba(245,158,11,0.16); color: #fde68a; }
@@ -388,6 +399,8 @@ function renderPage(
   </section>
 
   ${renderThinkingTrace(report)}
+
+  ${renderProjectRadar(report)}
 
   <details class="detail-block">
     <summary>除錯/證據/完整清單，不用先看</summary>
@@ -615,6 +628,44 @@ function renderKeySection(keyStatus: KeyStatusSummary): string {
     </form>
     <div id="key-result" class="muted"></div>
   </section>`
+}
+
+function renderProjectRadar(report: ObservationReport): string {
+  const attentionCount = report.projectRadar.filter((project) => project.status === 'needs_attention').length
+  const watchingCount = report.projectRadar.filter((project) => project.status === 'watching').length
+  const unknownCount = report.projectRadar.filter((project) => project.status === 'unknown').length
+  return `<section>
+    <div class="eyebrow">Project Radar</div>
+    <h2 class="mission-title">所有專案都在雷達上</h2>
+    <p class="muted">這裡列出每個 configured repo 或 service；上方仍只挑一件當今日焦點，但不是只觀察一個專案。</p>
+    <div class="status-strip">
+      <div class="status-item"><span class="label">總數</span><strong>${report.projectRadar.length}</strong></div>
+      <div class="status-item"><span class="label">需注意</span><strong>${attentionCount}</strong></div>
+      <div class="status-item"><span class="label">觀察中</span><strong>${watchingCount}</strong></div>
+      <div class="status-item"><span class="label">待補 mapping</span><strong>${unknownCount}</strong></div>
+    </div>
+    <div class="radar-grid">
+      ${report.projectRadar.length === 0 ? '<p class="muted">目前沒有 configured project/service。</p>' : report.projectRadar.map(renderProjectRadarItem).join('')}
+    </div>
+  </section>`
+}
+
+function renderProjectRadarItem(project: ObservationReport['projectRadar'][number]): string {
+  const serviceText = project.services.length === 0
+    ? '沒有 service mapping'
+    : project.services.map((service) => `${service.name}: ${service.healthStatus}`).join(' · ')
+  return `<article class="radar-card ${escapeHtml(project.status)}">
+    <div class="radar-title">
+      <strong>${escapeHtml(project.name)}</strong>
+      <span class="pill ${project.status === 'needs_attention' || project.status === 'watching' ? 'warn' : project.status === 'healthy' ? 'ok' : ''}">${escapeHtml(project.status)}</span>
+    </div>
+    <div class="muted">Repo：${escapeHtml(project.repository ? `${project.repository.exists ? project.repository.branch ?? 'unknown branch' : 'missing'}${project.repository.dirty ? ' · dirty' : ''}` : 'not configured')}</div>
+    <div class="muted">Services：${escapeHtml(serviceText)}</div>
+    <ul class="radar-signals">
+      ${project.signals.slice(0, 4).map((signal) => `<li>${escapeHtml(signal)}</li>`).join('')}
+    </ul>
+    <div class="candidate-action">下一步：${escapeHtml(project.nextObservation)}</div>
+  </article>`
 }
 
 function renderPrimaryCandidate(report: ObservationReport, candidate: ObservationReport['candidates'][number]): string {

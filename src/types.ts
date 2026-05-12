@@ -91,10 +91,23 @@ export interface ObservationReport {
   ruleSources: RuleSourceObservation[]
   repositories: RepositoryObservation[]
   services: ServiceObservation[]
+  projectRadar: ProjectRadarItem[]
   candidates: ObservationCandidate[]
   supplements: UserSupplement[]
   mainAgent: MainAgentBrief
   safety: SafetySummary
+}
+
+export type ProjectRadarStatus = 'needs_attention' | 'watching' | 'healthy' | 'unknown'
+
+export interface ProjectRadarItem {
+  name: string
+  status: ProjectRadarStatus
+  repository?: RepositoryObservation
+  services: ServiceObservation[]
+  candidateIds: string[]
+  signals: string[]
+  nextObservation: string
 }
 
 export interface UserSupplement {

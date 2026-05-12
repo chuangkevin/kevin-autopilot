@@ -270,6 +270,12 @@ When the top signal is only `suspected`, the main recommendation changes to
 `collect-more-evidence` instead of `prepare-read-only-handoff`, so the dashboard
 shows what is missing before claiming a Kevin-quality decision.
 
+v0.5.19 adds `projectRadar` to each observation report. It groups every configured
+repository and service into per-project cards, including repo status, service
+health policy, linked candidates, and the next read-only observation step, so the
+dashboard can show global HomeProject coverage while still focusing on one top
+priority.
+
 The first persisted loop status is `observation-loop-state.json`, which records
 enabled/running state, interval, run count, last run, next run, report paths, and
 last error. This is status telemetry only, not permission to execute changes.

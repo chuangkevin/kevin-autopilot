@@ -74,6 +74,11 @@ v0.5.18 makes the quality gate actionable by recording what evidence is missing
 and what condition would upgrade the signal. Weak suspected candidates are routed
 to evidence collection instead of read-only handoff.
 
+v0.5.19 surfaces the all-project Project Radar from the same read-only signals.
+Each configured repository/service appears on the dashboard with status, linked
+signals, and the next observation step, making it clear that the loop watches the
+whole HomeProject surface even though the command center chooses one focus.
+
 Kevin can add a supplement during or between observation cycles. The supplement
 is stored as Autopilot-owned data and merged into the next cycle as context; it
 does not reset the main task, overwrite the observation backlog, or authorize

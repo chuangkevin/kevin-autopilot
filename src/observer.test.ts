@@ -1,4 +1,6 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { once } from 'node:events'
+import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -40,6 +42,9 @@ test('observe records rule source provenance and disabled service checks', async
     assert.equal(report.ruleSources[0]?.loadedFiles.length, 1)
     assert.deepEqual(report.ruleSources[0]?.missingFiles, ['.env'])
     assert.equal(report.services[0]?.healthStatus, 'disabled')
+    assert.equal(report.projectRadar.length, 1)
+    assert.equal(report.projectRadar[0]?.name, 'Example')
+    assert.equal(report.projectRadar[0]?.status, 'unknown')
     assert.equal(report.candidates.some((candidate) => candidate.category === 'improvement_candidate'), true)
     assert.match(report.candidates[0]?.boundedPrompt ?? '', /Constraints:/)
     assert.equal(report.supplements.length, 0)
@@ -85,6 +90,10 @@ test('observe creates backlog candidates from repo and service signals', async (
     const report = await observe(config)
     assert.equal(report.candidates.some((candidate) => candidate.category === 'improvement_candidate' && candidate.sourceName === 'missing-repo'), true)
     assert.equal(report.candidates.some((candidate) => candidate.category === 'bug_watch' && candidate.sourceName === 'Broken Service'), true)
+    assert.equal(report.projectRadar.length, 2)
+    assert.equal(report.projectRadar.find((project) => project.name === 'missing-repo')?.status, 'needs_attention')
+    assert.equal(report.projectRadar.find((project) => project.name === 'Broken Service')?.status, 'needs_attention')
+    assert.equal(report.projectRadar.every((project) => project.nextObservation.length > 0), true)
     assert.equal(report.candidates.every((candidate) => candidate.boundedPrompt.includes('Required output:')), true)
     assert.equal(report.supplements.length, 1)
     assert.match(report.mainAgent.summary, /先不要碰部署/)
@@ -92,6 +101,42 @@ test('observe creates backlog candidates from repo and service signals', async (
     assert.equal(report.mainAgent.qualityReview.score >= 50, true)
     assert.equal(report.mainAgent.qualityReview.checks.some((check) => check.status === 'pass'), true)
   } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('project radar treats healthy service-only projects as healthy', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'kevin-autopilot-'))
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' })
+    response.end('ok')
+  })
+  try {
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const address = server.address()
+    assert.ok(address && typeof address === 'object' && 'port' in address)
+    const config: AutopilotConfig = {
+      environment: 'test',
+      dataDir: join(root, 'data'),
+      ruleSources: [],
+      repositories: [],
+      services: [
+        {
+          name: 'Healthy Service Only',
+          source: 'test',
+          healthCheck: { enabled: true, url: `http://127.0.0.1:${address.port}/health`, timeoutMs: 1000 },
+        },
+      ],
+    }
+
+    const report = await observe(config)
+    assert.equal(report.projectRadar.length, 1)
+    assert.equal(report.projectRadar[0]?.name, 'Healthy Service Only')
+    assert.equal(report.projectRadar[0]?.status, 'healthy')
+    assert.equal(report.projectRadar[0]?.services[0]?.healthStatus, 'ok')
+  } finally {
+    server.close()
     await rm(root, { recursive: true, force: true })
   }
 })

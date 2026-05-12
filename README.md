@@ -184,6 +184,11 @@ explicit gaps, required evidence, and upgrade conditions, and show a `差在哪`
 section on the dashboard. This prevents dirty-worktree or other weak signals from
 being packaged as implementation-quality work.
 
+Version 0.5.19 adds an all-project Project Radar. The dashboard now shows every
+configured repository/service as a first-class card with status, signals,
+candidate links, and the next read-only observation step, while the command center
+still keeps one focused top priority.
+
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.
 
@@ -260,7 +265,7 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
-v0.5.18 evidence-gap-driven quality review prototype. See `docs/` for architecture,
+v0.5.19 all-project Project Radar prototype. See `docs/` for architecture,
 safety, and OpenCode workflow.
 
 ## Deployment

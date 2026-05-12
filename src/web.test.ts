@@ -82,6 +82,10 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(pageBody.includes('Observation Backlog'), true)
     assert.equal(pageBody.includes('OpenCode prompt'), true)
     assert.equal(pageBody.includes('複製 Prompt'), true)
+    assert.equal(pageBody.includes('Project Radar'), true)
+    assert.equal(pageBody.includes('所有專案都在雷達上'), true)
+    assert.equal(pageBody.includes('不是只觀察一個專案'), true)
+    assert.equal(pageBody.includes('missing-repo'), true)
 
     const loopStatus = await fetch(`${baseUrl}/api/observation-loop`)
     assert.equal(loopStatus.status, 200)
@@ -96,6 +100,8 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(typeof thinkingBody.mainAgent.qualityReview.score, 'number')
     assert.equal(thinkingBody.mainAgent.qualityReview.checks.length > 0, true)
     assert.equal(Array.isArray(thinkingBody.mainAgent.qualityReview.gaps), true)
+    assert.equal(thinkingBody.projectRadar[0].name, 'missing-repo')
+    assert.equal(thinkingBody.projectRadar[0].status, 'needs_attention')
     assert.equal(thinkingBody.note, 'This is an auditable reasoning trace, not private chain-of-thought.')
 
     const settings = await fetch(`${baseUrl}/settings`)
