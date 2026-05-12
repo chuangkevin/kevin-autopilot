@@ -258,6 +258,7 @@ export interface ObservationLoopState {
   lastSuccess?: boolean
   lastError?: string
   lastReportAt?: string
+  lastGraphAt?: string
   lastReportPath?: string
   lastMarkdownPath?: string
 }

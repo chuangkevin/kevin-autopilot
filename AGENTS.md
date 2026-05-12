@@ -25,8 +25,10 @@ existing-project similarity analysis, v0.5.15 read-only background observation
 loop status, v0.5.16 visible auditable thinking trace, v0.5.17 Kevin-style
 thinking quality review, v0.5.18 evidence-gap-driven quality review,
 v0.5.19 all-project Project Radar, v0.5.20 multi-item Priority Board,
-v0.5.21 non-prioritized Observation Workbench, and v0.6.0 Neural Cockpit / idea
-graph that makes Kevin Autopilot feel like a visible read-only double brain.
+v0.5.21 non-prioritized Observation Workbench, v0.6.0 Neural Cockpit / idea
+graph that makes Kevin Autopilot feel like a visible read-only double brain, and
+v0.6.1 background graph refresh with dream behavior treated as metaphor rather
+than a literal keyword.
 Keep these versions read-only: they may observe, classify, report, and store
 Autopilot-owned reports/idea records/supplements, but they must not modify target
 repos, create repos, deploy, commit/push other projects, or perform destructive

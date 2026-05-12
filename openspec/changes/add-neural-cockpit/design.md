@@ -2,7 +2,7 @@
 
 The current Kevin Autopilot home page has grown from a read-only observer into a mixed dashboard: background loop status, project radar, observation workbench, idea cards, thinking trace, and debug tables all compete for attention. Kevin's clarified goal is different: he wants to open Kevin Autopilot like a visible double's brain, even when he does not type anything, and explore what the double is thinking through a neural-network-like map.
 
-The double must feel proactive and personal without pretending to have unsafe autonomy. It can observe configured project signals, remember Autopilot-owned ideas, generate research seeds, dream up electric-sheep-style speculative associations, connect new ideas to existing projects, and produce bounded OpenCode handoffs. It still cannot mutate target repositories, deploy, push, read unmanaged secrets, or perform destructive actions.
+The double must feel proactive and personal without pretending to have unsafe autonomy. It can observe configured project signals, remember Autopilot-owned ideas, generate research seeds, dream up speculative associations, connect new ideas to existing projects, and produce bounded OpenCode handoffs. It still cannot mutate target repositories, deploy, push, read unmanaged secrets, or perform destructive actions.
 
 ## Goals / Non-Goals
 

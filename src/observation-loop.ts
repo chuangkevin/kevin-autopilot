@@ -1,5 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { listIdeas } from './ideas.js'
+import { getIdeaGraph } from './idea-graph.js'
 import { observe, writeReports } from './observer.js'
 import type { AutopilotConfig, ObservationLoopState, ObservationReport } from './types.js'
 
@@ -73,6 +75,7 @@ export class ObservationLoop {
     try {
       const report = await observe(this.config)
       const written = await writeReports(report, this.config.dataDir)
+      await getIdeaGraph(this.config, report, await listIdeas(this.config, 40))
       this.lastReport = report
       this.state = {
         ...this.state,
@@ -81,6 +84,7 @@ export class ObservationLoop {
         lastFinishedAt: new Date().toISOString(),
         lastSuccess: true,
         lastReportAt: report.generatedAt,
+        lastGraphAt: new Date().toISOString(),
         lastReportPath: written.jsonPath,
         lastMarkdownPath: written.markdownPath,
       }

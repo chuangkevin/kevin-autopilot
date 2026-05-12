@@ -299,21 +299,22 @@ function renderPage(
     .command-center { border-color: rgba(245,158,11,0.5); background: radial-gradient(circle at top left, rgba(245,158,11,0.2), transparent 34%), linear-gradient(180deg, rgba(255,255,255,0.09), rgba(255,255,255,0.035)); }
     .neural-cockpit { position: relative; overflow: hidden; border-color: rgba(251,191,36,0.42); background: radial-gradient(circle at 20% 10%, rgba(251,191,36,0.18), transparent 28%), radial-gradient(circle at 80% 18%, rgba(45,212,191,0.13), transparent 26%), linear-gradient(135deg, rgba(41,25,13,0.96), rgba(13,18,20,0.94)); }
     .neural-cockpit::before { content: ""; position: absolute; inset: 0; pointer-events: none; background-image: linear-gradient(rgba(245,234,215,0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(245,234,215,0.035) 1px, transparent 1px); background-size: 34px 34px; mask-image: radial-gradient(circle at center, black, transparent 74%); }
-    .neural-shell { position: relative; display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(290px, 0.75fr); gap: 16px; align-items: stretch; }
-    .neural-stage { position: relative; min-height: 520px; border: 1px solid rgba(251,191,36,0.18); border-radius: 28px; overflow: hidden; background: radial-gradient(circle at center, rgba(251,191,36,0.12), rgba(8,13,25,0.2) 42%, rgba(8,13,25,0.68)); }
+    .neural-shell { position: relative; display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(290px, 0.75fr); gap: 16px; align-items: start; }
+    .neural-stage { position: relative; height: clamp(520px, 62vh, 720px); border: 1px solid rgba(251,191,36,0.18); border-radius: 28px; overflow: hidden; background: radial-gradient(circle at center, rgba(251,191,36,0.12), rgba(8,13,25,0.2) 42%, rgba(8,13,25,0.68)); }
+    .cockpit-panel { max-height: clamp(520px, 62vh, 720px); overflow-y: auto; }
     .neural-map { position: absolute; inset: 0; width: 100%; height: 100%; }
     .neural-edge { stroke: rgba(245,234,215,0.22); stroke-width: 1.4; }
     .neural-edge.strong { stroke: rgba(45,212,191,0.55); stroke-width: 2.2; }
-    .brain-node { position: absolute; transform: translate(-50%, -50%); display: grid; place-items: center; width: clamp(82px, 12vw, 126px); min-height: 72px; border: 1px solid rgba(245,234,215,0.24); border-radius: 26px; padding: 10px; background: rgba(11,9,7,0.74); color: #fef3c7; text-align: center; box-shadow: 0 0 34px rgba(251,191,36,0.14); backdrop-filter: blur(10px); cursor: pointer; transition: transform 160ms ease, border-color 160ms ease, background 160ms ease; }
-    .brain-node:hover, .brain-node.active { transform: translate(-50%, -50%) scale(1.05); border-color: rgba(251,191,36,0.85); background: rgba(42,28,13,0.9); }
-    .brain-node.double { width: clamp(138px, 20vw, 190px); min-height: 104px; border-radius: 999px; background: radial-gradient(circle, rgba(251,191,36,0.28), rgba(11,9,7,0.82)); }
+    .brain-node { position: absolute; z-index: 1; transform: translate(-50%, -50%); display: grid; place-items: center; width: clamp(82px, 12vw, 126px); min-height: 72px; max-height: 132px; overflow: hidden; border: 1px solid rgba(245,234,215,0.24); border-radius: 26px; padding: 10px; background: rgba(11,9,7,0.74); color: #fef3c7; text-align: center; box-shadow: 0 0 34px rgba(251,191,36,0.14); backdrop-filter: blur(10px); cursor: pointer; transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease; }
+    .brain-node:hover, .brain-node.active { z-index: 5; border-color: rgba(251,191,36,0.85); background: rgba(42,28,13,0.94); box-shadow: 0 0 42px rgba(251,191,36,0.36); }
+    .brain-node.double { width: clamp(138px, 20vw, 190px); min-height: 104px; max-height: 160px; border-radius: 999px; background: radial-gradient(circle, rgba(251,191,36,0.28), rgba(11,9,7,0.82)); }
     .brain-node.keyword { border-style: dashed; color: #fde68a; }
     .brain-node.project { color: #bbf7d0; }
     .brain-node.signal { color: #fecaca; }
     .brain-node.research, .brain-node.extension { color: #99f6e4; }
     .brain-node.task { color: #bfdbfe; }
     .node-type { display: block; font: 800 10px/1 ui-monospace, "Cascadia Code", monospace; letter-spacing: 0.12em; text-transform: uppercase; color: #a8a29e; margin-bottom: 5px; }
-    .node-title { display: block; font-weight: 900; line-height: 1.25; overflow-wrap: anywhere; }
+    .node-title { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; font-weight: 900; line-height: 1.25; overflow-wrap: anywhere; }
     .cockpit-panel { border: 1px solid rgba(245,234,215,0.16); border-radius: 24px; padding: 16px; background: rgba(11,9,7,0.72); min-width: 0; }
     .cockpit-panel h2 { font-size: 24px; line-height: 1.18; margin-bottom: 8px; }
     .thought-line { font-size: clamp(18px, 3vw, 26px); line-height: 1.38; color: #fef3c7; }
@@ -402,8 +403,8 @@ function renderPage(
     a.button, button { display: inline-block; text-decoration: none; margin-top: 10px; border: 0; border-radius: 999px; background: #60a5fa; color: #06111f; font-weight: 700; padding: 10px 16px; cursor: pointer; }
     button.secondary { background: rgba(148,163,184,0.2); color: #e5eefc; margin-left: 8px; }
     .idea-desktop { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
-    .idea { display: grid; grid-template-rows: auto 1fr auto; gap: 10px; min-height: 220px; text-decoration: none; color: inherit; border: 1px solid rgba(148,163,184,0.18); border-radius: 18px; padding: 14px; background: radial-gradient(circle at top right, rgba(245,158,11,0.12), transparent 36%), rgba(15,23,42,0.54); transition: border-color 150ms ease, transform 150ms ease, background 150ms ease; }
-    .idea:hover { border-color: rgba(245,158,11,0.62); transform: translateY(-1px); background: radial-gradient(circle at top right, rgba(245,158,11,0.18), transparent 38%), rgba(15,23,42,0.7); }
+    a.idea { display: grid; grid-template-rows: auto 1fr auto; gap: 10px; min-height: 220px; text-decoration: none; color: inherit; border: 1px solid rgba(148,163,184,0.18); border-radius: 18px; padding: 14px; background: radial-gradient(circle at top right, rgba(245,158,11,0.12), transparent 36%), rgba(15,23,42,0.54); transition: border-color 150ms ease, transform 150ms ease, background 150ms ease; }
+    a.idea:hover { border-color: rgba(245,158,11,0.62); transform: translateY(-1px); background: radial-gradient(circle at top right, rgba(245,158,11,0.18), transparent 38%), rgba(15,23,42,0.7); }
     .idea-icon { display: inline-grid; place-items: center; width: 42px; height: 42px; border-radius: 14px; background: rgba(245,158,11,0.16); color: #fde68a; font: 800 20px/1 ui-monospace, "Cascadia Code", monospace; }
     .idea-title { font-weight: 800; font-size: 17px; line-height: 1.35; overflow-wrap: anywhere; }
     .idea-meta { color: #93a4bd; font-size: 13px; margin-top: 4px; overflow-wrap: anywhere; }
@@ -560,6 +561,26 @@ function renderPage(
     setTimeout(() => location.reload(), 700);
   });
 
+  const initialLoopData = JSON.parse(document.getElementById('loop-data')?.textContent || '{}');
+  setInterval(async () => {
+    const status = document.getElementById('graph-refresh-status');
+    try {
+      const response = await fetch('/api/observation-loop', { cache: 'no-store' });
+      if (!response.ok) return;
+      const loop = await response.json();
+      if (status) {
+        status.textContent = loop.running
+          ? '分身正在背景觀察，完成後會自動刷新腦圖。'
+          : '頁面每分鐘會檢查分身腦圖是否長出新節點；有新圖會自動刷新。';
+      }
+      if (loop.lastGraphAt && loop.lastGraphAt !== initialLoopData.lastGraphAt) {
+        location.reload();
+      }
+    } catch {
+      if (status) status.textContent = '暫時讀不到背景狀態；下一分鐘會再試。';
+    }
+  }, 60000);
+
   document.addEventListener('click', async (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
@@ -661,7 +682,7 @@ function renderNeuralCockpit(graph: IdeaGraph, loopState: ObservationLoopState):
   return `<section class="neural-cockpit">
     <div class="eyebrow">Kevin Autopilot Neural Cockpit</div>
     <h2 class="main-action">打開分身的大腦</h2>
-    <p class="plain-answer">我會把想法、關鍵字、專案異常、研究種子，甚至「夢到電子羊」那種半夢半醒的聯想接成一張圖。你可以不輸入，只看我今天長出什麼；也可以點一個節點讓我繼續延伸。</p>
+    <p class="plain-answer">我會把想法、關鍵字、專案異常、研究種子，還有像作夢一樣的半醒聯想接成一張圖。你可以不輸入，只看我今天長出什麼；也可以點一個節點讓我繼續延伸。</p>
     <div class="neural-shell">
       <div class="neural-stage" id="neural-stage" aria-label="Kevin Autopilot neural graph">
         <svg class="neural-map" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
@@ -690,6 +711,7 @@ function renderNeuralCockpit(graph: IdeaGraph, loopState: ObservationLoopState):
           <div class="status-item"><span class="label">關聯</span><strong>${graph.edges.length}</strong></div>
         </div>
         <p class="muted">${escapeHtml(renderLoopPlainStatus(loopState))}</p>
+        <p class="muted" id="graph-refresh-status">頁面每分鐘會檢查分身腦圖是否長出新節點；有新圖會自動刷新。</p>
         <p class="muted">安全邊界：我可以做夢、聯想、觀察、整理、延伸、產生 prompt；但夢不是事實，我也不會自己改 repo、commit、push、部署或讀 secrets。</p>
         <div class="node-drawer" id="node-drawer">
           ${firstNode ? renderSelectedNode(firstNode, graph) : '<p class="muted">目前還沒有節點。</p>'}
@@ -705,6 +727,7 @@ function renderNeuralCockpit(graph: IdeaGraph, loopState: ObservationLoopState):
       <div id="idea-result" class="muted"></div>
     </div>
     <script id="graph-data" type="application/json">${jsonForScript(graph)}</script>
+    <script id="loop-data" type="application/json">${jsonForScript({ lastGraphAt: loopState.lastGraphAt ?? '', lastReportAt: loopState.lastReportAt ?? '' })}</script>
   </section>`
 }
 

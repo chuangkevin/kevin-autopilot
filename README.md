@@ -203,13 +203,19 @@ deciding which one matters most to Kevin.
 Version 0.6.0 replaces the dashboard-first home screen with a graph-first Neural
 Cockpit. Kevin Autopilot now opens like a visible read-only double brain: ideas,
 keywords, existing projects, observation signals, research seeds, dream-like
-"electric sheep" associations, extensions, and OpenCode tasks appear as connected
+speculative associations, extensions, and OpenCode tasks appear as connected
 nodes. Kevin can click a node to see what the double understands, why it connected
 the node, what evidence is missing, and how to extend it. Plain-text idea capture
 remains available, but the page is useful even when Kevin only opens it to see
 what the double thought of today. Dream/research nodes are labeled as speculative
 seeds/planned queries unless evidence or an approved web source is added in a
 later change.
+
+Version 0.6.1 keeps "dreaming" as a capability and metaphor rather than a literal
+keyword. Background observation now refreshes the Autopilot-owned idea graph after
+each run, records `lastGraphAt`, and the open cockpit page checks for graph
+updates every minute so the visible double can continue feeling alive while Kevin
+is away.
 
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.

@@ -1,6 +1,6 @@
 ## Why
 
-Kevin Autopilot currently reads like a dashboard/reporting surface, but Kevin wants to open it like a visible product-engineering double: a living brain that can notice project signals, grow ideas, show associations, dream about "electric sheep" style speculative directions, and invite exploration even when Kevin does not type anything.
+Kevin Autopilot currently reads like a dashboard/reporting surface, but Kevin wants to open it like a visible product-engineering double: a living brain that can notice project signals, grow ideas, show associations, create dream-like speculative directions, and invite exploration even when Kevin does not type anything.
 
 This change reframes the home experience around a neural idea graph so Kevin can quickly see what the double is thinking, which ideas are connected, what can be extended, and which outputs can become safe OpenCode handoffs.
 

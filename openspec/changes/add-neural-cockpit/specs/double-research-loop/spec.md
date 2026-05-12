@@ -15,7 +15,7 @@ Kevin Autopilot SHALL generate Autopilot-owned proactive thought nodes from conf
 Kevin Autopilot SHALL allow dream-like speculative nodes that make the double feel alive, but SHALL distinguish them from evidence-backed project signals.
 
 #### Scenario: Dream node shown in cockpit
-- **WHEN** Kevin Autopilot shows a dream-like speculative idea or electric-sheep-style association
+- **WHEN** Kevin Autopilot shows a dream-like speculative idea or association
 - **THEN** the node is labeled as a dream/research seed and includes why the double imagined it, without claiming it is a verified fact.
 
 #### Scenario: Dream node becomes actionable

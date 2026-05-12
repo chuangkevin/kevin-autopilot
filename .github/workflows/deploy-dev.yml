@@ -12,7 +12,7 @@ env:
   DEPLOY_PATH: D:/GitClone/_HomeProject/kevin-autopilot
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/kevin-autopilot
   IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
-  EXPECTED_APP_VERSION: "0.6.0"
+  EXPECTED_APP_VERSION: "0.6.1"
   HEALTH_URL: http://100.83.112.20:3023/health
   DOMAIN_HEALTH_URL: https://kevin.sisihome.org/health
   TAILSCALE_BIND_ADDR: 100.83.112.20

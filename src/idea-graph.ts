@@ -18,6 +18,7 @@ import type {
 const GRAPH_FILE = 'idea-graph.json'
 const CENTER_NODE_ID = 'double-kevin-autopilot'
 const STOP_WORDS = new Set(['我要', '可以', '現在', '這個', '那個', '一個', '不是', '就是', '沒有', '什麼', 'the', 'and', 'with', 'that'])
+const LEGACY_LITERAL_METAPHOR_PATTERN = /電子羊|electric sheep/i
 
 interface StoredIdeaGraph {
   nodes: IdeaGraphNode[]
@@ -65,7 +66,7 @@ export async function extendIdeaGraphNode(config: AutopilotConfig, report: Obser
     id: `research-${safeId(selected.id)}-${Date.now()}`,
     type: 'research',
     title: `研究種子：${selected.keywords[0] ?? selected.title}`,
-    summary: '這是待搜尋/待研究的方向；可能像分身夢到電子羊一樣先保存聯想，但不代表已經查過網路。',
+    summary: '這是待搜尋/待研究的方向；可能只是分身做夢般的聯想，不代表已經查過網路。',
     source: `research-seed:${selected.id}`,
     confidence: 'weak',
     keywords: selected.keywords.slice(0, 6),
@@ -292,20 +293,16 @@ function makeResearchSeed(keyword: string, now: string): IdeaGraphNode {
   return makeNode({
     id: `research-${safeId(keyword)}`,
     type: 'research',
-    title: keyword === '電子羊' ? '夢到電子羊：分身的半夢半醒聯想' : `想研究：${keyword}`,
-    summary: keyword === '電子羊'
-      ? '這是分身夢境節點：一個擬真的 speculative idea seed，不是已驗證事實。'
-      : `待搜尋/待研究的方向：「${keyword}」。目前只是研究種子，不代表已經查過網路。`,
+    title: `想研究：${keyword}`,
+    summary: `待搜尋/待研究的方向：「${keyword}」。目前只是研究種子或夢境聯想，不代表已經查過網路。`,
     source: 'deterministic-research-seed',
     confidence: 'weak',
     keywords: [keyword],
     relatedProjectNames: [],
     now,
     thinking: {
-      understanding: keyword === '電子羊'
-        ? '我把這個節點當成分身做夢的入口：它可以產生擬真、怪、但可能有價值的聯想。'
-        : `我覺得「${keyword}」可能可以長出新工具、新 prototype 或整合方向。`,
-      whyItMatters: 'Kevin 會常常打開 Autopilot 看有沒有新奇、有用、可取的想法；夢境節點讓分身不只是報告機器。',
+      understanding: `我覺得「${keyword}」可能可以長出新工具、新 prototype 或整合方向；這可以是半夢半醒的聯想，不是事實宣告。`,
+      whyItMatters: 'Kevin 會常常打開 Autopilot 看有沒有新奇、有用、可取的想法；夢境感讓分身不只是報告機器。',
       nextExploration: `之後可以設定 approved web source，再搜尋 ${keyword} 的新工具/agent/實作模式。`,
       evidence: ['由既有 ideas / observation keywords 產生。'],
       missingEvidence: ['尚未進行 public web search。'],
@@ -375,7 +372,7 @@ function recurrentKeywords(ideas: IdeaRecord[], report: ObservationReport): stri
   }
   for (const idea of ideas) extractIdeaKeywords(idea.rawText).forEach(add)
   for (const candidate of report.candidates) extractIdeaKeywords(candidate.title).forEach(add)
-  if (counts.size === 0) ['分身', '電子羊', 'agent', '自動觀察', 'OpenCode', 'prototype'].forEach(add)
+  if (counts.size === 0) ['分身', 'agent', '自動觀察', 'OpenCode', 'prototype', '想法宇宙'].forEach(add)
   return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([keyword]) => keyword)
 }
 
@@ -383,12 +380,21 @@ function mergeGraph(base: StoredIdeaGraph, projected: StoredIdeaGraph): StoredId
   const nodes = new Map<string, IdeaGraphNode>()
   for (const node of [...base.nodes, ...projected.nodes]) {
     if (node.archived || node.ignored) continue
+    if (isLegacyLiteralMetaphorNode(node)) continue
     const existing = nodes.get(node.id)
     nodes.set(node.id, existing ? { ...existing, ...node, createdAt: existing.createdAt } : node)
   }
   const edges = new Map<string, IdeaGraphEdge>()
   for (const edge of [...base.edges, ...projected.edges]) edges.set(edge.id, edges.get(edge.id) ? { ...edges.get(edge.id), ...edge } : edge)
   return { nodes: [...nodes.values()], edges: [...edges.values()].filter((edge) => nodes.has(edge.from) && nodes.has(edge.to)) }
+}
+
+function isLegacyLiteralMetaphorNode(node: IdeaGraphNode): boolean {
+  const isGeneratedNode = node.source === 'deterministic-research-seed'
+    || node.source === 'keyword:電子羊'
+    || node.source.startsWith('extension:')
+    || node.source.startsWith('research-seed:')
+  return isGeneratedNode && LEGACY_LITERAL_METAPHOR_PATTERN.test(JSON.stringify(node))
 }
 
 function toFocusedGraph(graph: StoredIdeaGraph, report: ObservationReport): IdeaGraph {

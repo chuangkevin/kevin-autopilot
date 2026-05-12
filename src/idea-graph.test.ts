@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -69,6 +69,87 @@ test('extending graph node creates read-only research seed without web claims', 
     assert.equal(detail?.node.safety, 'read-only')
     assert.equal(detail?.connectedNodes.some((node) => node.type === 'research'), true)
     assert.equal(JSON.stringify(detail).includes('不代表已經查過網路') || JSON.stringify(detail).includes('未宣稱已搜尋 public web'), true)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('idea graph removes legacy literal metaphor seed nodes on refresh', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-graph-legacy-'))
+  const config: AutopilotConfig = {
+    environment: 'test',
+    dataDir,
+    ruleSources: [],
+    repositories: [],
+    services: [],
+  }
+  try {
+    await writeFile(join(dataDir, 'idea-graph.json'), `${JSON.stringify({
+      nodes: [
+        {
+          id: 'keyword-電子羊',
+          type: 'keyword',
+          title: '電子羊',
+          summary: 'legacy literal keyword',
+          source: 'keyword:電子羊',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+          confidence: 'medium',
+          safety: 'read-only',
+          keywords: ['電子羊'],
+          relatedProjectNames: [],
+          thinking: {
+            understanding: 'legacy',
+            whyItMatters: 'legacy',
+            nextExploration: 'legacy',
+            evidence: [],
+            missingEvidence: [],
+          },
+          actions: [],
+        },
+        {
+          id: 'research-電子羊',
+          type: 'research',
+          title: '夢到電子羊：分身的半夢半醒聯想',
+          summary: 'legacy literal research seed',
+          source: 'deterministic-research-seed',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+          confidence: 'weak',
+          safety: 'read-only',
+          keywords: ['電子羊'],
+          relatedProjectNames: [],
+          thinking: {
+            understanding: 'legacy',
+            whyItMatters: 'legacy',
+            nextExploration: 'legacy',
+            evidence: [],
+            missingEvidence: [],
+          },
+          actions: [],
+        },
+      ],
+      edges: [
+        {
+          id: 'contains_keyword-research-電子羊-keyword-電子羊',
+          type: 'contains_keyword',
+          from: 'research-電子羊',
+          to: 'keyword-電子羊',
+          rationale: 'legacy literal edge',
+          confidence: 'weak',
+          source: 'deterministic-research-seed',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    }, null, 2)}\n`, 'utf8')
+
+    const report = await observe(config)
+    const graph = await getIdeaGraph(config, report, [])
+    const persisted = await readFile(join(dataDir, 'idea-graph.json'), 'utf8')
+
+    assert.equal(JSON.stringify(graph).includes('電子羊'), false)
+    assert.equal(persisted.includes('電子羊'), false)
   } finally {
     await rm(dataDir, { recursive: true, force: true })
   }

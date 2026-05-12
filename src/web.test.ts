@@ -69,7 +69,7 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(pageBody.includes('設定 Gemini Keys'), true)
     assert.equal(pageBody.includes('Kevin Autopilot Neural Cockpit'), true)
     assert.equal(pageBody.includes('打開分身的大腦'), true)
-    assert.equal(pageBody.includes('夢到電子羊'), true)
+    assert.equal(pageBody.includes('像作夢一樣的半醒聯想'), true)
     assert.equal(pageBody.includes('brain-node'), true)
     assert.equal(pageBody.includes('node-drawer'), true)
     assert.equal(pageBody.includes('快速丟一段文字，不必整理格式'), true)
