@@ -45,4 +45,24 @@ function validateConfig(config: Partial<AutopilotConfig>, configPath: string): a
       throw new Error(`backgroundObservation.intervalMs must be at least 60000 in ${configPath}`)
     }
   }
+
+  if (config.webResearch !== undefined && (!config.webResearch || typeof config.webResearch !== 'object' || Array.isArray(config.webResearch))) {
+    throw new Error(`webResearch must be an object in ${configPath}`)
+  }
+
+  if (config.webResearch?.enabled !== undefined && typeof config.webResearch.enabled !== 'boolean') {
+    throw new Error(`webResearch.enabled must be a boolean in ${configPath}`)
+  }
+
+  if (config.webResearch?.maxQueriesPerGraph !== undefined && (!Number.isInteger(config.webResearch.maxQueriesPerGraph) || config.webResearch.maxQueriesPerGraph < 1 || config.webResearch.maxQueriesPerGraph > 5)) {
+    throw new Error(`webResearch.maxQueriesPerGraph must be an integer from 1 to 5 in ${configPath}`)
+  }
+
+  if (config.webResearch?.cacheTtlMs !== undefined && (!Number.isInteger(config.webResearch.cacheTtlMs) || config.webResearch.cacheTtlMs < 60_000)) {
+    throw new Error(`webResearch.cacheTtlMs must be at least 60000 in ${configPath}`)
+  }
+
+  if (config.webResearch?.timeoutMs !== undefined && (!Number.isInteger(config.webResearch.timeoutMs) || config.webResearch.timeoutMs < 1000)) {
+    throw new Error(`webResearch.timeoutMs must be at least 1000 in ${configPath}`)
+  }
 }

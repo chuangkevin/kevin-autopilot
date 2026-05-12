@@ -307,6 +307,12 @@ turns one or two suggested next steps into read-only extension nodes connected
 back to the original idea, so the cockpit visibly grows along Kevin's thoughts
 without requiring an initial manual extend action.
 
+v0.9.0 adds bounded public web research. When `webResearch.enabled` is true, graph
+projection refreshes a small cache of recent-idea DuckDuckGo Instant Answer
+queries, persists findings in `data/web-research.json`, and renders those findings
+as read-only research nodes connected to the originating idea. The feature does
+not scrape arbitrary pages, read secrets, or mutate target repositories.
+
 The first persisted loop status is `observation-loop-state.json`, which records
 enabled/running state, interval, run count, last run, next run, report paths, and
 last error. This is status telemetry only, not permission to execute changes.

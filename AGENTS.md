@@ -32,7 +32,8 @@ than a literal keyword, v0.7.0 Durable Backlog cockpit UI/API actions for
 recurring observation signals, v0.7.1 explicit Neural Cockpit disabled-action
 reasons, v0.8.0 functional Neural Cockpit actions for relationship finding,
 OpenCode prompt copying, interesting marks, and stop-exploring metadata, and
-v0.8.1 automatic idea extension nodes.
+v0.8.1 automatic idea extension nodes, and v0.9.0 bounded public web research
+findings via cached read-only DuckDuckGo Instant Answer queries.
 Keep these versions read-only: they may observe, classify, report, and store
 Autopilot-owned reports/idea records/supplements, but they must not modify target
 repos, create repos, deploy, commit/push other projects, or perform destructive

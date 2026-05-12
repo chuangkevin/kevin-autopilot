@@ -11,6 +11,12 @@
     "enabled": true,
     "intervalMs": 300000
   },
+  "webResearch": {
+    "enabled": true,
+    "maxQueriesPerGraph": 2,
+    "cacheTtlMs": 86400000,
+    "timeoutMs": 8000
+  },
   "ruleSources": [
     {
       "name": "homelab-docs",

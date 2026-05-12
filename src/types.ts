@@ -3,6 +3,7 @@ export interface AutopilotConfig {
   dataDir: string
   ai?: AiConfig
   backgroundObservation?: BackgroundObservationConfig
+  webResearch?: WebResearchConfig
   ruleSources: RuleSourceConfig[]
   repositories: RepositoryConfig[]
   services: ServiceConfig[]
@@ -19,6 +20,13 @@ export interface AiConfig {
   model: string
   timeoutMs?: number
   validateImportedKeys?: boolean
+}
+
+export interface WebResearchConfig {
+  enabled?: boolean
+  maxQueriesPerGraph?: number
+  cacheTtlMs?: number
+  timeoutMs?: number
 }
 
 export interface RuleSourceConfig {

@@ -88,6 +88,42 @@ test('idea graph automatically grows extension nodes from idea next steps', asyn
   }
 })
 
+test('idea graph connects cached public web research findings', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-graph-web-research-'))
+  const originalFetch = globalThis.fetch
+  const config: AutopilotConfig = {
+    environment: 'test',
+    dataDir,
+    webResearch: { enabled: true, maxQueriesPerGraph: 1, cacheTtlMs: 60_000, timeoutMs: 1_000 },
+    ruleSources: [],
+    repositories: [],
+    services: [],
+  }
+  try {
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      Heading: 'Agent cockpit research',
+      AbstractText: 'Agent cockpit systems help operators inspect autonomous agent plans and evidence.',
+      AbstractURL: 'https://example.com/agent-cockpit',
+      RelatedTopics: [],
+    }), { status: 200, headers: { 'content-type': 'application/json' } })
+    const idea = await createIdea(config, 'agent cockpit 要會自己研究和上網搜尋')
+    const report = await observe(config)
+    const graph = await getIdeaGraph(config, report, [idea])
+    const ideaNode = graph.nodes.find((node) => node.type === 'idea' && node.source === `idea:${idea.id}`)
+    const findingNode = graph.nodes.find((node) => node.type === 'research' && node.source.startsWith('web-research:'))
+
+    assert.ok(ideaNode)
+    assert.ok(findingNode)
+    assert.match(findingNode.title, /網路發現/)
+    assert.equal(findingNode.safety, 'read-only')
+    assert.equal(findingNode.thinking.evidence.some((entry) => entry.includes('DuckDuckGo Instant Answer')), true)
+    assert.equal(graph.edges.some((edge) => edge.from === ideaNode.id && edge.to === findingNode.id && edge.source.startsWith('web-research:')), true)
+  } finally {
+    globalThis.fetch = originalFetch
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
 test('extending graph node creates read-only research seed without web claims', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-graph-extend-'))
   const config: AutopilotConfig = {

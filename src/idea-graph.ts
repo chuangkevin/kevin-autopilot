@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { effectiveStatus, listBacklog, openBacklogDatabase } from './backlog.js'
+import { refreshWebResearch, type WebResearchFinding, type WebResearchSeed } from './web-research.js'
 import type {
   AutopilotConfig,
   BacklogItem,
@@ -32,7 +33,8 @@ interface StoredIdeaGraph {
 export async function getIdeaGraph(config: AutopilotConfig, report: ObservationReport, ideas: IdeaRecord[]): Promise<IdeaGraph> {
   const stored = await loadStoredGraph(config)
   const backlogLookup = loadBacklogLookup(config)
-  const graph = mergeGraph(stored, createProjectedGraph(config, report, ideas, backlogLookup))
+  const webFindings = await refreshWebResearch(config, makeWebResearchSeeds(ideas))
+  const graph = mergeGraph(stored, createProjectedGraph(config, report, ideas, backlogLookup, webFindings))
   await saveStoredGraph(config, graph)
   return toFocusedGraph(graph, report)
 }
@@ -196,6 +198,7 @@ function createProjectedGraph(
   report: ObservationReport,
   ideas: IdeaRecord[],
   backlogLookup: Map<string, BacklogItem> = new Map(),
+  webFindings: WebResearchFinding[] = [],
 ): StoredIdeaGraph {
   const now = new Date().toISOString()
   const nowDate = new Date(now)
@@ -294,7 +297,28 @@ function createProjectedGraph(
     edges.push(makeEdge(research.id, `keyword-${safeId(keyword)}`, 'contains_keyword', `研究種子連到關鍵字「${keyword}」。`, 'weak', 'deterministic-research-seed', now))
   }
 
+  for (const finding of webFindings.slice(0, 10)) {
+    const findingNode = makeWebFindingNode(finding)
+    nodes.push(findingNode)
+    if (nodes.some((node) => node.id === finding.seedNodeId)) {
+      edges.push(makeEdge(finding.seedNodeId, findingNode.id, 'can_research', '分身已用公開網路查詢補了一個 research finding。', 'medium', `web-research:${finding.id}`, finding.fetchedAt))
+    }
+    for (const keyword of finding.keywords.slice(0, 2)) {
+      nodes.push(makeKeywordNode(keyword, finding.fetchedAt))
+      edges.push(makeEdge(findingNode.id, `keyword-${safeId(keyword)}`, 'contains_keyword', `網路 finding 提到「${keyword}」。`, 'weak', `web-research:${finding.id}`, finding.fetchedAt))
+    }
+  }
+
   return { nodes, edges }
+}
+
+function makeWebResearchSeeds(ideas: IdeaRecord[]): WebResearchSeed[] {
+  return ideas.slice(0, 8).map((idea) => ({
+    id: idea.id,
+    nodeId: `idea-${safeId(idea.id)}`,
+    title: idea.title,
+    keywords: extractIdeaKeywords(idea.rawText),
+  }))
 }
 
 function makeCenterNode(report: ObservationReport, ideas: IdeaRecord[], now: string): IdeaGraphNode {
@@ -417,6 +441,27 @@ function makeResearchSeed(keyword: string, now: string): IdeaGraphNode {
       nextExploration: `之後可以設定 approved web source，再搜尋 ${keyword} 的新工具/agent/實作模式。`,
       evidence: ['由既有 ideas / observation keywords 產生。'],
       missingEvidence: ['尚未進行 public web search。'],
+    },
+  })
+}
+
+function makeWebFindingNode(finding: WebResearchFinding): IdeaGraphNode {
+  return makeNode({
+    id: `research-${safeId(finding.id)}`,
+    type: 'research',
+    title: `網路發現：${finding.title}`,
+    summary: finding.summary.length > 220 ? `${finding.summary.slice(0, 217)}...` : finding.summary,
+    source: `web-research:${finding.id}`,
+    confidence: finding.url ? 'medium' : 'weak',
+    keywords: finding.keywords,
+    relatedProjectNames: [],
+    now: finding.fetchedAt,
+    thinking: {
+      understanding: `這是分身針對「${finding.query}」做的公開網路 read-only 查詢摘要。`,
+      whyItMatters: 'Kevin 要的分身不能只順著話長節點，也要補外部線索，讓想法有可查證的研究素材。',
+      nextExploration: finding.url ? `打開來源確認內容是否真的適合 Kevin：${finding.url}` : '換更具體的關鍵字重新搜尋。',
+      evidence: [`查詢：${finding.query}`, `來源：${finding.sourceName}`, finding.url ? `URL: ${finding.url}` : '搜尋 API 未回傳可引用 URL'],
+      missingEvidence: finding.url ? [] : ['需要更具體查詢或其他 approved web source。'],
     },
   })
 }

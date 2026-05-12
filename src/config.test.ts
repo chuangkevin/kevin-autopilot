@@ -69,3 +69,21 @@ test('loadConfig validates background observation object type', async () => {
     await rm(root, { recursive: true, force: true })
   }
 })
+
+test('loadConfig validates web research settings', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-config-'))
+  const path = join(dir, 'config.json')
+  try {
+    await writeFile(path, JSON.stringify({
+      environment: 'test',
+      dataDir: dir,
+      webResearch: { enabled: 'yes' },
+      ruleSources: [],
+      repositories: [],
+      services: [],
+    }), 'utf8')
+    await assert.rejects(() => loadConfig(path), /webResearch.enabled must be a boolean/)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
