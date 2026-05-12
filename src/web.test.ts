@@ -103,6 +103,8 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(pageBody.includes('Snooze 7 天'), true)
     assert.equal(pageBody.includes('這裡不是重要性排名'), true)
     assert.equal(pageBody.includes('Priority Board'), false)
+    assert.equal(pageBody.includes('尚未開放關聯搜尋'), true)
+    assert.equal(pageBody.includes('缺 prompt 或證據太弱'), true)
     assert.equal(pageBody.includes('打開分身的大腦'), true)
     assert.equal(pageBody.includes('像作夢一樣的半醒聯想'), true)
     assert.equal(pageBody.includes('brain-node'), true)

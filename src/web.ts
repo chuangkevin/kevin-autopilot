@@ -423,6 +423,8 @@ function renderPage(
     .node-drawer { display: grid; gap: 10px; margin-top: 12px; }
     .node-actions { display: flex; flex-wrap: wrap; gap: 8px; }
     .node-actions button:disabled { opacity: 0.44; cursor: not-allowed; }
+    .node-action-disabled { display: inline-flex; flex-direction: column; gap: 2px; border-radius: 999px; padding: 8px 13px; background: rgba(148,163,184,0.12); color: #94a3b8; font-weight: 700; }
+    .node-action-disabled small { font-size: 11px; font-weight: 600; color: #64748b; }
     .capture-strip { position: relative; margin-top: 16px; border: 1px solid rgba(251,191,36,0.2); border-radius: 22px; padding: 14px; background: rgba(11,9,7,0.56); }
     .capture-strip textarea { min-height: 86px; background: rgba(0,0,0,0.2); }
     .command-grid, .focus-grid { display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(280px, 0.82fr); gap: 16px; align-items: start; }
@@ -837,6 +839,21 @@ function renderPage(
     return '<div class="evidence-box"><strong>' + htmlEscape(title) + '</strong>' + rows + '</div>';
   }
 
+  function renderBrowserNodeAction(nodeId, action) {
+    if (action.enabled) {
+      return '<button type="button" class="secondary node-action" data-action="' + htmlEscape(action.id) + '" data-node-id="' + htmlEscape(nodeId) + '">' + htmlEscape(action.label) + '</button>';
+    }
+    return '<span class="node-action-disabled" title="' + htmlEscape(action.description) + '">' + htmlEscape(action.label) + '<small>' + htmlEscape(nodeActionDisabledReason(action.id)) + '</small></span>';
+  }
+
+  function nodeActionDisabledReason(actionId) {
+    if (actionId === 'copy-opencode-prompt') return '缺 prompt 或證據太弱';
+    if (actionId === 'find-relationships') return '尚未開放關聯搜尋';
+    if (actionId === 'mark-interesting') return '尚未開放持久標記';
+    if (actionId === 'stop-exploring') return '尚未開放隱藏/降權';
+    return '尚未開放';
+  }
+
   function renderNodeDrawer(detail) {
     const drawer = document.getElementById('node-drawer');
     const thought = document.getElementById('node-understanding');
@@ -845,7 +862,7 @@ function renderPage(
     if (thought) thought.textContent = node.thinking.understanding;
     const keywordHtml = node.keywords.length === 0 ? '<span class="muted">尚未抽到關鍵字</span>' : node.keywords.map((keyword) => '<span class="pill">' + htmlEscape(keyword) + '</span>').join('');
     const connectedHtml = detail.connectedNodes.length === 0 ? '<p class="muted">目前沒有相連節點。</p>' : '<div class="workbench-meta">' + detail.connectedNodes.slice(0, 6).map((item) => '<span class="pill">' + htmlEscape(item.title) + '</span>').join('') + '</div>';
-    const actionHtml = node.actions.map((action) => '<button type="button" class="secondary node-action" data-action="' + htmlEscape(action.id) + '" data-node-id="' + htmlEscape(node.id) + '" ' + (action.enabled ? '' : 'disabled') + '>' + htmlEscape(action.label) + '</button>').join('');
+    const actionHtml = node.actions.map((action) => renderBrowserNodeAction(node.id, action)).join('');
     const promptHtml = node.prompt ? '<details><summary>OpenCode prompt</summary><button type="button" class="secondary copy-prompt">複製 Prompt</button><span class="copy-status" aria-live="polite"></span><pre>' + htmlEscape(node.prompt) + '</pre></details>' : '';
     const evidenceHtml = node.thinking.evidence.length === 0 ? '<p class="muted">目前沒有證據。</p>' : '<ul class="radar-signals">' + node.thinking.evidence.slice(0, 4).map((item) => '<li>' + htmlEscape(item) + '</li>').join('') + '</ul>';
     const missingHtml = node.thinking.missingEvidence.length === 0 ? '<p class="muted">目前沒有明確缺口。</p>' : '<ul class="radar-signals">' + node.thinking.missingEvidence.slice(0, 4).map((item) => '<li>' + htmlEscape(item) + '</li>').join('') + '</ul>';
@@ -1034,9 +1051,24 @@ function renderSelectedNode(node: IdeaGraphNode, graph: IdeaGraph): string {
     ${node.thinking.missingEvidence.length === 0 ? '<p class="muted">目前沒有明確缺口。</p>' : `<ul class="radar-signals">${node.thinking.missingEvidence.slice(0, 4).map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`}
   </div>
   <div class="node-actions">
-    ${node.actions.map((action) => `<button type="button" class="secondary node-action" data-action="${escapeHtml(action.id)}" data-node-id="${escapeHtml(node.id)}" ${action.enabled ? '' : 'disabled'}>${escapeHtml(action.label)}</button>`).join('')}
+    ${node.actions.map((action) => renderNodeAction(node.id, action)).join('')}
   </div>
   ${node.prompt ? `<details><summary>OpenCode prompt</summary><button type="button" class="secondary copy-prompt">複製 Prompt</button><span class="copy-status" aria-live="polite"></span><pre>${escapeHtml(node.prompt)}</pre></details>` : ''}`
+}
+
+function renderNodeAction(nodeId: string, action: IdeaGraphNode['actions'][number]): string {
+  if (action.enabled) {
+    return `<button type="button" class="secondary node-action" data-action="${escapeHtml(action.id)}" data-node-id="${escapeHtml(nodeId)}">${escapeHtml(action.label)}</button>`
+  }
+  return `<span class="node-action-disabled" title="${escapeHtml(action.description)}">${escapeHtml(action.label)}<small>${escapeHtml(nodeActionDisabledReason(action.id))}</small></span>`
+}
+
+function nodeActionDisabledReason(actionId: IdeaGraphNode['actions'][number]['id']): string {
+  if (actionId === 'copy-opencode-prompt') return '缺 prompt 或證據太弱'
+  if (actionId === 'find-relationships') return '尚未開放關聯搜尋'
+  if (actionId === 'mark-interesting') return '尚未開放持久標記'
+  if (actionId === 'stop-exploring') return '尚未開放隱藏/降權'
+  return '尚未開放'
 }
 
 function createGraphLayout(graph: IdeaGraph): Map<string, { x: number; y: number }> {

@@ -225,6 +225,11 @@ and snooze, resolve, or dismiss a row inline; those actions only mutate
 `data/autopilot.db` metadata and never touch target repositories, commits, pushes,
 deployments, or secrets.
 
+Version 0.7.1 clarifies Neural Cockpit node actions. Implemented actions stay as
+clickable buttons, while planned-but-not-yet-implemented actions are shown as
+disabled chips with the reason, such as missing prompt/evidence or not-yet-open
+relationship search.
+
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.
 
@@ -301,7 +306,7 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
-v0.7.0 Durable Backlog cockpit prototype. See `docs/` for architecture, safety,
+v0.7.1 Durable Backlog cockpit prototype. See `docs/` for architecture, safety,
 and OpenCode workflow.
 
 ## Deployment
