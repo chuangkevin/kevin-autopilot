@@ -209,6 +209,43 @@ test('visible graph excludes keyword vocabulary nodes and boring research seeds'
   }
 })
 
+test('visible graph hides legacy noisy deterministic research nodes', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-graph-legacy-noisy-research-'))
+  const config: AutopilotConfig = {
+    environment: 'test',
+    dataDir,
+    ruleSources: [],
+    repositories: [],
+    services: [],
+  }
+  try {
+    await writeFile(join(dataDir, 'idea-graph.json'), JSON.stringify({
+      nodes: [{
+        id: 'research-uncommitted',
+        type: 'research',
+        title: '想研究：uncommitted',
+        summary: 'legacy noisy node',
+        source: 'deterministic-research-seed',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        confidence: 'weak',
+        safety: 'read-only',
+        keywords: ['uncommitted'],
+        relatedProjectNames: [],
+        thinking: { understanding: '', whyItMatters: '', nextExploration: '', evidence: [], missingEvidence: [] },
+        actions: [],
+      }],
+      edges: [],
+    }), 'utf8')
+    const report = await observe(config)
+    const graph = await getIdeaGraph(config, report, [])
+
+    assert.equal(graph.nodes.some((node) => node.id === 'research-uncommitted'), false)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
 test('interesting idea feedback prioritizes related research nodes', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-graph-interest-feedback-'))
   const config: AutopilotConfig = {

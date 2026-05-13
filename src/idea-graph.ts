@@ -739,7 +739,7 @@ function toFocusedGraph(graph: StoredIdeaGraph, report: ObservationReport): Idea
   const centerId = center?.id ?? CENTER_NODE_ID
   const feedback = graphFeedbackProfile(graph)
   const prioritized = graph.nodes
-    .filter((node) => !node.archived && !node.ignored && node.type !== 'keyword')
+    .filter((node) => !node.archived && !node.ignored && node.type !== 'keyword' && !isNoisyResearchNode(node))
     .sort((a, b) => nodeWeight(b, centerId, feedback) - nodeWeight(a, centerId, feedback) || b.updatedAt.localeCompare(a.updatedAt))
     .slice(0, 28)
   const visibleIds = new Set(prioritized.map((node) => node.id))
@@ -769,6 +769,12 @@ function feedbackWeight(node: IdeaGraphNode, feedback: GraphFeedbackProfile): nu
   const keywordMatches = node.keywords.filter((keyword) => feedback.keywords.has(keyword.toLowerCase())).length
   const projectMatches = node.relatedProjectNames.filter((project) => feedback.projectNames.has(project.toLowerCase())).length
   return Math.min(keywordMatches * 6, 18) + Math.min(projectMatches * 6, 12)
+}
+
+function isNoisyResearchNode(node: IdeaGraphNode): boolean {
+  return node.type === 'research'
+    && node.source === 'deterministic-research-seed'
+    && node.keywords.some((keyword) => !isResearchWorthyKeyword(keyword))
 }
 
 async function loadStoredGraph(config: AutopilotConfig): Promise<StoredIdeaGraph> {

@@ -267,6 +267,9 @@ Version 0.9.5 removes visible keyword vocabulary nodes from the cockpit graph,
 filters low-value repo/status tokens out of deterministic research seeds, and
 reframes research seeds as world-discovery leads instead of word cards.
 
+Version 0.9.6 also hides legacy noisy deterministic research seeds already stored
+in the graph, so old repo/status-token cards do not survive upgrades.
+
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.
 
@@ -343,7 +346,7 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
-v0.9.5 Neural Cockpit web-research prototype. See `docs/` for architecture, safety,
+v0.9.6 Neural Cockpit web-research prototype. See `docs/` for architecture, safety,
 and OpenCode workflow.
 
 ## Deployment
