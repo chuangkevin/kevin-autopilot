@@ -263,6 +263,10 @@ Version 0.9.4 starts using Kevin's graph feedback as a quality loop: marked
 interesting keywords and project links now lift related graph nodes and steer the
 limited web-research query budget toward matching ideas.
 
+Version 0.9.5 removes visible keyword vocabulary nodes from the cockpit graph,
+filters low-value repo/status tokens out of deterministic research seeds, and
+reframes research seeds as world-discovery leads instead of word cards.
+
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.
 
@@ -339,7 +343,7 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
-v0.9.4 Neural Cockpit web-research prototype. See `docs/` for architecture, safety,
+v0.9.5 Neural Cockpit web-research prototype. See `docs/` for architecture, safety,
 and OpenCode workflow.
 
 ## Deployment

@@ -22,7 +22,8 @@ import type {
 
 const GRAPH_FILE = 'idea-graph.json'
 const CENTER_NODE_ID = 'double-kevin-autopilot'
-const STOP_WORDS = new Set(['我要', '可以', '現在', '這個', '那個', '一個', '不是', '就是', '沒有', '什麼', 'the', 'and', 'with', 'that'])
+const STOP_WORDS = new Set(['我要', '可以', '現在', '這個', '那個', '一個', '不是', '就是', '沒有', '什麼', 'the', 'and', 'with', 'that', 'for', 'safe'])
+const BORING_RESEARCH_KEYWORDS = new Set(['autopilot', 'docs', 'doc', 'work', 'homelab', 'uncommitted', 'kevin', 'repo', 'git'])
 const LEGACY_LITERAL_METAPHOR_PATTERN = /電子羊|electric sheep/i
 
 interface StoredIdeaGraph {
@@ -303,11 +304,13 @@ function createProjectedGraph(
     }
   }
 
-  for (const keyword of recurrentKeywords(ideas, report).filter((keyword) => !isSuppressedKeyword(keyword, suppressedKeywords)).slice(0, 6)) {
+  for (const keyword of recurrentKeywords(ideas, report)
+    .filter((keyword) => !isSuppressedKeyword(keyword, suppressedKeywords) && isResearchWorthyKeyword(keyword))
+    .slice(0, 4)) {
     nodes.push(makeKeywordNode(keyword, now))
     const research = makeResearchSeed(keyword, now)
     nodes.push(research)
-    edges.push(makeEdge(CENTER_NODE_ID, research.id, 'can_research', `分身想繼續研究「${keyword}」。`, 'weak', 'deterministic-research-seed', now))
+    edges.push(makeEdge(CENTER_NODE_ID, research.id, 'can_research', `分身想找世界上跟「${keyword}」有關的有趣案例。`, 'weak', 'deterministic-research-seed', now))
     edges.push(makeEdge(research.id, `keyword-${safeId(keyword)}`, 'contains_keyword', `研究種子連到關鍵字「${keyword}」。`, 'weak', 'deterministic-research-seed', now))
   }
 
@@ -446,17 +449,17 @@ function makeResearchSeed(keyword: string, now: string): IdeaGraphNode {
   return makeNode({
     id: `research-${safeId(keyword)}`,
     type: 'research',
-    title: `想研究：${keyword}`,
-    summary: `待搜尋/待研究的方向：「${keyword}」。目前只是研究種子或夢境聯想，不代表已經查過網路。`,
+    title: `世界線索：${keyword}`,
+    summary: `找一個世界上正在發生、能讓 Kevin 產生新想法的「${keyword}」案例；不是背單字，也不是 repo token。`,
     source: 'deterministic-research-seed',
     confidence: 'weak',
     keywords: [keyword],
     relatedProjectNames: [],
     now,
     thinking: {
-      understanding: `我覺得「${keyword}」可能可以長出新工具、新 prototype 或整合方向；這可以是半夢半醒的聯想，不是事實宣告。`,
-      whyItMatters: 'Kevin 會常常打開 Autopilot 看有沒有新奇、有用、可取的想法；夢境感讓分身不只是報告機器。',
-      nextExploration: `之後可以設定 approved web source，再搜尋 ${keyword} 的新工具/agent/實作模式。`,
+      understanding: `我把「${keyword}」當成一個通往外部世界案例的入口，而不是要 Kevin 記住的詞。`,
+      whyItMatters: 'Kevin 要的是世界上有趣的事情和可偷學的模式，不是一堆英文碎詞。',
+      nextExploration: `找 ${keyword} 相關的真實產品、研究、怪案例或反直覺用法。`,
       evidence: ['由既有 ideas / observation keywords 產生。'],
       missingEvidence: ['尚未進行 public web search。'],
     },
@@ -690,6 +693,11 @@ function recurrentKeywords(ideas: IdeaRecord[], report: ObservationReport): stri
   return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([keyword]) => keyword)
 }
 
+function isResearchWorthyKeyword(keyword: string): boolean {
+  const normalized = keyword.toLowerCase()
+  return normalized.length >= 4 && !STOP_WORDS.has(normalized) && !BORING_RESEARCH_KEYWORDS.has(normalized) && !/^\d+$/.test(normalized)
+}
+
 function mergeGraph(base: StoredIdeaGraph, projected: StoredIdeaGraph): StoredIdeaGraph {
   const nodes = new Map<string, IdeaGraphNode>()
   const hiddenBaseIds = new Set(base.nodes.filter((node) => node.archived || node.ignored).map((node) => node.id))
@@ -731,7 +739,7 @@ function toFocusedGraph(graph: StoredIdeaGraph, report: ObservationReport): Idea
   const centerId = center?.id ?? CENTER_NODE_ID
   const feedback = graphFeedbackProfile(graph)
   const prioritized = graph.nodes
-    .filter((node) => !node.archived && !node.ignored)
+    .filter((node) => !node.archived && !node.ignored && node.type !== 'keyword')
     .sort((a, b) => nodeWeight(b, centerId, feedback) - nodeWeight(a, centerId, feedback) || b.updatedAt.localeCompare(a.updatedAt))
     .slice(0, 28)
   const visibleIds = new Set(prioritized.map((node) => node.id))

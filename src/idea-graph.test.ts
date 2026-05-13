@@ -47,7 +47,8 @@ test('idea graph persists nodes and explains relationships', async () => {
     assert.equal(graph.nodes.some((node) => node.type === 'double' && node.title === 'Kevin Autopilot'), true)
     assert.equal(graph.nodes.some((node) => node.type === 'idea' && node.source === `idea:${idea.id}`), true)
     assert.equal(graph.nodes.some((node) => node.type === 'project' && node.title === 'kevin-autopilot'), true)
-    assert.equal(graph.edges.some((edge) => edge.type === 'contains_keyword' && edge.rationale.includes('關鍵字')), true)
+    assert.equal(graph.nodes.some((node) => node.type === 'keyword'), false)
+    assert.equal(graph.edges.some((edge) => edge.type === 'extends' || edge.type === 'resembles_project'), true)
 
     const ideaNode = graph.nodes.find((node) => node.type === 'idea')
     assert.ok(ideaNode)
@@ -187,7 +188,7 @@ test('graph node actions can mark interesting, find relationships, create prompt
   }
 })
 
-test('stopped keyword nodes suppress future keyword research projections', async () => {
+test('visible graph excludes keyword vocabulary nodes and boring research seeds', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-graph-suppress-keyword-'))
   const config: AutopilotConfig = {
     environment: 'test',
@@ -197,23 +198,18 @@ test('stopped keyword nodes suppress future keyword research projections', async
     services: [],
   }
   try {
-    const idea = await createIdea(config, 'git agent workflow cockpit')
+    const idea = await createIdea(config, 'git docs work safe for homelab agent workflow cockpit')
     const report = await observe(config)
     const graph = await getIdeaGraph(config, report, [idea])
-    const gitKeyword = graph.nodes.find((node) => node.type === 'keyword' && node.title === 'git')
-    assert.ok(gitKeyword)
 
-    await stopExploringIdeaGraphNode(config, report, [idea], gitKeyword.id)
-    const refreshed = await getIdeaGraph(config, report, [idea])
-
-    assert.equal(refreshed.nodes.some((node) => node.id === gitKeyword.id), false)
-    assert.equal(refreshed.nodes.some((node) => node.type === 'research' && node.keywords.includes('git')), false)
+    assert.equal(graph.nodes.some((node) => node.type === 'keyword'), false)
+    assert.equal(graph.nodes.some((node) => node.type === 'research' && node.keywords.some((keyword) => ['git', 'docs', 'work', 'safe', 'for', 'homelab'].includes(keyword))), false)
   } finally {
     await rm(dataDir, { recursive: true, force: true })
   }
 })
 
-test('interesting keyword feedback prioritizes related research nodes', async () => {
+test('interesting idea feedback prioritizes related research nodes', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-graph-interest-feedback-'))
   const config: AutopilotConfig = {
     environment: 'test',
@@ -223,14 +219,14 @@ test('interesting keyword feedback prioritizes related research nodes', async ()
     services: [],
   }
   try {
-    const ideaA = await createIdea(config, 'agent cockpit reference')
-    const ideaB = await createIdea(config, 'zebra workflow reference')
+    const ideaA = await createIdea(config, 'agent lens')
+    const ideaB = await createIdea(config, 'zebra lens')
     const report = await observe(config)
     const graph = await getIdeaGraph(config, report, [ideaA, ideaB])
-    const zebraKeyword = graph.nodes.find((node) => node.type === 'keyword' && node.title === 'zebra')
-    assert.ok(zebraKeyword)
+    const zebraIdea = graph.nodes.find((node) => node.type === 'idea' && node.source === `idea:${ideaB.id}`)
+    assert.ok(zebraIdea)
 
-    await markIdeaGraphNodeInteresting(config, report, [ideaA, ideaB], zebraKeyword.id)
+    await markIdeaGraphNodeInteresting(config, report, [ideaA, ideaB], zebraIdea.id)
     const refreshed = await getIdeaGraph(config, report, [ideaA, ideaB])
     const zebraResearchIndex = refreshed.nodes.findIndex((node) => node.id === 'research-zebra')
     const agentResearchIndex = refreshed.nodes.findIndex((node) => node.id === 'research-agent')
@@ -270,9 +266,9 @@ test('interesting idea feedback spends limited web research on matching ideas', 
     const ideaB = await createIdea(config, 'zebra workflow reference')
     const report = await observe(config)
     const graph = await getIdeaGraph(config, report, [ideaA, ideaB])
-    const zebraKeyword = graph.nodes.find((node) => node.type === 'keyword' && node.title === 'zebra')
-    assert.ok(zebraKeyword)
-    await markIdeaGraphNodeInteresting(config, report, [ideaA, ideaB], zebraKeyword.id)
+    const zebraIdea = graph.nodes.find((node) => node.type === 'idea' && node.source === `idea:${ideaB.id}`)
+    assert.ok(zebraIdea)
+    await markIdeaGraphNodeInteresting(config, report, [ideaA, ideaB], zebraIdea.id)
 
     requestedUrls.length = 0
     await getIdeaGraph(config, report, [ideaA, ideaB])
