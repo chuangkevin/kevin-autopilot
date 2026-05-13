@@ -68,15 +68,15 @@ export async function extendIdeaGraphNode(config: AutopilotConfig, report: Obser
   if (!selected) return undefined
 
   const now = new Date().toISOString()
-  const extensionKeywords = selected.keywords.slice(0, 6)
-  const extensionTitle = `延伸：${selected.title}`
-  const proposedId = extensionId(selected.id, extensionTitle, extensionKeywords)
-
   const childExtensions = graph.nodes.filter((node) => node.type === 'extension' && node.source === `extension:${selected.id}`)
-  const matchingChild = childExtensions.find((node) => node.id === proposedId)
-  let targetExtensionId = proposedId
+  const continuation = makeContinuation(selected, childExtensions.length)
+  const extensionKeywords = extractIdeaKeywords(`${selected.title} ${continuation.summary}`)
+    .filter((keyword) => !BORING_RESEARCH_KEYWORDS.has(keyword.toLowerCase()))
+    .slice(0, 6)
+  const extensionTitle = `延伸 ${Math.min(childExtensions.length + 1, EXTENSION_PARENT_CAP)}：${shortTitle(continuation.title)}`
+  let targetExtensionId = extensionId(selected.id, extensionTitle, extensionKeywords)
 
-  if (!matchingChild && childExtensions.length >= EXTENSION_PARENT_CAP) {
+  if (childExtensions.length >= EXTENSION_PARENT_CAP) {
     const fallback = pickClosestExtensionByKeywords(childExtensions, extensionKeywords)
       ?? [...childExtensions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
     if (!fallback) return undefined
@@ -94,41 +94,66 @@ export async function extendIdeaGraphNode(config: AutopilotConfig, report: Obser
     relatedProjectNames: selected.relatedProjectNames,
     now,
     thinking: {
-      understanding: `我把「${selected.title}」當成一個可繼續想像的節點，而不是立刻要做的任務。`,
-      whyItMatters: 'Kevin 想快速看到關鍵字、關聯和延伸；這個節點先保存分身的新聯想。',
-      nextExploration: '下一輪可以找更多關聯，或把它收斂成 research seed / prototype / OpenCode prompt。',
+      understanding: continuation.understanding,
+      whyItMatters: continuation.whyItMatters,
+      nextExploration: continuation.summary,
       evidence: [`來源節點：${selected.title}`, `節點類型：${selected.type}`],
-      missingEvidence: ['還沒有外部研究來源；目前只是 Autopilot-owned 延伸節點。'],
+      missingEvidence: continuation.missingEvidence,
     },
   })
   const extensionNode: IdeaGraphNode = { ...baseExtensionNode, seenCount: 1, lastSeenAt: now }
-  const researchNode = makeNode({
-    id: `research-${safeId(selected.id)}-${stableHash6(`research:${selected.id}:${selected.keywords[0] ?? selected.title}`)}`,
-    type: 'research',
-    title: `研究種子：${selected.keywords[0] ?? selected.title}`,
-    summary: '這是待搜尋/待研究的方向；可能只是分身做夢般的聯想，不代表已經查過網路。',
-    source: `research-seed:${selected.id}`,
-    confidence: 'weak',
-    keywords: selected.keywords.slice(0, 6),
-    relatedProjectNames: selected.relatedProjectNames,
-    now,
-    thinking: {
-      understanding: '這個研究節點是分身想查的新方向。',
-      whyItMatters: 'Kevin 常常只是想打開來看有沒有可取的新想法，所以先把可研究問題留在圖上。',
-      nextExploration: `之後可搜尋：${selected.keywords.slice(0, 3).join(' ') || selected.title}`,
-      evidence: ['由本機 graph extension 產生，未宣稱已搜尋 public web。'],
-      missingEvidence: ['需要設定 approved web source 後才可變成 fetched finding。'],
-    },
-  })
   const nextGraph = mergeGraph(graph, {
-    nodes: [extensionNode, researchNode],
+    nodes: [extensionNode],
     edges: [
-      makeEdge(selected.id, extensionNode.id, 'extends', '從選取節點延伸出的新想法。', 'medium', `extension:${selected.id}`, now),
-      makeEdge(extensionNode.id, researchNode.id, 'can_research', '延伸想法可以變成研究種子。', 'weak', `extension:${selected.id}`, now),
+      makeEdge(selected.id, extensionNode.id, 'extends', `第 ${Math.min(childExtensions.length + 1, EXTENSION_PARENT_CAP)} 條延伸思路。`, 'medium', `extension:${selected.id}`, now),
     ],
   })
   await saveStoredGraph(config, nextGraph)
   return selectGraphNode({ ...toFocusedGraph(nextGraph, report), nodes: nextGraph.nodes, edges: nextGraph.edges }, extensionNode.id)
+}
+
+function makeContinuation(selected: IdeaGraphNode, existingCount: number): { title: string; summary: string; understanding: string; whyItMatters: string; missingEvidence: string[] } {
+  const subject = selected.title.replace(EXTENSION_TITLE_PREFIX, '')
+  const primary = selected.keywords[0] ?? subject
+  const next = selected.thinking.nextExploration || selected.summary
+  const variants = [
+    {
+      title: `補一個可驗證證據`,
+      summary: `先替「${subject}」找一個可觀察證據：今天看到什麼才算它真的值得繼續？`,
+      missingEvidence: ['缺一個可驗證的成功/失敗訊號。'],
+    },
+    {
+      title: `做一個最小 prototype`,
+      summary: `把「${subject}」縮成一個怪但可驗證的小畫面或 prompt，只證明一件事。`,
+      missingEvidence: ['缺最小可跑 artifact。'],
+    },
+    {
+      title: `找外部參照`,
+      summary: `搜尋跟「${primary}」相似的產品/研究/agent workflow，挑一個可偷學的互動模式。`,
+      missingEvidence: ['缺外部參照和反例。'],
+    },
+    {
+      title: `收斂成 OpenCode 任務`,
+      summary: `把「${subject}」整理成 read-only OpenCode 任務：要查哪裡、不能碰什麼、完成證據是什麼。`,
+      missingEvidence: ['缺清楚的 handoff 邊界。'],
+    },
+    {
+      title: `反過來驗證前提`,
+      summary: `反過來問：如果「${subject}」其實不重要，最可能是哪個前提錯了？先找警訊。`,
+      missingEvidence: ['缺反例或停止條件。'],
+    },
+    {
+      title: `接回下一步`,
+      summary: `沿著目前下一步「${next}」再切一刀，只留下 Kevin 今天能判斷的一個問題。`,
+      missingEvidence: ['缺今天就能回答的問題。'],
+    },
+  ]
+  const picked = variants[existingCount % variants.length]
+  return {
+    ...picked,
+    understanding: `這不是再生一張相同卡片；這是從「${subject}」接著往下一層想。`,
+    whyItMatters: 'Kevin 要看到分身怎麼繼續推進，而不是只看到更多泡泡。每次延伸都應該形成一條可讀的下一步。',
+  }
 }
 
 function pickClosestExtensionByKeywords(candidates: IdeaGraphNode[], keywords: string[]): IdeaGraphNode | undefined {
@@ -840,7 +865,7 @@ function toFocusedGraph(graph: StoredIdeaGraph, report: ObservationReport): Idea
 
 function nodeWeight(node: IdeaGraphNode, centerId: string, feedback: GraphFeedbackProfile): number {
   if (node.id === centerId) return 1000
-  const typeWeight: Record<IdeaGraphNodeType, number> = { double: 90, idea: 80, research: 72, extension: 70, signal: 68, project: 62, keyword: 55, task: 50 }
+  const typeWeight: Record<IdeaGraphNodeType, number> = { double: 90, idea: 82, extension: 74, signal: 70, research: 62, project: 60, keyword: 55, task: 50 }
   const confidenceWeight: Record<IdeaGraphConfidence, number> = { strong: 12, medium: 7, weak: 3 }
   const interestingWeight = node.interesting ? 24 : 0
   return typeWeight[node.type] + confidenceWeight[node.confidence] + interestingWeight + feedbackWeight(node, feedback)

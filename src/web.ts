@@ -840,7 +840,7 @@ function renderPage(
 
   const initialGraphData = JSON.parse(document.getElementById('graph-data')?.textContent || '{}');
   let focusedNodeId = (initialGraphData && typeof initialGraphData.centerNodeId === 'string') ? initialGraphData.centerNodeId : null;
-  const NEURAL_OUTER_RING_LIMIT = 14;
+  const NEURAL_OUTER_RING_LIMIT = 8;
 
   const initialLoopData = JSON.parse(document.getElementById('loop-data')?.textContent || '{}');
 

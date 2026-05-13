@@ -191,7 +191,7 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(graphExtend.status, 201)
     const graphExtendBody = await graphExtend.json()
     assert.equal(graphExtendBody.node.type, 'extension')
-    assert.equal(JSON.stringify(graphExtendBody).includes('不代表已經查過網路') || JSON.stringify(graphExtendBody).includes('未宣稱已搜尋 public web'), true)
+    assert.equal(JSON.stringify(graphExtendBody).includes('不是只看到更多泡泡'), true)
 
     const graphFind = await fetch(`${baseUrl}/api/graph/nodes/${encodeURIComponent(graphBody.centerNodeId)}/find-relationships`, { method: 'POST' })
     assert.equal(graphFind.status, 201)

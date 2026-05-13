@@ -164,7 +164,7 @@ test('idea graph adds outside-world discovery findings when web research is enab
   }
 })
 
-test('extending graph node creates read-only research seed without web claims', async () => {
+test('extending graph node creates a readable next thought without extra research clutter', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-graph-extend-'))
   const config: AutopilotConfig = {
     environment: 'test',
@@ -183,8 +183,8 @@ test('extending graph node creates read-only research seed without web claims', 
     const detail = await extendIdeaGraphNode(config, report, [idea], ideaNode.id)
     assert.equal(detail?.node.type, 'extension')
     assert.equal(detail?.node.safety, 'read-only')
-    assert.equal(detail?.connectedNodes.some((node) => node.type === 'research'), true)
-    assert.equal(JSON.stringify(detail).includes('不代表已經查過網路') || JSON.stringify(detail).includes('未宣稱已搜尋 public web'), true)
+    assert.equal(detail?.connectedNodes.some((node) => node.type === 'research'), false)
+    assert.match(detail?.node.thinking.whyItMatters ?? '', /不是只看到更多泡泡/)
   } finally {
     await rm(dataDir, { recursive: true, force: true })
   }
@@ -638,7 +638,7 @@ test('extension nodes use deterministic signature-based ids', async () => {
   }
 })
 
-test('extending a node twice upserts the same signature-based extension', async () => {
+test('extending a node repeatedly creates readable continuation branches', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-extension-upsert-'))
   const config: AutopilotConfig = {
     environment: 'test',
@@ -657,13 +657,13 @@ test('extending a node twice upserts the same signature-based extension', async 
     const firstExtend = await extendIdeaGraphNode(config, report, [idea], ideaNode.id)
     const secondExtend = await extendIdeaGraphNode(config, report, [idea], ideaNode.id)
     const thirdExtend = await extendIdeaGraphNode(config, report, [idea], ideaNode.id)
-    assert.equal(firstExtend?.node.id, secondExtend?.node.id)
-    assert.equal(firstExtend?.node.id, thirdExtend?.node.id)
+    assert.notEqual(firstExtend?.node.id, secondExtend?.node.id)
+    assert.notEqual(secondExtend?.node.id, thirdExtend?.node.id)
 
     const refreshed = await getIdeaGraph(config, report, [idea])
     const onDemandExtensions = refreshed.nodes.filter((node) => node.type === 'extension' && node.source === `extension:${ideaNode.id}`)
-    assert.equal(onDemandExtensions.length, 1)
-    assert.equal((onDemandExtensions[0].seenCount ?? 0) >= 2, true)
+    assert.equal(onDemandExtensions.length, 3)
+    assert.equal(onDemandExtensions.every((node) => node.thinking.nextExploration.length > 0), true)
   } finally {
     await rm(dataDir, { recursive: true, force: true })
   }
