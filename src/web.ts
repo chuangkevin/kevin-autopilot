@@ -580,6 +580,10 @@ function renderPage(
     .mission { border: 1px solid rgba(96,165,250,0.28); border-left: 5px solid #60a5fa; border-radius: 16px; padding: 14px; background: rgba(30,64,175,0.16); margin-bottom: 16px; }
     .mission-title { margin: 0 0 6px; font-size: clamp(20px, 4vw, 28px); line-height: 1.15; }
     .mission p { margin: 6px 0 0; }
+    .capability-rail { border-color: rgba(96,165,250,0.36); background: radial-gradient(circle at top left, rgba(96,165,250,0.16), transparent 32%), linear-gradient(180deg, rgba(255,255,255,0.075), rgba(255,255,255,0.035)); }
+    .capability-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-top: 12px; }
+    .capability-card { border: 1px solid rgba(148,163,184,0.18); border-radius: 16px; padding: 12px; background: rgba(15,23,42,0.48); }
+    .capability-card strong { display: block; margin-bottom: 5px; color: #f8fafc; }
     .truth-box { border: 1px solid rgba(34,197,94,0.28); border-left: 5px solid #22c55e; border-radius: 16px; padding: 14px; background: rgba(20,83,45,0.18); margin-bottom: 16px; }
     .truth-box strong { display: block; margin-bottom: 6px; font-size: 18px; }
     .eyebrow { color: #fbbf24; font-size: 13px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
@@ -688,10 +692,12 @@ function renderPage(
     <div>
       <h1>Kevin Autopilot</h1>
       <div class="version">v${escapeHtml(report.version)} · ${escapeHtml(report.environment)} · ${escapeHtml(formatTaipeiTime(report.generatedAt))}</div>
-      <a class="button" href="/settings">設定 Gemini Keys</a>
+      <a class="button" href="/settings">設定 Gemini Keys / 分身</a>
     </div>
     <div class="pill ok">Read-only observer</div>
   </header>
+
+  ${renderCapabilityBrief(loopState)}
 
   ${renderNeuralCockpit(graph, loopState)}
 
@@ -1656,6 +1662,21 @@ function renderKeySection(keyStatus: KeyStatusSummary): string {
       <button type="submit">匯入 Key</button><button id="key-clear" class="secondary" type="button">清除本地 Key</button>
     </form>
     <div id="key-result" class="muted"></div>
+  </section>`
+}
+
+function renderCapabilityBrief(loopState: ObservationLoopState): string {
+  const cadence = loopState.running ? '正在觀察中' : loopState.enabled ? `每 ${Math.round(loopState.intervalMs / 60_000)} 分鐘自動看一次` : '目前是手動模式'
+  return `<section class="capability-rail">
+    <div class="eyebrow">分身現在能做什麼</div>
+    <h2 class="mission-title">它不是自動改 code；它幫你把下一個可交給 OpenCode 的動作整理出來</h2>
+    <p class="muted">目前狀態：${escapeHtml(cadence)}。時間都用 GMT+8 顯示；所有動作維持 read-only，除非你明確交給 OpenCode 或另外批准。</p>
+    <div class="capability-grid">
+      <div class="capability-card"><strong>1. 自己巡 HomeProject</strong><div class="muted">看 repo/service/backlog/idea graph，抓重複出現的問題、卡住的想法、可能值得補證據的方向。</div></div>
+      <div class="capability-card"><strong>2. 長出想法節點</strong><div class="muted">把你丟的想法、public-web research、AI reflection seed 接到腦圖，不替你排序重要性。</div></div>
+      <div class="capability-card"><strong>3. 產生 bounded prompt</strong><div class="muted">每個候選或節點可以複製 OpenCode prompt，讓另一個 agent 做 read-only 調查或安全實作。</div></div>
+      <div class="capability-card"><strong>4. 等你修正判斷</strong><div class="muted">你可以在下方補充「這輪哪裡判錯」，下一輪會把它納入觀察，不需要重啟服務。</div></div>
+    </div>
   </section>`
 }
 
