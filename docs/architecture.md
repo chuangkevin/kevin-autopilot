@@ -313,6 +313,27 @@ queries, persists findings in `data/web-research.json`, and renders those findin
 as read-only research nodes connected to the originating idea. The feature does
 not scrape arbitrary pages, read secrets, or mutate target repositories.
 
+v0.9.1 through v0.9.3 harden the mobile Neural Cockpit interaction model. The
+selected-node drawer prevents horizontal overflow, node actions sit directly below
+the graph and above the detail text, and graph actions refresh the graph/detail in
+place without a page reload, focus jump, or scroll disruption.
+
+v0.9.4 starts treating graph actions as quality feedback. Marking a node
+interesting persists metadata that lifts related nodes and steers the limited
+web-research query budget toward matching ideas while remaining read-only.
+
+v0.9.5 through v0.9.7 remove the visible keyword-dictionary failure mode. Keyword
+nodes remain internal metadata only, low-value repo/status tokens such as `docs`,
+`work`, `safe`, `tests`, and `handoff` are filtered out of deterministic research
+seeds, and legacy stored noisy seeds are hidden from the focused graph.
+
+v0.9.8 adds bounded outside-world discovery seeds. Even without a newly typed
+idea, public web research can query approved broad topics such as AI agent
+interface experiments, weird personal knowledge tools, research workflow cockpits,
+and calm-computing prototypes. Matching findings render as `世界發現` research nodes
+connected to the center node so the cockpit surfaces interesting outside-world
+examples rather than word cards.
+
 The first persisted loop status is `observation-loop-state.json`, which records
 enabled/running state, interval, run count, last run, next run, report paths, and
 last error. This is status telemetry only, not permission to execute changes.

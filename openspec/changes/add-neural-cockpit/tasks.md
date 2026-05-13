@@ -13,6 +13,9 @@
 - [x] 2.3 Implement selected-node extension generation for research, prototype, existing-project integration, and OpenCode task directions.
 - [x] 2.4 Add visible thinking summaries for generated nodes, including why it matters to Kevin, related projects/keywords, missing evidence, and next exploration step.
 - [x] 2.5 Add tests that proactive nodes are read-only, provenance-backed, and never claim public web search without configured sources.
+- [x] 2.6 Add bounded public web research findings through cached DuckDuckGo queries with HTML fallback when Instant Answer has no usable summary.
+- [x] 2.7 Remove visible keyword vocabulary nodes and filter low-value repo/status tokens from deterministic research seeds.
+- [x] 2.8 Add outside-world discovery seeds that surface interesting public AI interface / personal knowledge / research workflow / calm-computing findings without requiring a new typed idea first.
 
 ## 3. Graph APIs
 
@@ -39,4 +42,4 @@
 - [x] 5.2 Run `npm run build` and `npm test`.
 - [x] 5.3 Run local smoke tests for `/health`, home cockpit graph, graph API, node detail, node extension, and settings page.
 - [x] 5.4 Run reviewer pass for UX clarity, read-only safety, graph/data consistency, and misleading web-research claims.
-- [ ] 5.5 Commit, push, restart the local container, and verify CI, image build, and kevinhome deploy workflows.
+- [x] 5.5 Commit, push, restart the local container, and verify CI, image build, and kevinhome deploy workflows through the v0.9.8 kevinhome deployment.
