@@ -22,6 +22,28 @@ export interface BackgroundObservationConfig {
   intervalMs?: number
 }
 
+export interface RuntimeOverrides {
+  aiReflection?: {
+    enabled?: boolean
+    maxOutputTokens?: number
+    maxPendingAiIdeas?: number
+  }
+  backgroundObservation?: {
+    enabled?: boolean
+    intervalMs?: number
+  }
+}
+
+export interface RuntimeOverrideFieldSchema {
+  type: 'boolean' | 'integer'
+  min?: number
+  max?: number
+  label: string
+  description: string
+}
+
+export type RuntimeOverrideSchema = Record<string, RuntimeOverrideFieldSchema>
+
 export interface AiConfig {
   enabled: boolean
   provider: 'gemini'

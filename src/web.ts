@@ -28,6 +28,13 @@ import { clearStoredGeminiKeys, getKeyStatus, importGeminiKeys } from './keys.js
 import { createObservationLoop, readReflectionState, type ObservationLoop } from './observation-loop.js'
 import { isReflectionRewriteFresh } from './reflection.js'
 import { observe } from './observer.js'
+import {
+  getEffectiveConfig,
+  loadRuntimeOverrides,
+  RUNTIME_OVERRIDE_SCHEMA,
+  RuntimeOverrideError,
+  saveRuntimeOverrides,
+} from './runtime-overrides.js'
 import { createSupplement, listSupplements } from './supplements.js'
 import type {
   AutopilotConfig,
@@ -40,6 +47,7 @@ import type {
   KeyStatusSummary,
   ObservationLoopState,
   ObservationReport,
+  RuntimeOverrides,
   UserSupplement,
 } from './types.js'
 import { APP_VERSION } from './version.js'
@@ -91,7 +99,7 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
   }
 
   if (url.pathname === '/api/observation-loop') {
-    writeJson(response, observationLoop?.getState() ?? createManualLoopState())
+    writeJson(response, observationLoop ? await observationLoop.getEffectiveState() : createManualLoopState())
     return
   }
 
@@ -100,7 +108,7 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
     writeJson(response, {
       generatedAt: report.generatedAt,
       environment: report.environment,
-      loop: observationLoop?.getState() ?? createManualLoopState(),
+      loop: observationLoop ? await observationLoop.getEffectiveState() : createManualLoopState(),
       mainAgent: report.mainAgent,
       projectRadar: report.projectRadar,
       candidates: report.candidates,
@@ -145,6 +153,35 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
 
   if (url.pathname === '/api/keys/status' && request.method === 'GET') {
     writeJson(response, await getKeyStatus(config))
+    return
+  }
+
+  if (url.pathname === '/api/runtime-overrides' && request.method === 'GET') {
+    if (!isTrustedSettingsRequest(request)) {
+      writeText(response, 'Runtime overrides require loopback, private LAN, Docker, or Tailscale access', 403)
+      return
+    }
+    writeJson(response, await buildRuntimeOverrideResponse(config))
+    return
+  }
+
+  if (url.pathname === '/api/runtime-overrides' && request.method === 'PUT') {
+    if (!isTrustedSettingsRequest(request)) {
+      writeText(response, 'Runtime overrides require loopback, private LAN, Docker, or Tailscale access', 403)
+      return
+    }
+    try {
+      const bodyText = await readBody(request)
+      const body = bodyText.trim() ? JSON.parse(bodyText) as unknown : {}
+      await saveRuntimeOverrides(config, body)
+      writeJson(response, await buildRuntimeOverrideResponse(config))
+    } catch (error) {
+      if (error instanceof RuntimeOverrideError) {
+        writeText(response, error.message, 400)
+        return
+      }
+      writeText(response, error instanceof Error ? error.message : String(error), 400)
+    }
     return
   }
 
@@ -209,8 +246,9 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
   }
 
   if (url.pathname === '/api/reflection/state' && request.method === 'GET') {
+    const effectiveConfig = await getEffectiveConfig(config)
     const reflection = await readReflectionState(config)
-    const pendingAiIdeasCap = config.aiReflection?.maxPendingAiIdeas ?? 5
+    const pendingAiIdeasCap = effectiveConfig.aiReflection?.maxPendingAiIdeas ?? 5
     const pendingAiIdeaCount = await countPendingAiIdeas(config)
     if (!reflection) {
       writeJson(response, {
@@ -327,7 +365,7 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
     const graph = await getIdeaGraph(config, report, ideas)
     const backlog = loadBacklogResponse(config, 'active')
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', ...NO_STORE_HEADERS })
-    response.end(renderPage(report, ideas, Boolean(config.ai?.enabled), observationLoop?.getState() ?? createManualLoopState(), graph, backlog))
+    response.end(renderPage(report, ideas, Boolean(config.ai?.enabled), observationLoop ? await observationLoop.getEffectiveState() : createManualLoopState(), graph, backlog))
     return
   }
 
@@ -346,13 +384,26 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
 
   if (url.pathname === '/settings') {
     const keyStatus = await getKeyStatus(config)
+    const runtimeOverrides = await loadRuntimeOverrides(config)
+    const effectiveConfig = await getEffectiveConfig(config)
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', ...NO_STORE_HEADERS })
-    response.end(renderSettingsPage(config, keyStatus))
+    response.end(renderSettingsPage(config, keyStatus, runtimeOverrides, effectiveConfig))
     return
   }
 
   response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
   response.end('Not found')
+}
+
+async function buildRuntimeOverrideResponse(config: AutopilotConfig): Promise<{ overrides: RuntimeOverrides; schema: typeof RUNTIME_OVERRIDE_SCHEMA; effective: Record<string, boolean | number | undefined>; fileConfig: Record<string, boolean | number | undefined> }> {
+  const overrides = await loadRuntimeOverrides(config)
+  const effectiveConfig = await getEffectiveConfig(config)
+  return {
+    overrides,
+    schema: RUNTIME_OVERRIDE_SCHEMA,
+    effective: flattenRuntimeConfig(effectiveConfig),
+    fileConfig: flattenRuntimeConfig(config),
+  }
 }
 
 function writeJson(response: ServerResponse, body: unknown, statusCode = 200): void {
@@ -377,6 +428,16 @@ function createManualLoopState(): ObservationLoopState {
     intervalMs: 0,
     running: false,
     runCount: 0,
+  }
+}
+
+function flattenRuntimeConfig(config: AutopilotConfig): Record<string, boolean | number | undefined> {
+  return {
+    'aiReflection.enabled': config.aiReflection?.enabled,
+    'aiReflection.maxOutputTokens': config.aiReflection?.maxOutputTokens,
+    'aiReflection.maxPendingAiIdeas': config.aiReflection?.maxPendingAiIdeas,
+    'backgroundObservation.enabled': config.backgroundObservation?.enabled,
+    'backgroundObservation.intervalMs': config.backgroundObservation?.intervalMs,
   }
 }
 
@@ -1427,7 +1488,7 @@ function jsonForScript(value: unknown): string {
   return JSON.stringify(value).replaceAll('<', '\\u003c').replaceAll('&', '\\u0026')
 }
 
-function renderSettingsPage(config: AutopilotConfig, keyStatus: KeyStatusSummary): string {
+function renderSettingsPage(config: AutopilotConfig, keyStatus: KeyStatusSummary, runtimeOverrides: RuntimeOverrides, effectiveConfig: AutopilotConfig): string {
   return `<!doctype html>
 <html lang="zh-Hant">
 <head>
@@ -1444,11 +1505,17 @@ function renderSettingsPage(config: AutopilotConfig, keyStatus: KeyStatusSummary
     h1 { margin: 0 0 6px; font-size: clamp(30px, 8vw, 44px); line-height: 1.06; letter-spacing: -0.06em; overflow-wrap: anywhere; }
     h2 { margin: 0 0 12px; font-size: 18px; }
     .version, .muted { color: #93a4bd; }
-    textarea { width: 100%; min-height: 160px; box-sizing: border-box; resize: vertical; border-radius: 14px; border: 1px solid rgba(148,163,184,0.28); background: rgba(15,23,42,0.86); color: #e5eefc; padding: 14px; font: inherit; font-size: 16px; line-height: 1.5; }
+    textarea, input[type="number"] { width: 100%; box-sizing: border-box; border-radius: 14px; border: 1px solid rgba(148,163,184,0.28); background: rgba(15,23,42,0.86); color: #e5eefc; padding: 14px; font: inherit; font-size: 16px; line-height: 1.5; }
+    textarea { min-height: 160px; resize: vertical; }
     label { display: inline-flex; gap: 8px; align-items: center; color: #cbd5e1; margin-top: 10px; font-size: 14px; }
     input[type="checkbox"] { width: 16px; height: 16px; }
     a.button, button { display: inline-block; text-decoration: none; margin-top: 10px; border: 0; border-radius: 999px; background: #60a5fa; color: #06111f; font-weight: 700; padding: 10px 16px; cursor: pointer; }
     button.secondary { background: rgba(148,163,184,0.2); color: #e5eefc; margin-left: 8px; }
+    .override-grid { display: grid; gap: 12px; }
+    .override-field { border: 1px solid rgba(148,163,184,0.18); border-radius: 14px; padding: 12px; background: rgba(15,23,42,0.38); }
+    .override-head { display: flex; gap: 10px; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; }
+    .override-status { border-radius: 999px; padding: 4px 8px; font-size: 12px; background: rgba(148,163,184,0.18); color: #cbd5e1; }
+    .override-status.overridden { background: rgba(96,165,250,0.22); color: #bfdbfe; }
     @media (max-width: 520px) { a.button, button { min-height: 44px; } button.secondary { margin-left: 0; display: block; } }
   </style>
 </head>
@@ -1460,6 +1527,7 @@ function renderSettingsPage(config: AutopilotConfig, keyStatus: KeyStatusSummary
     <a class="button" href="/">回 Dashboard</a>
   </header>
   ${renderKeySection(keyStatus)}
+  ${renderRuntimeOverridesSection(config, runtimeOverrides, effectiveConfig)}
 </main>
 <script>
   document.getElementById('key-form').addEventListener('submit', async (event) => {
@@ -1495,6 +1563,82 @@ function renderSettingsPage(config: AutopilotConfig, keyStatus: KeyStatusSummary
     result.textContent = '已清除 DB keys；目前可用 ' + status.totalAvailable + ' 把。';
     setTimeout(() => location.reload(), 700);
   });
+
+  const runtimeFieldPaths = ${safeJson(Object.keys(RUNTIME_OVERRIDE_SCHEMA))};
+  const runtimeSchema = ${safeJson(RUNTIME_OVERRIDE_SCHEMA)};
+  let runtimeState = ${safeJson({ overrides: runtimeOverrides, effective: flattenRuntimeConfig(effectiveConfig), fileConfig: flattenRuntimeConfig(config) })};
+
+  function runtimeControlId(path) { return 'runtime-' + path.replace(/\./g, '-'); }
+  function runtimeStatusId(path) { return runtimeControlId(path) + '-status'; }
+  function runtimeDefaultId(path) { return runtimeControlId(path) + '-default'; }
+  function getOverrideValue(overrides, path) {
+    const parts = path.split('.');
+    return overrides && overrides[parts[0]] ? overrides[parts[0]][parts[1]] : undefined;
+  }
+  function updateRuntimeSection(data) {
+    runtimeState = data;
+    for (const path of runtimeFieldPaths) {
+      const schema = runtimeSchema[path];
+      const input = document.getElementById(runtimeControlId(path));
+      const status = document.getElementById(runtimeStatusId(path));
+      const defaults = document.getElementById(runtimeDefaultId(path));
+      const overrideValue = getOverrideValue(data.overrides, path);
+      const effectiveValue = data.effective[path];
+      if (schema.type === 'boolean') input.checked = effectiveValue === true;
+      else input.value = effectiveValue ?? '';
+      status.textContent = overrideValue === undefined ? '預設' : '已覆蓋';
+      status.className = 'override-status' + (overrideValue === undefined ? '' : ' overridden');
+      defaults.textContent = 'File config: ' + String(data.fileConfig[path] ?? 'unset') + ' · Effective: ' + String(effectiveValue ?? 'unset');
+    }
+  }
+  document.getElementById('runtime-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const result = document.getElementById('runtime-result');
+    const body = {};
+    for (const path of runtimeFieldPaths) {
+      const schema = runtimeSchema[path];
+      const input = document.getElementById(runtimeControlId(path));
+      const parts = path.split('.');
+      const value = schema.type === 'boolean' ? input.checked : (input.value === '' ? null : Number(input.value));
+      if (value !== null && value === runtimeState.fileConfig[path]) continue;
+      body[parts[0]] = body[parts[0]] || {};
+      body[parts[0]][parts[1]] = value;
+    }
+    result.textContent = '儲存 Runtime Overrides 中...';
+    const response = await fetch('/api/runtime-overrides', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!response.ok) {
+      result.textContent = await response.text();
+      return;
+    }
+    const data = await response.json();
+    updateRuntimeSection(data);
+    result.textContent = '已儲存；下一輪 observation cycle 會讀取 effective config。';
+  });
+  document.querySelectorAll('[data-runtime-reset]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const path = button.getAttribute('data-runtime-reset');
+      const parts = path.split('.');
+      const body = { [parts[0]]: { [parts[1]]: null } };
+      const result = document.getElementById('runtime-result');
+      result.textContent = '重設 override 中...';
+      const response = await fetch('/api/runtime-overrides', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (!response.ok) {
+        result.textContent = await response.text();
+        return;
+      }
+      const data = await response.json();
+      updateRuntimeSection(data);
+      result.textContent = '已重設為 file config 預設值。';
+    });
+  });
 </script>
 </body>
 </html>`
@@ -1513,6 +1657,53 @@ function renderKeySection(keyStatus: KeyStatusSummary): string {
     </form>
     <div id="key-result" class="muted"></div>
   </section>`
+}
+
+function renderRuntimeOverridesSection(config: AutopilotConfig, overrides: RuntimeOverrides, effectiveConfig: AutopilotConfig): string {
+  const fileValues = flattenRuntimeConfig(config)
+  const effectiveValues = flattenRuntimeConfig(effectiveConfig)
+  return `<section>
+    <h2>Runtime Overrides</h2>
+    <p class="muted">只允許 OpenSpec 白名單裡的安全欄位。設定會寫入 Autopilot-owned <code>data/runtime-overrides.json</code>，不會改 config JSON、repo、service、rule source 或 key storage。</p>
+    <form id="runtime-form">
+      <div class="override-grid">
+        ${Object.entries(RUNTIME_OVERRIDE_SCHEMA).map(([path, schema]) => renderRuntimeOverrideField(path, schema, getRuntimeOverrideValue(overrides, path), fileValues[path], effectiveValues[path])).join('')}
+      </div>
+      <button type="submit">儲存 Runtime Overrides</button>
+    </form>
+    <div id="runtime-result" class="muted"></div>
+  </section>`
+}
+
+function renderRuntimeOverrideField(path: string, schema: (typeof RUNTIME_OVERRIDE_SCHEMA)[string], overrideValue: boolean | number | undefined, fileValue: boolean | number | undefined, effectiveValue: boolean | number | undefined): string {
+  const id = `runtime-${path.replace(/\./g, '-')}`
+  const statusClass = overrideValue === undefined ? 'override-status' : 'override-status overridden'
+  const control = schema.type === 'boolean'
+    ? `<label><input id="${id}" type="checkbox" ${effectiveValue === true ? 'checked' : ''}>啟用</label>`
+    : `<input id="${id}" type="number" min="${schema.min}" max="${schema.max}" step="1" value="${escapeHtml(String(effectiveValue ?? ''))}">`
+  return `<div class="override-field">
+    <div class="override-head">
+      <div>
+        <strong>${escapeHtml(schema.label)}</strong>
+        <div class="muted"><code>${escapeHtml(path)}</code></div>
+      </div>
+      <span id="${id}-status" class="${statusClass}">${overrideValue === undefined ? '預設' : '已覆蓋'}</span>
+    </div>
+    <p class="muted">${escapeHtml(schema.description)}</p>
+    ${control}
+    <div id="${id}-default" class="muted">File config: ${escapeHtml(String(fileValue ?? 'unset'))} · Effective: ${escapeHtml(String(effectiveValue ?? 'unset'))}</div>
+    <button class="secondary" type="button" data-runtime-reset="${escapeHtml(path)}">Reset to default</button>
+  </div>`
+}
+
+function getRuntimeOverrideValue(overrides: RuntimeOverrides, path: string): boolean | number | undefined {
+  const [group, field] = path.split('.') as [keyof RuntimeOverrides, string]
+  const bucket = overrides[group] as Record<string, boolean | number | undefined> | undefined
+  return bucket?.[field]
+}
+
+function safeJson(value: unknown): string {
+  return JSON.stringify(value).replace(/<\//g, '<\\/')
 }
 
 function renderObservationWorkbench(report: ObservationReport): string {

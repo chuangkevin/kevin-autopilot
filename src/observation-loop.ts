@@ -10,6 +10,7 @@ import { getIdeaGraph } from './idea-graph.js'
 import { observe, writeReports } from './observer.js'
 import { listBacklog, mergeCandidatesIntoBacklog, openBacklogDatabase } from './backlog.js'
 import { reflect } from './reflection.js'
+import { getEffectiveConfig } from './runtime-overrides.js'
 import type {
   AutopilotConfig,
   IdeaGraph,
@@ -38,7 +39,7 @@ export class ObservationLoop {
   }
 
   start(): void {
-    if (!this.state.enabled || this.timer) return
+    if (this.timer) return
     void this.runOnce().catch((error) => {
       this.state = {
         ...this.state,
@@ -59,11 +60,17 @@ export class ObservationLoop {
     return { ...this.state }
   }
 
+  async getEffectiveState(): Promise<ObservationLoopState> {
+    await this.refreshLoopConfig()
+    return this.getState()
+  }
+
   getLastReport(): ObservationReport | undefined {
     return this.lastReport
   }
 
   async runOnce(): Promise<ObservationReport | undefined> {
+    await this.refreshLoopConfig()
     if (!this.state.enabled) return this.lastReport
     if (this.inFlight) return this.inFlight
 
@@ -76,9 +83,12 @@ export class ObservationLoop {
   }
 
   private async executeRun(): Promise<ObservationReport | undefined> {
+    const effectiveConfig = await getEffectiveConfig(this.config)
     this.stop()
     this.state = {
       ...this.state,
+      enabled: effectiveConfig.backgroundObservation?.enabled !== false,
+      intervalMs: effectiveConfig.backgroundObservation?.intervalMs ?? DEFAULT_INTERVAL_MS,
       running: true,
       lastStartedAt: new Date().toISOString(),
       lastError: undefined,
@@ -87,12 +97,13 @@ export class ObservationLoop {
     await this.persistStateSafely()
 
     try {
-      const report = await observe(this.config)
-      const written = await writeReports(report, this.config.dataDir)
-      const backlogAt = await this.mergeBacklogSafely(report)
-      const ideas = await listIdeas(this.config, 40)
-      const graph = await getIdeaGraph(this.config, report, ideas)
-      const reflectionAt = await this.runReflectionSafely(graph)
+      if (!this.state.enabled) return this.lastReport
+      const report = await observe(effectiveConfig)
+      const written = await writeReports(report, effectiveConfig.dataDir)
+      const backlogAt = await this.mergeBacklogSafely(effectiveConfig, report)
+      const ideas = await listIdeas(effectiveConfig, 40)
+      const graph = await getIdeaGraph(effectiveConfig, report, ideas)
+      const reflectionAt = await this.runReflectionSafely(effectiveConfig, graph)
       this.lastReport = report
       this.state = {
         ...this.state,
@@ -119,12 +130,13 @@ export class ObservationLoop {
       }
       return this.lastReport
     } finally {
-      this.scheduleNextRun()
+      await this.scheduleNextRun()
       await this.persistStateSafely()
     }
   }
 
-  private scheduleNextRun(): void {
+  private async scheduleNextRun(): Promise<void> {
+    await this.refreshLoopConfig()
     if (!this.state.enabled) return
     const nextRunAt = new Date(Date.now() + this.state.intervalMs).toISOString()
     this.state = { ...this.state, nextRunAt }
@@ -135,8 +147,8 @@ export class ObservationLoop {
     this.timer.unref?.()
   }
 
-  private async mergeBacklogSafely(report: ObservationReport): Promise<string | undefined> {
-    const db = openBacklogDatabase(this.config)
+  private async mergeBacklogSafely(config: AutopilotConfig, report: ObservationReport): Promise<string | undefined> {
+    const db = openBacklogDatabase(config)
     try {
       mergeCandidatesIntoBacklog(db, report.candidates, new Date())
       return new Date().toISOString()
@@ -145,17 +157,17 @@ export class ObservationLoop {
     }
   }
 
-  private async runReflectionSafely(graph: IdeaGraph): Promise<string | undefined> {
+  private async runReflectionSafely(config: AutopilotConfig, graph: IdeaGraph): Promise<string | undefined> {
     try {
-      const previous = await readReflectionState(this.config)
-      const backlog = listBacklogSnapshot(this.config)
-      const recentIdeas = await listIdeas(this.config, 20)
-      const pendingAiIdeaCount = await countPendingAiIdeas(this.config)
-      const dismissedAiIdeaTitles = await listDismissedAiIdeaTitles(this.config, 20)
+      const previous = await readReflectionState(config)
+      const backlog = listBacklogSnapshot(config)
+      const recentIdeas = await listIdeas(config, 20)
+      const pendingAiIdeaCount = await countPendingAiIdeas(config)
+      const dismissedAiIdeaTitles = await listDismissedAiIdeaTitles(config, 20)
       const previousSignature = previous && previous.skipped === false ? previous.graphSignature : undefined
 
       const record = await reflect({
-        config: this.config,
+        config,
         graph,
         backlog,
         recentIdeas,
@@ -169,7 +181,7 @@ export class ObservationLoop {
           const seed = record.newIdeaSeeds[index]
           try {
             await createAiIdeaFromSeed(
-              this.config,
+              config,
               seed,
               { generatedAt: record.generatedAt, model: record.model },
               index,
@@ -180,7 +192,7 @@ export class ObservationLoop {
         }
       }
 
-      await writeReflectionState(this.config, record)
+      await writeReflectionState(config, record)
       return record.generatedAt
     } catch (error) {
       const skipped: SkippedReflectionRecord = {
@@ -191,7 +203,7 @@ export class ObservationLoop {
         pendingAiIdeaCount: 0,
       }
       try {
-        await writeReflectionState(this.config, skipped)
+        await writeReflectionState(config, skipped)
       } catch {}
       return skipped.generatedAt
     }
@@ -211,6 +223,18 @@ export class ObservationLoop {
         lastSuccess: false,
         lastError: `Failed to persist observation loop state: ${error instanceof Error ? error.message : String(error)}`,
       }
+    }
+  }
+
+  private async refreshLoopConfig(): Promise<void> {
+    const effectiveConfig = await getEffectiveConfig(this.config)
+    const enabled = effectiveConfig.backgroundObservation?.enabled !== false
+    if (!enabled) this.stop()
+    this.state = {
+      ...this.state,
+      enabled,
+      intervalMs: effectiveConfig.backgroundObservation?.intervalMs ?? DEFAULT_INTERVAL_MS,
+      nextRunAt: enabled ? this.state.nextRunAt : undefined,
     }
   }
 }

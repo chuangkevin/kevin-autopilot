@@ -354,6 +354,15 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
+v0.12.0 adds trusted-settings runtime overrides on `/settings`. Kevin can flip
+the whitelisted fields `aiReflection.enabled`, `aiReflection.maxOutputTokens`,
+`aiReflection.maxPendingAiIdeas`, `backgroundObservation.enabled`, and
+`backgroundObservation.intervalMs` without editing the mounted config or
+restarting the container. Overrides live in Autopilot-owned
+`data/runtime-overrides.json`, are reversible per field, and do not allow editing
+repositories, services, rule sources, AI model/provider, key storage, `dataDir`,
+or web research settings.
+
 v0.11.0 真正的「分身大腦」：每個 5-min observation cycle 在 graph
 signature 變動時呼叫一次 Gemini 反思，產出 0–2 個帶 evidence chain 的
 AI idea seed 與最多 1 個焦點節點的 nextExploration 改寫。AI idea 顯示

@@ -6,6 +6,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createWebServer, formatTaipeiTime, isTrustedSettingsAddress, isTrustedSettingsSource } from './web.js'
 import { mergeCandidatesIntoBacklog, openBacklogDatabase } from './backlog.js'
+import { saveRuntimeOverrides } from './runtime-overrides.js'
 import type { AutopilotConfig, ObservationCandidate } from './types.js'
 
 const GEMINI_KEY = `AIzaSy${'C'.repeat(33)}`
@@ -293,7 +294,50 @@ test('web server exposes health and idea intake', async () => {
     const settingsBody = await settings.text()
     assert.equal(settingsBody.includes('Autopilot Settings'), true)
     assert.equal(settingsBody.includes('data/autopilot.db'), true)
+    assert.equal(settingsBody.includes('Runtime Overrides'), true)
+    assert.equal(settingsBody.includes('data/runtime-overrides.json'), true)
+    assert.equal(settingsBody.includes('aiReflection.enabled'), true)
     assert.equal(settingsBody.includes('key-admin-token'), false)
+
+    const runtimeOverrides = await fetch(`${baseUrl}/api/runtime-overrides`)
+    assert.equal(runtimeOverrides.status, 200)
+    const runtimeOverridesBody = await runtimeOverrides.json()
+    assert.deepEqual(runtimeOverridesBody.overrides, {})
+    assert.equal(runtimeOverridesBody.schema['aiReflection.enabled'].type, 'boolean')
+
+    const runtimeOverridePut = await fetch(`${baseUrl}/api/runtime-overrides`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ aiReflection: { maxPendingAiIdeas: 12 } }),
+    })
+    assert.equal(runtimeOverridePut.status, 200)
+    assert.equal((await runtimeOverridePut.json()).overrides.aiReflection.maxPendingAiIdeas, 12)
+
+    const runtimeOverrideReset = await fetch(`${baseUrl}/api/runtime-overrides`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ aiReflection: { maxPendingAiIdeas: null } }),
+    })
+    assert.equal(runtimeOverrideReset.status, 200)
+    assert.equal((await runtimeOverrideReset.json()).overrides.aiReflection, undefined)
+
+    const runtimeOverrideUnknown = await fetch(`${baseUrl}/api/runtime-overrides`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ repositories: [] }),
+    })
+    assert.equal(runtimeOverrideUnknown.status, 400)
+    assert.match(await runtimeOverrideUnknown.text(), /repositories/)
+
+    const runtimeOverrideUntrusted = await fetch(`${baseUrl}/api/runtime-overrides`, { headers: { 'x-forwarded-for': '8.8.8.8' } })
+    assert.equal(runtimeOverrideUntrusted.status, 403)
+
+    const runtimeOverridePutUntrusted = await fetch(`${baseUrl}/api/runtime-overrides`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', 'x-forwarded-for': '8.8.8.8' },
+      body: JSON.stringify({ aiReflection: { enabled: true } }),
+    })
+    assert.equal(runtimeOverridePutUntrusted.status, 403)
 
     const idea = await fetch(`${baseUrl}/api/ideas`, {
       method: 'POST',
@@ -431,10 +475,12 @@ test('GET /api/reflection/state returns never-run shape before any cycle', async
   const config: AutopilotConfig = {
     environment: 'test',
     dataDir,
+    aiReflection: { maxPendingAiIdeas: 5 },
     ruleSources: [],
     repositories: [],
     services: [],
   }
+  await saveRuntimeOverrides(config, { aiReflection: { maxPendingAiIdeas: 14 } })
   const server = createWebServer(config)
   try {
     server.listen(0, '127.0.0.1')
@@ -448,7 +494,7 @@ test('GET /api/reflection/state returns never-run shape before any cycle', async
     assert.equal(body.skipped, true)
     assert.equal(body.reason, 'never-run')
     assert.equal(body.pendingAiIdeaCount, 0)
-    assert.equal(body.pendingAiIdeasCap, 5)
+    assert.equal(body.pendingAiIdeasCap, 14)
   } finally {
     if (server.listening) {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))

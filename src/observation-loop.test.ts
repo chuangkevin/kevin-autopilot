@@ -5,6 +5,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createObservationLoop, readReflectionState } from './observation-loop.js'
 import { listBacklog, openBacklogDatabase } from './backlog.js'
+import { saveRuntimeOverrides } from './runtime-overrides.js'
 import type { AutopilotConfig } from './types.js'
 
 test('ObservationLoop runs read-only observation and persists loop state', async () => {
@@ -130,6 +131,40 @@ test('observation cycle still succeeds when reflection module throws', async () 
     const reflection = await readReflectionState(config)
     assert.ok(reflection)
     assert.equal(reflection!.skipped, true)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('observation loop reads runtime overrides for reflection and scheduling', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-loop-runtime-overrides-'))
+  try {
+    const config: AutopilotConfig = {
+      environment: 'test',
+      dataDir,
+      ai: { enabled: true, provider: 'gemini', model: 'gemini-test' },
+      aiReflection: { enabled: false },
+      backgroundObservation: { enabled: true, intervalMs: 60_000 },
+      ruleSources: [],
+      repositories: [],
+      services: [],
+    }
+    await saveRuntimeOverrides(config, { aiReflection: { enabled: true } })
+
+    const loop = createObservationLoop(config)
+    assert.ok(await loop.runOnce())
+    const reflection = await readReflectionState(config)
+    assert.ok(reflection)
+    assert.equal(reflection!.skipped, true)
+    if (reflection!.skipped === true) assert.notEqual(reflection!.reason, 'disabled')
+
+    await saveRuntimeOverrides(config, { backgroundObservation: { enabled: false } })
+    assert.ok(await loop.runOnce())
+    const state = await loop.getEffectiveState()
+    loop.stop()
+
+    assert.equal(state.enabled, false)
+    assert.equal(state.nextRunAt, undefined)
   } finally {
     await rm(dataDir, { recursive: true, force: true })
   }

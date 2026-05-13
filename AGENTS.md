@@ -41,7 +41,11 @@ and collapses legacy duplicates on graph load, v0.10.1 legible focus state
 copy), and v0.11.0 the AI graph reflection module that mints
 evidence-backed AI idea seeds and AI-rewritten nextExploration on every
 graph-changed cycle with a pending cap, dismiss path, token cap, and
-fail-soft skip records.
+fail-soft skip records, and v0.12.0 trusted-settings runtime overrides for
+the safe whitelist `aiReflection.enabled`, `aiReflection.maxOutputTokens`,
+`aiReflection.maxPendingAiIdeas`, `backgroundObservation.enabled`, and
+`backgroundObservation.intervalMs` via `/settings` and Autopilot-owned
+`data/runtime-overrides.json`.
 Keep these versions read-only: they may observe, classify, report, and store
 Autopilot-owned reports/idea records/supplements, but they must not modify target
 repos, create repos, deploy, commit/push other projects, or perform destructive
