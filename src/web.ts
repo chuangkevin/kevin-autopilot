@@ -429,6 +429,8 @@ function renderPage(
     .brain-node.faded { opacity: 0.32; filter: saturate(0.6); }
     .brain-node.faded:hover { opacity: 0.9; }
     .neural-hidden-chip { position: absolute; right: 12px; bottom: 10px; padding: 6px 12px; border-radius: 999px; background: rgba(11,9,7,0.78); color: #fde68a; font-size: 12px; font-weight: 700; border: 1px solid rgba(251,191,36,0.32); pointer-events: none; }
+    .focus-hint { display: inline-block; margin: 0 0 6px; padding: 4px 10px; border-radius: 999px; background: rgba(251,191,36,0.16); border: 1px solid rgba(251,191,36,0.4); color: #fde68a; font-size: 12px; font-weight: 700; }
+    .focus-hint[hidden] { display: none; }
     .brain-node.double { width: clamp(138px, 20vw, 190px); min-height: 104px; max-height: 160px; border-radius: 999px; background: radial-gradient(circle, rgba(251,191,36,0.28), rgba(11,9,7,0.82)); }
     .brain-node.keyword { border-style: dashed; color: #fde68a; }
     .brain-node.project { color: #bbf7d0; }
@@ -730,11 +732,19 @@ function renderPage(
     }
   }, 60000);
 
+  async function resetFocusToCenter() {
+    const defaultFocus = initialGraphData?.centerNodeId ?? null;
+    if (!defaultFocus || focusedNodeId === defaultFocus) return;
+    focusedNodeId = defaultFocus;
+    await refreshGraphInPlace(focusedNodeId);
+    try {
+      const response = await fetch('/api/graph/nodes/' + encodeURIComponent(defaultFocus));
+      if (response.ok) renderNodeDrawer(await response.json());
+    } catch {}
+  }
+
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && focusedNodeId && initialGraphData?.centerNodeId && focusedNodeId !== initialGraphData.centerNodeId) {
-      focusedNodeId = initialGraphData.centerNodeId;
-      refreshGraphInPlace(focusedNodeId);
-    }
+    if (event.key === 'Escape') resetFocusToCenter();
   });
 
   document.addEventListener('click', async (event) => {
@@ -747,23 +757,20 @@ function renderPage(
       if (!nodeId) return;
       const previousFocus = focusedNodeId;
       const defaultFocus = initialGraphData?.centerNodeId ?? null;
-      if (previousFocus === nodeId && defaultFocus && nodeId !== defaultFocus) {
-        focusedNodeId = defaultFocus;
-      } else {
-        focusedNodeId = nodeId;
-      }
+      const togglingOff = previousFocus === nodeId && defaultFocus && nodeId !== defaultFocus;
+      const targetNodeId = togglingOff ? defaultFocus : nodeId;
+      focusedNodeId = targetNodeId;
       document.querySelectorAll('.brain-node').forEach((item) => item.classList.remove('active'));
       nodeButton.classList.add('active');
       await refreshGraphInPlace(focusedNodeId);
-      const response = await fetch('/api/graph/nodes/' + encodeURIComponent(nodeId));
+      const response = await fetch('/api/graph/nodes/' + encodeURIComponent(targetNodeId));
       if (!response.ok) return;
       renderNodeDrawer(await response.json());
       return;
     }
     if (stage && (target === stage || stage.contains(target))) {
-      if (!target.closest('button') && !target.closest('a') && focusedNodeId && initialGraphData?.centerNodeId && focusedNodeId !== initialGraphData.centerNodeId) {
-        focusedNodeId = initialGraphData.centerNodeId;
-        await refreshGraphInPlace(focusedNodeId);
+      if (!target.closest('button') && !target.closest('a')) {
+        await resetFocusToCenter();
         return;
       }
     }
@@ -920,9 +927,22 @@ function renderPage(
   function renderNodeDrawer(detail) {
     const drawer = document.getElementById('node-drawer');
     const thought = document.getElementById('node-understanding');
+    const title = document.getElementById('node-current-title');
+    const hint = document.getElementById('focus-hint');
     if (!drawer || !detail || !detail.node) return;
     const node = detail.node;
     if (thought) thought.textContent = node.thinking.understanding;
+    if (title) title.textContent = node.title;
+    const defaultFocus = initialGraphData?.centerNodeId ?? null;
+    if (hint) {
+      if (focusedNodeId && defaultFocus && focusedNodeId !== defaultFocus) {
+        hint.hidden = false;
+        hint.textContent = '聚焦：' + node.title + '　·　點空白處或按 Esc 取消聚焦';
+      } else {
+        hint.hidden = true;
+        hint.textContent = '';
+      }
+    }
     const keywordHtml = node.keywords.length === 0 ? '<span class="muted">尚未抽到關鍵字</span>' : node.keywords.map((keyword) => '<span class="pill">' + htmlEscape(keyword) + '</span>').join('');
     const connectedHtml = detail.connectedNodes.length === 0 ? '<p class="muted">目前沒有相連節點。</p>' : '<div class="workbench-meta">' + detail.connectedNodes.slice(0, 6).map((item) => '<span class="pill">' + htmlEscape(item.title) + '</span>').join('') + '</div>';
     renderNodeActionBar(node);
@@ -1169,11 +1189,12 @@ function renderNeuralCockpit(graph: IdeaGraph, loopState: ObservationLoopState):
         <div class="node-actions node-action-bar" id="node-action-bar">
           ${firstNode ? firstNode.actions.map((action) => renderNodeAction(firstNode.id, action)).join('') : ''}
         </div>
-        <div class="eyebrow">分身現在在想</div>
-        <h2>${escapeHtml(firstNode?.title ?? 'Kevin Autopilot')}</h2>
+        <div class="eyebrow" id="node-current-eyebrow">分身現在在想</div>
+        <h2 id="node-current-title">${escapeHtml(firstNode?.title ?? 'Kevin Autopilot')}</h2>
+        <p class="muted focus-hint" id="focus-hint" hidden></p>
         <p class="thought-line" id="node-understanding">${escapeHtml(firstNode?.thinking.understanding ?? graph.focus.headline)}</p>
         <div class="status-strip">
-          <div class="status-item"><span class="label">背景</span><strong>${loopState.running ? '思考中' : loopState.enabled ? '醒著' : '手動'}</strong></div>
+          <div class="status-item"><span class="label">背景</span><strong>${loopState.running ? '觀察中' : loopState.enabled ? '5 分鐘自動' : '手動'}</strong></div>
           <div class="status-item"><span class="label">節點</span><strong>${graph.nodes.length}</strong></div>
           <div class="status-item"><span class="label">關聯</span><strong>${graph.edges.length}</strong></div>
         </div>

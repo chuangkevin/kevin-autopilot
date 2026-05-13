@@ -159,6 +159,10 @@ test('web server exposes health and idea intake', async () => {
     assert.match(pageBody, /event\.key === 'Escape'/)
     const focusIdAssignments = pageBody.match(/focusedNodeId = /g) || []
     assert.equal(focusIdAssignments.length >= 3, true)
+    assert.equal(pageBody.includes('id="node-current-title"'), true)
+    assert.equal(pageBody.includes('id="focus-hint"'), true)
+    assert.equal(pageBody.includes('resetFocusToCenter'), true)
+    assert.equal(pageBody.includes('點空白處或按 Esc 取消聚焦'), true)
     assert.equal(pageBody.includes("fetch('/api/graph', { cache: 'no-store' })"), true)
 
     const graph = await fetch(`${baseUrl}/api/graph`)
