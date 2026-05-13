@@ -23,7 +23,7 @@ import type {
 const GRAPH_FILE = 'idea-graph.json'
 const CENTER_NODE_ID = 'double-kevin-autopilot'
 const STOP_WORDS = new Set(['我要', '可以', '現在', '這個', '那個', '一個', '不是', '就是', '沒有', '什麼', 'the', 'and', 'with', 'that', 'for', 'safe'])
-const BORING_RESEARCH_KEYWORDS = new Set(['autopilot', 'docs', 'doc', 'work', 'homelab', 'uncommitted', 'kevin', 'repo', 'git'])
+const BORING_RESEARCH_KEYWORDS = new Set(['autopilot', 'docs', 'doc', 'work', 'homelab', 'uncommitted', 'kevin', 'repo', 'git', 'test', 'tests', 'handoff'])
 const LEGACY_LITERAL_METAPHOR_PATTERN = /電子羊|electric sheep/i
 
 interface StoredIdeaGraph {

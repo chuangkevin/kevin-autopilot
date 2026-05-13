@@ -203,7 +203,7 @@ test('visible graph excludes keyword vocabulary nodes and boring research seeds'
     const graph = await getIdeaGraph(config, report, [idea])
 
     assert.equal(graph.nodes.some((node) => node.type === 'keyword'), false)
-    assert.equal(graph.nodes.some((node) => node.type === 'research' && node.keywords.some((keyword) => ['git', 'docs', 'work', 'safe', 'for', 'homelab'].includes(keyword))), false)
+    assert.equal(graph.nodes.some((node) => node.type === 'research' && node.keywords.some((keyword) => ['git', 'docs', 'work', 'safe', 'for', 'homelab', 'tests', 'handoff'].includes(keyword))), false)
   } finally {
     await rm(dataDir, { recursive: true, force: true })
   }
@@ -221,16 +221,16 @@ test('visible graph hides legacy noisy deterministic research nodes', async () =
   try {
     await writeFile(join(dataDir, 'idea-graph.json'), JSON.stringify({
       nodes: [{
-        id: 'research-uncommitted',
+        id: 'research-tests',
         type: 'research',
-        title: '想研究：uncommitted',
+        title: '想研究：tests',
         summary: 'legacy noisy node',
         source: 'deterministic-research-seed',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         confidence: 'weak',
         safety: 'read-only',
-        keywords: ['uncommitted'],
+        keywords: ['tests'],
         relatedProjectNames: [],
         thinking: { understanding: '', whyItMatters: '', nextExploration: '', evidence: [], missingEvidence: [] },
         actions: [],
@@ -240,7 +240,7 @@ test('visible graph hides legacy noisy deterministic research nodes', async () =
     const report = await observe(config)
     const graph = await getIdeaGraph(config, report, [])
 
-    assert.equal(graph.nodes.some((node) => node.id === 'research-uncommitted'), false)
+    assert.equal(graph.nodes.some((node) => node.id === 'research-tests'), false)
   } finally {
     await rm(dataDir, { recursive: true, force: true })
   }
