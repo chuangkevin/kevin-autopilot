@@ -30,11 +30,17 @@ interface StoredIdeaGraph {
   edges: IdeaGraphEdge[]
 }
 
+interface GraphFeedbackProfile {
+  keywords: Set<string>
+  projectNames: Set<string>
+}
+
 export async function getIdeaGraph(config: AutopilotConfig, report: ObservationReport, ideas: IdeaRecord[]): Promise<IdeaGraph> {
   const stored = await loadStoredGraph(config)
   const backlogLookup = loadBacklogLookup(config)
   const suppressedKeywords = suppressedKeywordSet(stored)
-  const webFindings = await refreshWebResearch(config, makeWebResearchSeeds(ideas, suppressedKeywords))
+  const feedback = graphFeedbackProfile(stored)
+  const webFindings = await refreshWebResearch(config, makeWebResearchSeeds(ideas, suppressedKeywords, feedback))
   const graph = mergeGraph(stored, createProjectedGraph(config, report, ideas, backlogLookup, webFindings, suppressedKeywords))
   await saveStoredGraph(config, graph)
   return toFocusedGraph(graph, report)
@@ -320,9 +326,10 @@ function createProjectedGraph(
   return { nodes, edges }
 }
 
-function makeWebResearchSeeds(ideas: IdeaRecord[], suppressedKeywords: Set<string>): WebResearchSeed[] {
+function makeWebResearchSeeds(ideas: IdeaRecord[], suppressedKeywords: Set<string>, feedback: GraphFeedbackProfile): WebResearchSeed[] {
   return ideas
     .filter((idea) => !hasSuppressedKeyword(idea.rawText, suppressedKeywords))
+    .sort((a, b) => ideaFeedbackScore(b, feedback) - ideaFeedbackScore(a, feedback))
     .slice(0, 8)
     .map((idea) => ({
     id: idea.id,
@@ -550,6 +557,20 @@ function suppressedKeywordSet(graph: StoredIdeaGraph): Set<string> {
     .map((keyword) => keyword.toLowerCase()))
 }
 
+function graphFeedbackProfile(graph: StoredIdeaGraph): GraphFeedbackProfile {
+  const interestingNodes = graph.nodes.filter((node) => node.interesting && !node.ignored && !node.archived)
+  return {
+    keywords: new Set(interestingNodes.flatMap((node) => node.keywords).map((keyword) => keyword.toLowerCase())),
+    projectNames: new Set(interestingNodes.flatMap((node) => node.relatedProjectNames).map((project) => project.toLowerCase())),
+  }
+}
+
+function ideaFeedbackScore(idea: IdeaRecord, feedback: GraphFeedbackProfile): number {
+  const keywords = extractIdeaKeywords(idea.rawText)
+  return keywords.filter((keyword) => feedback.keywords.has(keyword.toLowerCase())).length * 2
+    + idea.existingProjectAnalysis.matches.filter((match) => feedback.projectNames.has(match.projectName.toLowerCase())).length * 3
+}
+
 function filterSuppressedKeywords(keywords: string[], suppressedKeywords: Set<string>): string[] {
   return keywords.filter((keyword) => !isSuppressedKeyword(keyword, suppressedKeywords))
 }
@@ -708,9 +729,10 @@ function isLegacyLiteralMetaphorNode(node: IdeaGraphNode): boolean {
 function toFocusedGraph(graph: StoredIdeaGraph, report: ObservationReport): IdeaGraph {
   const center = graph.nodes.find((node) => node.id === CENTER_NODE_ID) ?? graph.nodes[0]
   const centerId = center?.id ?? CENTER_NODE_ID
+  const feedback = graphFeedbackProfile(graph)
   const prioritized = graph.nodes
     .filter((node) => !node.archived && !node.ignored)
-    .sort((a, b) => nodeWeight(b, centerId) - nodeWeight(a, centerId) || b.updatedAt.localeCompare(a.updatedAt))
+    .sort((a, b) => nodeWeight(b, centerId, feedback) - nodeWeight(a, centerId, feedback) || b.updatedAt.localeCompare(a.updatedAt))
     .slice(0, 28)
   const visibleIds = new Set(prioritized.map((node) => node.id))
   return {
@@ -726,12 +748,19 @@ function toFocusedGraph(graph: StoredIdeaGraph, report: ObservationReport): Idea
   }
 }
 
-function nodeWeight(node: IdeaGraphNode, centerId: string): number {
+function nodeWeight(node: IdeaGraphNode, centerId: string, feedback: GraphFeedbackProfile): number {
   if (node.id === centerId) return 1000
   const typeWeight: Record<IdeaGraphNodeType, number> = { double: 90, idea: 80, research: 72, extension: 70, signal: 68, project: 62, keyword: 55, task: 50 }
   const confidenceWeight: Record<IdeaGraphConfidence, number> = { strong: 12, medium: 7, weak: 3 }
   const interestingWeight = node.interesting ? 24 : 0
-  return typeWeight[node.type] + confidenceWeight[node.confidence] + interestingWeight
+  return typeWeight[node.type] + confidenceWeight[node.confidence] + interestingWeight + feedbackWeight(node, feedback)
+}
+
+function feedbackWeight(node: IdeaGraphNode, feedback: GraphFeedbackProfile): number {
+  if (node.interesting) return 0
+  const keywordMatches = node.keywords.filter((keyword) => feedback.keywords.has(keyword.toLowerCase())).length
+  const projectMatches = node.relatedProjectNames.filter((project) => feedback.projectNames.has(project.toLowerCase())).length
+  return Math.min(keywordMatches * 6, 18) + Math.min(projectMatches * 6, 12)
 }
 
 async function loadStoredGraph(config: AutopilotConfig): Promise<StoredIdeaGraph> {

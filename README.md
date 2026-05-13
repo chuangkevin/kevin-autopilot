@@ -259,6 +259,10 @@ stage in place, suppresses stopped keyword projections so rejected keywords do n
 return after reload, varies automatic extension prompts with creative lenses, and
 falls back to DuckDuckGo HTML search results when Instant Answer has no summary.
 
+Version 0.9.4 starts using Kevin's graph feedback as a quality loop: marked
+interesting keywords and project links now lift related graph nodes and steer the
+limited web-research query budget toward matching ideas.
+
 Version 0.6 should add an approval-resume flow so Kevin can explicitly approve a
 single pending handoff action and Autopilot can resume it deterministically.
 
@@ -335,7 +339,7 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
-v0.9.3 Neural Cockpit web-research prototype. See `docs/` for architecture, safety,
+v0.9.4 Neural Cockpit web-research prototype. See `docs/` for architecture, safety,
 and OpenCode workflow.
 
 ## Deployment

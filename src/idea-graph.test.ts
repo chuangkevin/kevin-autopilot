@@ -213,6 +213,78 @@ test('stopped keyword nodes suppress future keyword research projections', async
   }
 })
 
+test('interesting keyword feedback prioritizes related research nodes', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-graph-interest-feedback-'))
+  const config: AutopilotConfig = {
+    environment: 'test',
+    dataDir,
+    ruleSources: [],
+    repositories: [],
+    services: [],
+  }
+  try {
+    const ideaA = await createIdea(config, 'agent cockpit reference')
+    const ideaB = await createIdea(config, 'zebra workflow reference')
+    const report = await observe(config)
+    const graph = await getIdeaGraph(config, report, [ideaA, ideaB])
+    const zebraKeyword = graph.nodes.find((node) => node.type === 'keyword' && node.title === 'zebra')
+    assert.ok(zebraKeyword)
+
+    await markIdeaGraphNodeInteresting(config, report, [ideaA, ideaB], zebraKeyword.id)
+    const refreshed = await getIdeaGraph(config, report, [ideaA, ideaB])
+    const zebraResearchIndex = refreshed.nodes.findIndex((node) => node.id === 'research-zebra')
+    const agentResearchIndex = refreshed.nodes.findIndex((node) => node.id === 'research-agent')
+
+    assert.equal(zebraResearchIndex >= 0, true)
+    assert.equal(agentResearchIndex >= 0, true)
+    assert.equal(zebraResearchIndex < agentResearchIndex, true)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('interesting idea feedback spends limited web research on matching ideas', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-graph-web-feedback-'))
+  const originalFetch = globalThis.fetch
+  const config: AutopilotConfig = {
+    environment: 'test',
+    dataDir,
+    webResearch: { enabled: true, maxQueriesPerGraph: 1, cacheTtlMs: 60_000, timeoutMs: 1_000 },
+    ruleSources: [],
+    repositories: [],
+    services: [],
+  }
+  try {
+    const requestedUrls: string[] = []
+    globalThis.fetch = async (input: Parameters<typeof fetch>[0]) => {
+      requestedUrls.push(String(input))
+      return new Response(JSON.stringify({
+        Heading: 'Research result',
+        AbstractText: 'A bounded public research result.',
+        AbstractURL: 'https://example.com/research',
+        RelatedTopics: [],
+      }), { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+
+    const ideaA = await createIdea(config, 'agent cockpit reference')
+    const ideaB = await createIdea(config, 'zebra workflow reference')
+    const report = await observe(config)
+    const graph = await getIdeaGraph(config, report, [ideaA, ideaB])
+    const zebraKeyword = graph.nodes.find((node) => node.type === 'keyword' && node.title === 'zebra')
+    assert.ok(zebraKeyword)
+    await markIdeaGraphNodeInteresting(config, report, [ideaA, ideaB], zebraKeyword.id)
+
+    requestedUrls.length = 0
+    await getIdeaGraph(config, report, [ideaA, ideaB])
+
+    assert.equal(requestedUrls.some((url) => url.includes('zebra')), true)
+    assert.equal(requestedUrls.some((url) => url.includes('agent')), false)
+  } finally {
+    globalThis.fetch = originalFetch
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
 test('graph node actions only mutate Autopilot-owned graph metadata', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-graph-action-scope-'))
   const targetRepo = join(dataDir, 'target-repo')
