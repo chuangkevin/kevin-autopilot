@@ -7,6 +7,11 @@
     "model": "gemini-2.5-flash",
     "timeoutMs": 20000
   },
+  "aiReflection": {
+    "enabled": false,
+    "maxOutputTokens": 700,
+    "maxPendingAiIdeas": 5
+  },
   "backgroundObservation": {
     "enabled": true,
     "intervalMs": 300000

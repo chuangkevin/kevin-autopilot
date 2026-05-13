@@ -940,7 +940,7 @@ function safeId(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'node'
 }
 
-function stableHash6(input: string): string {
+export function stableHash6(input: string): string {
   let hash = 0x811c9dc5
   for (let index = 0; index < input.length; index += 1) {
     hash ^= input.charCodeAt(index)

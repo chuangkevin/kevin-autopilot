@@ -354,6 +354,18 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
+v0.11.0 真正的「分身大腦」：每個 5-min observation cycle 在 graph
+signature 變動時呼叫一次 Gemini 反思，產出 0–2 個帶 evidence chain 的
+AI idea seed 與最多 1 個焦點節點的 nextExploration 改寫。AI idea 顯示
+「AI 生」pill、可一鍵「永久略過」；超過 5 個 pending AI idea 會自動
+停產（仍可改寫 nextExploration）。token cap、超時、失敗都會記為
+skipped record，cockpit 顯示「反思離線」狀態。`aiReflection.enabled`
+預設 false；上線前先讓本機驗證 wiring。
+
+v0.10.1 makes hub-spoke focus state legible: right-panel title tracks
+the focused node, an "聚焦：X" chip appears with Escape / empty-stage
+reset, and the ambiguous 醒著 chip becomes "5 分鐘自動".
+
 v0.10.0 Neural Cockpit hub-spoke focus and EXTENSION dedup. Clicking a node
 re-centers the graph on it, lays its direct neighbours on the inner ring, fades
 non-neighbours, and shows the relationship rationale inline on every incident

@@ -1,10 +1,23 @@
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { listIdeas } from './ideas.js'
+import {
+  countPendingAiIdeas,
+  createAiIdeaFromSeed,
+  listDismissedAiIdeaTitles,
+  listIdeas,
+} from './ideas.js'
 import { getIdeaGraph } from './idea-graph.js'
 import { observe, writeReports } from './observer.js'
-import { mergeCandidatesIntoBacklog, openBacklogDatabase } from './backlog.js'
-import type { AutopilotConfig, ObservationLoopState, ObservationReport } from './types.js'
+import { listBacklog, mergeCandidatesIntoBacklog, openBacklogDatabase } from './backlog.js'
+import { reflect } from './reflection.js'
+import type {
+  AutopilotConfig,
+  IdeaGraph,
+  ObservationLoopState,
+  ObservationReport,
+  ReflectionStateRecord,
+  SkippedReflectionRecord,
+} from './types.js'
 
 const DEFAULT_INTERVAL_MS = 5 * 60 * 1000
 
@@ -77,7 +90,9 @@ export class ObservationLoop {
       const report = await observe(this.config)
       const written = await writeReports(report, this.config.dataDir)
       const backlogAt = await this.mergeBacklogSafely(report)
-      await getIdeaGraph(this.config, report, await listIdeas(this.config, 40))
+      const ideas = await listIdeas(this.config, 40)
+      const graph = await getIdeaGraph(this.config, report, ideas)
+      const reflectionAt = await this.runReflectionSafely(graph)
       this.lastReport = report
       this.state = {
         ...this.state,
@@ -88,6 +103,7 @@ export class ObservationLoop {
         lastReportAt: report.generatedAt,
         lastGraphAt: new Date().toISOString(),
         lastBacklogAt: backlogAt,
+        lastReflectionAt: reflectionAt ?? this.state.lastReflectionAt,
         lastReportPath: written.jsonPath,
         lastMarkdownPath: written.markdownPath,
       }
@@ -129,6 +145,58 @@ export class ObservationLoop {
     }
   }
 
+  private async runReflectionSafely(graph: IdeaGraph): Promise<string | undefined> {
+    try {
+      const previous = await readReflectionState(this.config)
+      const backlog = listBacklogSnapshot(this.config)
+      const recentIdeas = await listIdeas(this.config, 20)
+      const pendingAiIdeaCount = await countPendingAiIdeas(this.config)
+      const dismissedAiIdeaTitles = await listDismissedAiIdeaTitles(this.config, 20)
+      const previousSignature = previous && previous.skipped === false ? previous.graphSignature : undefined
+
+      const record = await reflect({
+        config: this.config,
+        graph,
+        backlog,
+        recentIdeas,
+        previousSignature,
+        dismissedAiIdeaTitles,
+        pendingAiIdeaCount,
+      })
+
+      if (record.skipped === false) {
+        for (let index = 0; index < record.newIdeaSeeds.length; index += 1) {
+          const seed = record.newIdeaSeeds[index]
+          try {
+            await createAiIdeaFromSeed(
+              this.config,
+              seed,
+              { generatedAt: record.generatedAt, model: record.model },
+              index,
+            )
+          } catch (error) {
+            console.warn('Failed to create AI idea from reflection seed:', error instanceof Error ? error.message : String(error))
+          }
+        }
+      }
+
+      await writeReflectionState(this.config, record)
+      return record.generatedAt
+    } catch (error) {
+      const skipped: SkippedReflectionRecord = {
+        generatedAt: new Date().toISOString(),
+        skipped: true,
+        reason: 'error',
+        detail: error instanceof Error ? error.message : String(error),
+        pendingAiIdeaCount: 0,
+      }
+      try {
+        await writeReflectionState(this.config, skipped)
+      } catch {}
+      return skipped.generatedAt
+    }
+  }
+
   private async persistState(): Promise<void> {
     await mkdir(this.config.dataDir, { recursive: true })
     await writeFile(join(this.config.dataDir, 'observation-loop-state.json'), `${JSON.stringify(this.state, null, 2)}\n`, 'utf8')
@@ -149,4 +217,29 @@ export class ObservationLoop {
 
 export function createObservationLoop(config: AutopilotConfig): ObservationLoop {
   return new ObservationLoop(config)
+}
+
+const REFLECTION_STATE_FILE = 'reflection-state.json'
+
+export async function readReflectionState(config: AutopilotConfig): Promise<ReflectionStateRecord | undefined> {
+  try {
+    const text = await readFile(join(config.dataDir, REFLECTION_STATE_FILE), 'utf8')
+    return JSON.parse(text) as ReflectionStateRecord
+  } catch {
+    return undefined
+  }
+}
+
+export async function writeReflectionState(config: AutopilotConfig, record: ReflectionStateRecord): Promise<void> {
+  await mkdir(config.dataDir, { recursive: true })
+  await writeFile(join(config.dataDir, REFLECTION_STATE_FILE), `${JSON.stringify(record, null, 2)}\n`, 'utf8')
+}
+
+function listBacklogSnapshot(config: AutopilotConfig) {
+  const db = openBacklogDatabase(config)
+  try {
+    return listBacklog(db, 'all', new Date())
+  } finally {
+    db.close()
+  }
 }

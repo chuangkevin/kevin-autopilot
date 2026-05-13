@@ -1,9 +1,16 @@
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { createAgentHandoff } from './agents.js'
 import { analyzeIdeaWithAiCore, applyAiAnalysis } from './ai.js'
 import { createProjectHandoffPlan } from './handoff.js'
-import type { AutopilotConfig, ExistingProjectAnalysis, ExistingProjectMatch, IdeaRecord } from './types.js'
+import type {
+  AutopilotConfig,
+  ExistingProjectAnalysis,
+  ExistingProjectMatch,
+  IdeaAiReflectionProvenance,
+  IdeaRecord,
+  ReflectionIdeaSeed,
+} from './types.js'
 
 const MAX_IDEA_LENGTH = 8000
 const BLOCKED_TERMS = ['刪資料', '重建資料', '正式環境', 'production', 'secret', '金鑰', '.env', 'credential', '部署']
@@ -219,6 +226,145 @@ async function saveIdea(config: AutopilotConfig, record: IdeaRecord): Promise<vo
   const dir = ideasDir(config)
   await mkdir(dir, { recursive: true })
   await writeFile(join(dir, `${record.id}.json`), `${JSON.stringify(record, null, 2)}\n`, 'utf8')
+}
+
+export interface AiSeedMeta {
+  generatedAt: string
+  model: string
+}
+
+export async function createAiIdeaFromSeed(
+  config: AutopilotConfig,
+  seed: ReflectionIdeaSeed,
+  meta: AiSeedMeta,
+  index: number,
+  now: Date = new Date(),
+): Promise<IdeaRecord> {
+  const trimmedText = seed.rawText.trim()
+  if (!trimmedText) throw new Error('AI idea seed rawText is empty')
+  if (trimmedText.length > MAX_IDEA_LENGTH) throw new Error(`AI idea seed rawText exceeds ${MAX_IDEA_LENGTH} chars`)
+
+  const lower = trimmedText.toLowerCase()
+  const matchedBlocked = BLOCKED_TERMS.filter((term) => lower.includes(term.toLowerCase()))
+  const classification: IdeaRecord['classification'] = matchedBlocked.length > 0 ? 'blocked' : 'explore'
+  const approvalRequired = matchedBlocked.length > 0 ? true : Boolean(seed.approvalRequired)
+  const reasons = matchedBlocked.length > 0
+    ? [`AI 反思產出包含需要明確批准的高風險詞：${matchedBlocked.join(', ')}`]
+    : ['AI 反思根據觀察訊號與既有 idea 推導出的探索方向']
+
+  const aiReflection: IdeaAiReflectionProvenance = {
+    generatedAt: meta.generatedAt,
+    model: meta.model,
+    evidence: [...seed.evidence],
+    promptVersion: 'v1',
+  }
+
+  const baseRecord: Omit<IdeaRecord, 'thinking' | 'agentHandoff'> = {
+    id: `${makeIdeaId(now)}-r${index + 1}`,
+    createdAt: now.toISOString(),
+    environment: config.environment,
+    rawText: trimmedText,
+    title: seed.title.slice(0, 80) || makeTitle(trimmedText),
+    classification,
+    reasons,
+    suggestedNextSteps: ['先用 evidence 中提到的節點 / backlog item 作為起點補脈絡', '判斷是否值得進入 OpenSpec 流程'],
+    approvalRequired,
+    existingProjectAnalysis: analyzeExistingProjects(config, trimmedText),
+    aiSource: 'ai-reflection',
+    aiReflection,
+  }
+
+  const thoughtRecord: Omit<IdeaRecord, 'agentHandoff'> = {
+    ...baseRecord,
+    thinking: { mode: 'ai-core', model: meta.model, success: true },
+  }
+  const record: IdeaRecord = {
+    ...thoughtRecord,
+    agentHandoff: createAgentHandoff(thoughtRecord),
+    projectHandoff: createProjectHandoffPlan(thoughtRecord),
+  }
+
+  await saveIdea(config, record)
+  return record
+}
+
+export async function countPendingAiIdeas(config: AutopilotConfig): Promise<number> {
+  const dir = ideasDir(config)
+  try {
+    await mkdir(dir, { recursive: true })
+    const files = (await readdir(dir)).filter((file) => file.endsWith('.json'))
+    let count = 0
+    for (const file of files) {
+      try {
+        const parsed = JSON.parse(await readFile(join(dir, file), 'utf8')) as Partial<IdeaRecord>
+        if (parsed.aiSource === 'ai-reflection') count += 1
+      } catch {
+        continue
+      }
+    }
+    return count
+  } catch {
+    return 0
+  }
+}
+
+export class DismissError extends Error {
+  constructor(public readonly code: 'not-found' | 'not-ai-idea', message: string) {
+    super(message)
+  }
+}
+
+export async function dismissIdea(config: AutopilotConfig, id: string, now: Date = new Date()): Promise<IdeaRecord> {
+  if (!/^idea-[a-zA-Z0-9_.-]+$/.test(id)) {
+    throw new DismissError('not-found', `Unknown idea id: ${id}`)
+  }
+  const sourcePath = join(ideasDir(config), `${id}.json`)
+  let record: IdeaRecord
+  try {
+    record = await readIdeaRecord(config, sourcePath)
+  } catch {
+    throw new DismissError('not-found', `Idea ${id} does not exist`)
+  }
+  if (record.aiSource !== 'ai-reflection') {
+    throw new DismissError('not-ai-idea', `Idea ${id} is not an AI-generated idea`)
+  }
+  const dismissed: IdeaRecord = { ...record, dismissedAt: now.toISOString() }
+  const targetDir = dismissedIdeasDir(config)
+  await mkdir(targetDir, { recursive: true })
+  const targetPath = join(targetDir, `${id}.json`)
+  await writeFile(targetPath, `${JSON.stringify(dismissed, null, 2)}\n`, 'utf8')
+  await unlink(sourcePath)
+  return dismissed
+}
+
+export async function listDismissedAiIdeaTitles(config: AutopilotConfig, limit = 20): Promise<string[]> {
+  const dir = dismissedIdeasDir(config)
+  try {
+    await mkdir(dir, { recursive: true })
+    const files = (await readdir(dir))
+      .filter((file) => file.endsWith('.json'))
+      .sort()
+      .reverse()
+      .slice(0, limit)
+    const titles: string[] = []
+    for (const file of files) {
+      try {
+        const parsed = JSON.parse(await readFile(join(dir, file), 'utf8')) as Partial<IdeaRecord>
+        if (typeof parsed.title === 'string' && parsed.title.trim().length > 0) {
+          titles.push(parsed.title.trim())
+        }
+      } catch {
+        continue
+      }
+    }
+    return titles
+  } catch {
+    return []
+  }
+}
+
+function dismissedIdeasDir(config: AutopilotConfig): string {
+  return join(config.dataDir, 'ideas-dismissed')
 }
 
 async function readIdeaRecord(config: AutopilotConfig, path: string): Promise<IdeaRecord> {

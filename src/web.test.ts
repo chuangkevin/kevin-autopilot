@@ -426,6 +426,80 @@ test('graph action POST routes only mutate graph metadata', async () => {
   }
 })
 
+test('GET /api/reflection/state returns never-run shape before any cycle', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-reflection-never-'))
+  const config: AutopilotConfig = {
+    environment: 'test',
+    dataDir,
+    ruleSources: [],
+    repositories: [],
+    services: [],
+  }
+  const server = createWebServer(config)
+  try {
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const address = server.address()
+    assert.ok(address && typeof address === 'object' && 'port' in address)
+    const baseUrl = `http://127.0.0.1:${address.port}`
+    const response = await fetch(`${baseUrl}/api/reflection/state`)
+    assert.equal(response.status, 200)
+    const body = await response.json()
+    assert.equal(body.skipped, true)
+    assert.equal(body.reason, 'never-run')
+    assert.equal(body.pendingAiIdeaCount, 0)
+    assert.equal(body.pendingAiIdeasCap, 5)
+  } finally {
+    if (server.listening) {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+    }
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('POST /api/ideas/:id/dismiss rejects user ideas and missing ids', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-dismiss-api-'))
+  const config: AutopilotConfig = {
+    environment: 'test',
+    dataDir,
+    ruleSources: [],
+    repositories: [],
+    services: [],
+  }
+  const server = createWebServer(config)
+  try {
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const address = server.address()
+    assert.ok(address && typeof address === 'object' && 'port' in address)
+    const baseUrl = `http://127.0.0.1:${address.port}`
+
+    const created = await fetch(`${baseUrl}/api/ideas`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rawText: 'normal user idea about agent cockpit' }),
+    })
+    const userIdea = await created.json()
+
+    const userDismiss = await fetch(`${baseUrl}/api/ideas/${encodeURIComponent(userIdea.id)}/dismiss`, { method: 'POST' })
+    assert.equal(userDismiss.status, 400)
+
+    const missing = await fetch(`${baseUrl}/api/ideas/idea-missing/dismiss`, { method: 'POST' })
+    assert.equal(missing.status, 404)
+
+    const untrusted = await fetch(`${baseUrl}/api/ideas/${encodeURIComponent(userIdea.id)}/dismiss`, {
+      method: 'POST',
+      headers: { 'x-forwarded-for': '8.8.8.8' },
+    })
+    assert.equal(untrusted.status, 403)
+  } finally {
+    if (server.listening) {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+    }
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
 async function snapshotFiles(root: string, dir = root): Promise<Map<string, string>> {
   const snapshot = new Map<string, string>()
   const entries = await readdir(dir, { withFileTypes: true })

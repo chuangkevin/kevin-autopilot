@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createObservationLoop } from './observation-loop.js'
+import { createObservationLoop, readReflectionState } from './observation-loop.js'
 import { listBacklog, openBacklogDatabase } from './backlog.js'
 import type { AutopilotConfig } from './types.js'
 
@@ -76,6 +76,60 @@ test('two observation cycles upsert the same candidate into the backlog with see
     } finally {
       db.close()
     }
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('observation cycle records reflection skip when AI reflection is disabled', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-loop-reflection-disabled-'))
+  try {
+    const config: AutopilotConfig = {
+      environment: 'test',
+      dataDir,
+      backgroundObservation: { enabled: true, intervalMs: 60_000 },
+      ruleSources: [],
+      repositories: [],
+      services: [],
+    }
+    const loop = createObservationLoop(config)
+    await loop.runOnce()
+    loop.stop()
+
+    const reflection = await readReflectionState(config)
+    assert.ok(reflection, 'reflection state file should exist after a cycle')
+    assert.equal(reflection!.skipped, true)
+    if (reflection!.skipped === true) {
+      assert.equal(reflection!.reason, 'disabled')
+    }
+    assert.equal(loop.getState().lastReflectionAt !== undefined, true)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('observation cycle still succeeds when reflection module throws', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-loop-reflection-error-'))
+  try {
+    const config: AutopilotConfig = {
+      environment: 'test',
+      dataDir,
+      backgroundObservation: { enabled: true, intervalMs: 60_000 },
+      ruleSources: [],
+      repositories: [],
+      services: [],
+      aiReflection: { enabled: true },
+    }
+    const loop = createObservationLoop(config)
+    const report = await loop.runOnce()
+    const state = loop.getState()
+    loop.stop()
+
+    assert.ok(report)
+    assert.equal(state.lastSuccess, true)
+    const reflection = await readReflectionState(config)
+    assert.ok(reflection)
+    assert.equal(reflection!.skipped, true)
   } finally {
     await rm(dataDir, { recursive: true, force: true })
   }

@@ -2,11 +2,19 @@ export interface AutopilotConfig {
   environment: string
   dataDir: string
   ai?: AiConfig
+  aiReflection?: AiReflectionConfig
   backgroundObservation?: BackgroundObservationConfig
   webResearch?: WebResearchConfig
   ruleSources: RuleSourceConfig[]
   repositories: RepositoryConfig[]
   services: ServiceConfig[]
+}
+
+export interface AiReflectionConfig {
+  enabled?: boolean
+  maxOutputTokens?: number
+  maxPendingAiIdeas?: number
+  intervalMs?: number
 }
 
 export interface BackgroundObservationConfig {
@@ -252,7 +260,58 @@ export interface IdeaRecord {
   projectHandoff?: ProjectHandoffPlan
   existingProjectAnalysis: ExistingProjectAnalysis
   thinking: IdeaThinkingSummary
+  aiSource?: 'user' | 'ai-reflection'
+  aiReflection?: IdeaAiReflectionProvenance
+  dismissedAt?: string
 }
+
+export interface IdeaAiReflectionProvenance {
+  generatedAt: string
+  model: string
+  evidence: string[]
+  promptVersion: 'v1'
+}
+
+export interface ReflectionIdeaSeed {
+  title: string
+  rawText: string
+  evidence: string[]
+  approvalRequired?: boolean
+}
+
+export interface ReflectionNextExploration {
+  nodeId: string
+  nextExploration: string
+}
+
+export interface ReflectionTokenUsage {
+  input?: number
+  output?: number
+}
+
+export interface ReflectionRecord {
+  generatedAt: string
+  model: string
+  graphSignature: string
+  skipped: false
+  newIdeaSeeds: ReflectionIdeaSeed[]
+  nextExplorationRewrites: ReflectionNextExploration[]
+  pendingAiIdeaCount: number
+  tokenUsage?: ReflectionTokenUsage
+}
+
+export type SkippedReflectionReason = 'unchanged' | 'pending-cap' | 'disabled' | 'offline' | 'error' | 'never-run'
+
+export interface SkippedReflectionRecord {
+  generatedAt: string
+  skipped: true
+  reason: SkippedReflectionReason
+  detail?: string
+  graphSignature?: string
+  pendingAiIdeaCount: number
+}
+
+export type ReflectionStateRecord = ReflectionRecord | SkippedReflectionRecord
 
 export interface ObservationLoopState {
   mode: 'read-only-background-observation'
@@ -268,6 +327,7 @@ export interface ObservationLoopState {
   lastReportAt?: string
   lastGraphAt?: string
   lastBacklogAt?: string
+  lastReflectionAt?: string
   lastReportPath?: string
   lastMarkdownPath?: string
 }
@@ -318,6 +378,7 @@ export interface IdeaGraphThinkingSummary {
   nextExploration: string
   evidence: string[]
   missingEvidence: string[]
+  nextExplorationAi?: boolean
 }
 
 export interface IdeaGraphAction {

@@ -1,0 +1,336 @@
+import { GeminiClient, KeyPool } from '@kevinsisi/ai-core'
+import { FileKeyStorageAdapter, hasGeminiKeys } from './keys.js'
+import { stableHash6 } from './idea-graph.js'
+import type {
+  AiConfig,
+  AiReflectionConfig,
+  AutopilotConfig,
+  BacklogItem,
+  IdeaGraph,
+  IdeaGraphNode,
+  IdeaRecord,
+  ReflectionIdeaSeed,
+  ReflectionNextExploration,
+  ReflectionRecord,
+  ReflectionStateRecord,
+  SkippedReflectionRecord,
+  SkippedReflectionReason,
+} from './types.js'
+
+const DEFAULT_MAX_OUTPUT_TOKENS = 700
+const DEFAULT_MAX_PENDING_AI_IDEAS = 5
+const DEFAULT_TIMEOUT_MS = 25_000
+const PROMPT_VERSION = 'v1'
+
+const PROMPT_MAX_NODES = 18
+const PROMPT_MAX_BACKLOG = 6
+const PROMPT_MAX_IDEAS = 5
+const PROMPT_MAX_DISMISSED_TITLES = 20
+
+const SEED_CAP = 2
+const REWRITE_CAP = 1
+const SEED_TITLE_MAX = 60
+const SEED_RAWTEXT_MAX = 320
+const REWRITE_TEXT_MAX = 140
+const EVIDENCE_MAX_LEN = 200
+
+export interface ReflectionInput {
+  config: AutopilotConfig
+  graph: IdeaGraph
+  backlog: BacklogItem[]
+  recentIdeas: IdeaRecord[]
+  focusedNodeId?: string
+  previousSignature?: string
+  dismissedAiIdeaTitles: string[]
+  pendingAiIdeaCount: number
+}
+
+export function computeReflectionSignature(graph: IdeaGraph, backlog: BacklogItem[]): string {
+  const nodeIds = [...graph.nodes.map((node) => node.id)].sort().join('|')
+  const backlogPart = [...backlog]
+    .map((item) => `${item.id}:${item.seenCount}:${item.lastSeenAt}`)
+    .sort()
+    .join('|')
+  return stableHash6(`${nodeIds}::${backlogPart}`)
+}
+
+export function buildReflectionPromptInput(input: ReflectionInput, maxNewSeeds: number, signature: string): {
+  payload: Record<string, unknown>
+  knownNodeIds: Set<string>
+} {
+  const knownNodeIds = new Set(input.graph.nodes.map((node) => node.id))
+  const nodesSummary = [...input.graph.nodes]
+    .slice(0, PROMPT_MAX_NODES)
+    .map((node) => summariseNode(node))
+  const focused = input.focusedNodeId
+    ? input.graph.nodes.find((node) => node.id === input.focusedNodeId)
+    : undefined
+  const backlogSummary = [...input.backlog]
+    .filter((item) => item.status === 'active' || !item.status)
+    .slice(0, PROMPT_MAX_BACKLOG)
+    .map((item) => ({
+      id: item.id,
+      kind: item.kind,
+      title: item.title,
+      summary: truncate(item.summary, 120),
+      seenCount: item.seenCount,
+    }))
+  const ideasSummary = [...input.recentIdeas]
+    .slice(0, PROMPT_MAX_IDEAS)
+    .map((idea) => ({
+      id: idea.id,
+      title: idea.title,
+      classification: idea.classification,
+      aiSource: idea.aiSource ?? 'user',
+    }))
+
+  return {
+    knownNodeIds,
+    payload: {
+      promptVersion: PROMPT_VERSION,
+      task: 'Reflect on Kevin Autopilot\'s current graph and propose at most two new idea seeds with audit evidence, and at most one rewrite of a node\'s nextExploration. Output JSON only.',
+      signature,
+      caps: {
+        maxNewIdeaSeeds: maxNewSeeds,
+        maxNextExplorationRewrites: REWRITE_CAP,
+        seedTitleMaxChars: SEED_TITLE_MAX,
+        seedRawTextMaxChars: SEED_RAWTEXT_MAX,
+        rewriteTextMaxChars: REWRITE_TEXT_MAX,
+      },
+      pendingAiIdeaCount: input.pendingAiIdeaCount,
+      knownNodeIds: [...knownNodeIds],
+      focusedNode: focused ? summariseFocusedNode(focused) : null,
+      graphNodes: nodesSummary,
+      backlog: backlogSummary,
+      recentIdeas: ideasSummary,
+      dismissedAiIdeaTitles: input.dismissedAiIdeaTitles.slice(0, PROMPT_MAX_DISMISSED_TITLES),
+      outputSchema: {
+        newIdeaSeeds: [
+          {
+            title: 'string ≤ 60 chars',
+            rawText: 'string ≤ 320 chars',
+            evidence: ['short string referencing a known node id or backlog id'],
+            approvalRequired: 'boolean',
+          },
+        ],
+        nextExplorationRewrites: [
+          {
+            nodeId: 'must be one of knownNodeIds',
+            nextExploration: 'string ≤ 140 chars',
+          },
+        ],
+      },
+    },
+  }
+}
+
+function summariseNode(node: IdeaGraphNode): Record<string, unknown> {
+  return {
+    id: node.id,
+    type: node.type,
+    title: node.title,
+    source: node.source,
+    confidence: node.confidence,
+    keywords: node.keywords.slice(0, 3),
+    summary: truncate(node.summary, 120),
+  }
+}
+
+function summariseFocusedNode(node: IdeaGraphNode): Record<string, unknown> {
+  return {
+    id: node.id,
+    type: node.type,
+    title: node.title,
+    keywords: node.keywords.slice(0, 6),
+    thinking: {
+      understanding: node.thinking.understanding,
+      whyItMatters: node.thinking.whyItMatters,
+      nextExploration: node.thinking.nextExploration,
+      evidence: node.thinking.evidence.slice(0, 4),
+      missingEvidence: node.thinking.missingEvidence.slice(0, 4),
+    },
+  }
+}
+
+function truncate(value: string, max: number): string {
+  if (typeof value !== 'string') return ''
+  if (value.length <= max) return value
+  return `${value.slice(0, max - 1)}…`
+}
+
+export interface ParseReflectionOutputOptions {
+  knownNodeIds: Set<string>
+  maxNewSeeds: number
+}
+
+export function parseReflectionOutput(text: string, options: ParseReflectionOutputOptions): {
+  newIdeaSeeds: ReflectionIdeaSeed[]
+  nextExplorationRewrites: ReflectionNextExploration[]
+} {
+  const parsed = JSON.parse(extractJson(text)) as {
+    newIdeaSeeds?: unknown
+    nextExplorationRewrites?: unknown
+  }
+
+  const seedsRaw: unknown[] = Array.isArray(parsed.newIdeaSeeds) ? parsed.newIdeaSeeds : []
+  const newIdeaSeeds: ReflectionIdeaSeed[] = []
+  const seedCap = Math.min(SEED_CAP, Math.max(0, options.maxNewSeeds))
+  for (const entry of seedsRaw) {
+    if (newIdeaSeeds.length >= seedCap) break
+    if (!entry || typeof entry !== 'object') continue
+    const obj = entry as Record<string, unknown>
+    const title = typeof obj.title === 'string' ? truncate(obj.title.trim(), SEED_TITLE_MAX) : ''
+    const rawText = typeof obj.rawText === 'string' ? truncate(obj.rawText.trim(), SEED_RAWTEXT_MAX) : ''
+    const evidence = Array.isArray(obj.evidence)
+      ? obj.evidence
+        .filter((item): item is string => typeof item === 'string')
+        .map((item) => truncate(item.trim(), EVIDENCE_MAX_LEN))
+        .filter((item) => item.length > 0)
+        .slice(0, 4)
+      : []
+    if (!title || !rawText || evidence.length === 0) continue
+    newIdeaSeeds.push({
+      title,
+      rawText,
+      evidence,
+      approvalRequired: Boolean(obj.approvalRequired),
+    })
+  }
+
+  const rewritesRaw: unknown[] = Array.isArray(parsed.nextExplorationRewrites)
+    ? parsed.nextExplorationRewrites
+    : []
+  const nextExplorationRewrites: ReflectionNextExploration[] = []
+  for (const entry of rewritesRaw) {
+    if (nextExplorationRewrites.length >= REWRITE_CAP) break
+    if (!entry || typeof entry !== 'object') continue
+    const obj = entry as Record<string, unknown>
+    const nodeId = typeof obj.nodeId === 'string' ? obj.nodeId : ''
+    const nextExploration = typeof obj.nextExploration === 'string'
+      ? truncate(obj.nextExploration.trim(), REWRITE_TEXT_MAX)
+      : ''
+    if (!nodeId || !nextExploration) continue
+    if (!options.knownNodeIds.has(nodeId)) continue
+    nextExplorationRewrites.push({ nodeId, nextExploration })
+    if (nextExplorationRewrites.length >= REWRITE_CAP) break
+  }
+
+  return { newIdeaSeeds, nextExplorationRewrites }
+}
+
+function extractJson(text: string): string {
+  const trimmed = text.trim()
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)
+  if (fenced?.[1]) return fenced[1].trim()
+  if (trimmed.startsWith('{')) return trimmed
+  const start = trimmed.indexOf('{')
+  const end = trimmed.lastIndexOf('}')
+  if (start >= 0 && end > start) return trimmed.slice(start, end + 1)
+  throw new Error('AI reflection response did not contain JSON')
+}
+
+export async function reflect(input: ReflectionInput): Promise<ReflectionStateRecord> {
+  const signature = computeReflectionSignature(input.graph, input.backlog)
+  const reflectionConfig: AiReflectionConfig = input.config.aiReflection ?? {}
+  const aiConfig: AiConfig | undefined = input.config.ai
+  const cap = reflectionConfig.maxPendingAiIdeas ?? DEFAULT_MAX_PENDING_AI_IDEAS
+  const maxNewSeeds = Math.max(0, cap - input.pendingAiIdeaCount)
+
+  const baseSkip = (reason: SkippedReflectionReason, detail?: string): SkippedReflectionRecord => ({
+    generatedAt: new Date().toISOString(),
+    skipped: true,
+    reason,
+    detail,
+    graphSignature: signature,
+    pendingAiIdeaCount: input.pendingAiIdeaCount,
+  })
+
+  if (reflectionConfig.enabled !== true) {
+    return baseSkip('disabled', 'aiReflection.enabled is not true')
+  }
+  if (input.previousSignature && input.previousSignature === signature) {
+    return baseSkip('unchanged', 'Graph signature matches previous successful reflection')
+  }
+  if (!aiConfig?.enabled || aiConfig.provider !== 'gemini') {
+    return baseSkip('disabled', 'config.ai is not enabled with the Gemini provider')
+  }
+  if (!(await hasGeminiKeys(input.config))) {
+    return baseSkip('offline', 'No Gemini key available in the configured key pool')
+  }
+
+  const { payload, knownNodeIds } = buildReflectionPromptInput(input, maxNewSeeds, signature)
+  const maxOutputTokens = reflectionConfig.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS
+  const timeoutMs = aiConfig.timeoutMs ?? DEFAULT_TIMEOUT_MS
+
+  let text: string
+  try {
+    const client = new GeminiClient(new KeyPool(new FileKeyStorageAdapter(input.config)), { maxRetries: 2 })
+    const response = await withTimeout(
+      client.generateContent({
+        model: aiConfig.model,
+        maxOutputTokens,
+        systemInstruction:
+          '你是 Kevin Autopilot 的分身反思引擎。讀取 Kevin Autopilot 的目前圖、backlog 與最近想法，依規格輸出 JSON。' +
+          ' 只輸出 JSON，不要 Markdown，不要前後說明文字。' +
+          ' 不得提議新建 repo、deployment、production、讀 secrets、刪資料、API contract change；遇到這類 idea 必須將 approvalRequired 設 true 並改寫成 read-only 觀察任務。' +
+          ' 不要再次提出與 dismissedAiIdeaTitles 中標題語意相同的 idea。' +
+          ' newIdeaSeeds 上限 2、若 caps.maxNewIdeaSeeds 為 0 則必須回 []；nextExplorationRewrites 上限 1。' +
+          ' newIdeaSeeds 每筆都必須有 evidence 引用 knownNodeIds 或 backlog id，否則整筆會被丟掉。',
+        prompt: JSON.stringify(payload),
+      }),
+      timeoutMs,
+    )
+    text = response.text
+  } catch (error) {
+    return baseSkip('offline', error instanceof Error ? error.message : String(error))
+  }
+
+  let parsed: { newIdeaSeeds: ReflectionIdeaSeed[]; nextExplorationRewrites: ReflectionNextExploration[] }
+  try {
+    parsed = parseReflectionOutput(text, { knownNodeIds, maxNewSeeds })
+  } catch (error) {
+    return baseSkip('error', `Failed to parse AI reflection output: ${error instanceof Error ? error.message : String(error)}`)
+  }
+
+  const record: ReflectionRecord = {
+    generatedAt: new Date().toISOString(),
+    model: aiConfig.model,
+    graphSignature: signature,
+    skipped: false,
+    newIdeaSeeds: parsed.newIdeaSeeds,
+    nextExplorationRewrites: parsed.nextExplorationRewrites,
+    pendingAiIdeaCount: input.pendingAiIdeaCount,
+  }
+  return record
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`AI reflection timed out after ${timeoutMs}ms`)), timeoutMs)
+  })
+  try {
+    return await Promise.race([promise, timeoutPromise])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+export function isReflectionRewriteFresh(record: ReflectionStateRecord | undefined, now: Date = new Date()): record is ReflectionRecord {
+  if (!record || record.skipped === true) return false
+  const generatedAt = new Date(record.generatedAt).getTime()
+  return Number.isFinite(generatedAt) && now.getTime() - generatedAt <= 60 * 60 * 1000
+}
+
+export const PROMPT_LIMITS = {
+  PROMPT_VERSION,
+  PROMPT_MAX_NODES,
+  PROMPT_MAX_BACKLOG,
+  PROMPT_MAX_IDEAS,
+  PROMPT_MAX_DISMISSED_TITLES,
+  SEED_CAP,
+  REWRITE_CAP,
+  SEED_TITLE_MAX,
+  SEED_RAWTEXT_MAX,
+  REWRITE_TEXT_MAX,
+} as const

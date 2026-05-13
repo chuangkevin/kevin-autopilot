@@ -36,7 +36,12 @@ v0.8.1 automatic idea extension nodes, and v0.9.0 bounded public web research
 findings via cached read-only DuckDuckGo Instant Answer queries, and v0.10.0
 Neural Cockpit hub-spoke focus interaction with inline edge labels plus
 signature-based EXTENSION dedup that retires the timestamp-suffix id scheme
-and collapses legacy duplicates on graph load.
+and collapses legacy duplicates on graph load, v0.10.1 legible focus state
+(right-panel title tracks focused node, "聚焦：X" chip, clearer status
+copy), and v0.11.0 the AI graph reflection module that mints
+evidence-backed AI idea seeds and AI-rewritten nextExploration on every
+graph-changed cycle with a pending cap, dismiss path, token cap, and
+fail-soft skip records.
 Keep these versions read-only: they may observe, classify, report, and store
 Autopilot-owned reports/idea records/supplements, but they must not modify target
 repos, create repos, deploy, commit/push other projects, or perform destructive

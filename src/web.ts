@@ -8,7 +8,14 @@ import {
   resolveBacklogItem,
   snoozeBacklogItem,
 } from './backlog.js'
-import { createIdea, getIdea, listIdeas } from './ideas.js'
+import {
+  countPendingAiIdeas,
+  createIdea,
+  DismissError,
+  dismissIdea,
+  getIdea,
+  listIdeas,
+} from './ideas.js'
 import {
   extendIdeaGraphNode,
   findIdeaGraphNodeRelationships,
@@ -18,7 +25,8 @@ import {
   stopExploringIdeaGraphNode,
 } from './idea-graph.js'
 import { clearStoredGeminiKeys, getKeyStatus, importGeminiKeys } from './keys.js'
-import { createObservationLoop, type ObservationLoop } from './observation-loop.js'
+import { createObservationLoop, readReflectionState, type ObservationLoop } from './observation-loop.js'
+import { isReflectionRewriteFresh } from './reflection.js'
 import { observe } from './observer.js'
 import { createSupplement, listSupplements } from './supplements.js'
 import type {
@@ -182,7 +190,60 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
       writeText(response, 'Graph node not found', 404)
       return
     }
+    const reflection = await readReflectionState(config)
+    if (isReflectionRewriteFresh(reflection)) {
+      const rewrite = reflection.nextExplorationRewrites.find((entry) => entry.nodeId === detail.node.id)
+      if (rewrite) {
+        detail.node = {
+          ...detail.node,
+          thinking: {
+            ...detail.node.thinking,
+            nextExploration: rewrite.nextExploration,
+            nextExplorationAi: true,
+          },
+        }
+      }
+    }
     writeJson(response, detail)
+    return
+  }
+
+  if (url.pathname === '/api/reflection/state' && request.method === 'GET') {
+    const reflection = await readReflectionState(config)
+    const pendingAiIdeasCap = config.aiReflection?.maxPendingAiIdeas ?? 5
+    const pendingAiIdeaCount = await countPendingAiIdeas(config)
+    if (!reflection) {
+      writeJson(response, {
+        generatedAt: new Date(0).toISOString(),
+        skipped: true,
+        reason: 'never-run',
+        pendingAiIdeaCount,
+        pendingAiIdeasCap,
+      })
+      return
+    }
+    writeJson(response, { ...reflection, pendingAiIdeasCap })
+    return
+  }
+
+  const dismissIdeaMatch = url.pathname.match(/^\/api\/ideas\/([^/]+)\/dismiss$/)
+  if (dismissIdeaMatch && request.method === 'POST') {
+    if (!isTrustedSettingsRequest(request)) {
+      writeText(response, 'Idea dismiss requires loopback, private LAN, Docker, or Tailscale access', 403)
+      return
+    }
+    const id = decodeURIComponent(dismissIdeaMatch[1] ?? '')
+    try {
+      const dismissed = await dismissIdea(config, id)
+      writeJson(response, dismissed, 201)
+    } catch (error) {
+      if (error instanceof DismissError) {
+        if (error.code === 'not-found') writeText(response, error.message, 404)
+        else writeText(response, error.message, 400)
+        return
+      }
+      writeText(response, error instanceof Error ? error.message : String(error), 500)
+    }
     return
   }
 
@@ -431,6 +492,8 @@ function renderPage(
     .neural-hidden-chip { position: absolute; right: 12px; bottom: 10px; padding: 6px 12px; border-radius: 999px; background: rgba(11,9,7,0.78); color: #fde68a; font-size: 12px; font-weight: 700; border: 1px solid rgba(251,191,36,0.32); pointer-events: none; }
     .focus-hint { display: inline-block; margin: 0 0 6px; padding: 4px 10px; border-radius: 999px; background: rgba(251,191,36,0.16); border: 1px solid rgba(251,191,36,0.4); color: #fde68a; font-size: 12px; font-weight: 700; }
     .focus-hint[hidden] { display: none; }
+    .ai-pill { background: rgba(168,85,247,0.22); color: #e9d5ff; border: 1px solid rgba(168,85,247,0.42); font-weight: 800; }
+    .ai-tag { display: inline-block; margin-left: 6px; padding: 2px 8px; border-radius: 999px; background: rgba(168,85,247,0.22); color: #e9d5ff; border: 1px solid rgba(168,85,247,0.42); font-size: 11px; font-weight: 700; vertical-align: middle; }
     .brain-node.double { width: clamp(138px, 20vw, 190px); min-height: 104px; max-height: 160px; border-radius: 999px; background: radial-gradient(circle, rgba(251,191,36,0.28), rgba(11,9,7,0.82)); }
     .brain-node.keyword { border-style: dashed; color: #fde68a; }
     .brain-node.project { color: #bbf7d0; }
@@ -713,6 +776,50 @@ function renderPage(
   const NEURAL_OUTER_RING_LIMIT = 14;
 
   const initialLoopData = JSON.parse(document.getElementById('loop-data')?.textContent || '{}');
+
+  function formatHm(value) {
+    if (!value) return '—';
+    try {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return '—';
+      return new Intl.DateTimeFormat('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Taipei' }).format(date);
+    } catch { return '—'; }
+  }
+
+  async function refreshReflectionStatus() {
+    const status = document.getElementById('reflection-status');
+    if (!status) return;
+    try {
+      const response = await fetch('/api/reflection/state', { cache: 'no-store' });
+      if (!response.ok) {
+        status.textContent = '反思狀態暫時讀不到。';
+        return;
+      }
+      const record = await response.json();
+      const pending = record.pendingAiIdeaCount ?? 0;
+      const cap = record.pendingAiIdeasCap ?? 5;
+      if (record.skipped === true) {
+        if (record.reason === 'never-run') {
+          status.textContent = '分身還沒做過反思 · pending AI 想法 ' + pending + '/' + cap;
+        } else if (record.reason === 'unchanged') {
+          status.textContent = '上次反思：' + formatHm(record.generatedAt) + ' · 圖未變化 · pending ' + pending + '/' + cap;
+        } else if (record.reason === 'disabled') {
+          status.textContent = '反思離線：' + (record.detail || 'disabled') + ' · pending ' + pending + '/' + cap;
+        } else {
+          status.textContent = '反思離線（' + record.reason + '）：' + (record.detail || '') + ' · pending ' + pending + '/' + cap;
+        }
+      } else {
+        const seeds = (record.newIdeaSeeds && record.newIdeaSeeds.length) || 0;
+        const rewrites = (record.nextExplorationRewrites && record.nextExplorationRewrites.length) || 0;
+        status.textContent = '上次反思：' + formatHm(record.generatedAt) + ' · 新 idea ' + seeds + ' · 改寫 ' + rewrites + ' · pending ' + pending + '/' + cap;
+      }
+    } catch {
+      status.textContent = '反思狀態暫時讀不到。';
+    }
+  }
+
+  refreshReflectionStatus();
+
   setInterval(async () => {
     const status = document.getElementById('graph-refresh-status');
     try {
@@ -730,6 +837,7 @@ function renderPage(
     } catch {
       if (status) status.textContent = '暫時讀不到背景狀態；下一分鐘會再試。';
     }
+    refreshReflectionStatus();
   }, 60000);
 
   async function resetFocusToCenter() {
@@ -800,6 +908,27 @@ function renderPage(
         }
         await copyText(prompt);
         actionButton.textContent = 'Prompt 已複製';
+      }
+      return;
+    }
+
+    const dismissAiIdeaButton = target.closest('.dismiss-ai-idea');
+    if (dismissAiIdeaButton) {
+      event.preventDefault();
+      const ideaId = dismissAiIdeaButton.getAttribute('data-id');
+      if (!ideaId) return;
+      dismissAiIdeaButton.textContent = '略過中...';
+      try {
+        const response = await fetch('/api/ideas/' + encodeURIComponent(ideaId) + '/dismiss', { method: 'POST' });
+        if (!response.ok) {
+          dismissAiIdeaButton.textContent = await response.text();
+          return;
+        }
+        const card = document.getElementById('idea-card-' + ideaId);
+        if (card) card.remove();
+        refreshReflectionStatus();
+      } catch (error) {
+        dismissAiIdeaButton.textContent = '略過失敗';
       }
       return;
     }
@@ -949,7 +1078,8 @@ function renderPage(
     const promptHtml = node.prompt ? '<details><summary>OpenCode prompt</summary><button type="button" class="secondary copy-prompt">複製 Prompt</button><span class="copy-status" aria-live="polite"></span><pre>' + htmlEscape(node.prompt) + '</pre></details>' : '';
     const evidenceHtml = node.thinking.evidence.length === 0 ? '<p class="muted">目前沒有證據。</p>' : '<ul class="radar-signals">' + node.thinking.evidence.slice(0, 4).map((item) => '<li>' + htmlEscape(item) + '</li>').join('') + '</ul>';
     const missingHtml = node.thinking.missingEvidence.length === 0 ? '<p class="muted">目前沒有明確缺口。</p>' : '<ul class="radar-signals">' + node.thinking.missingEvidence.slice(0, 4).map((item) => '<li>' + htmlEscape(item) + '</li>').join('') + '</ul>';
-    drawer.innerHTML = '<div class="recommendation"><strong>' + htmlEscape(node.title) + '</strong><div>' + htmlEscape(node.summary) + '</div><div class="muted">' + htmlEscape(node.type) + ' · ' + htmlEscape(node.confidence) + ' · ' + htmlEscape(node.source) + '</div></div><div class="trace-note"><strong>我怎麼理解它</strong><div>' + htmlEscape(node.thinking.understanding) + '</div><div class="muted">為什麼有關：' + htmlEscape(node.thinking.whyItMatters) + '</div><div class="muted">下一步：' + htmlEscape(node.thinking.nextExploration) + '</div></div><div><strong>關鍵字</strong><div class="workbench-meta">' + keywordHtml + '</div></div><div><strong>相連節點</strong>' + connectedHtml + '</div><div><strong>證據</strong>' + evidenceHtml + '</div><div><strong>缺的證據</strong>' + missingHtml + '</div>' + promptHtml;
+    const nextExplorationTag = node.thinking.nextExplorationAi ? '<span class="ai-tag">AI 改寫</span>' : '';
+    drawer.innerHTML = '<div class="recommendation"><strong>' + htmlEscape(node.title) + '</strong><div>' + htmlEscape(node.summary) + '</div><div class="muted">' + htmlEscape(node.type) + ' · ' + htmlEscape(node.confidence) + ' · ' + htmlEscape(node.source) + '</div></div><div class="trace-note"><strong>我怎麼理解它</strong><div>' + htmlEscape(node.thinking.understanding) + '</div><div class="muted">為什麼有關：' + htmlEscape(node.thinking.whyItMatters) + '</div><div class="muted">下一步：' + htmlEscape(node.thinking.nextExploration) + nextExplorationTag + '</div></div><div><strong>關鍵字</strong><div class="workbench-meta">' + keywordHtml + '</div></div><div><strong>相連節點</strong>' + connectedHtml + '</div><div><strong>證據</strong>' + evidenceHtml + '</div><div><strong>缺的證據</strong>' + missingHtml + '</div>' + promptHtml;
   }
 
   async function refreshGraphInPlace(targetFocus) {
@@ -1199,6 +1329,7 @@ function renderNeuralCockpit(graph: IdeaGraph, loopState: ObservationLoopState):
           <div class="status-item"><span class="label">關聯</span><strong>${graph.edges.length}</strong></div>
         </div>
         <p class="muted">${escapeHtml(renderLoopPlainStatus(loopState))}</p>
+        <p class="muted" id="reflection-status">讀取分身反思狀態中...</p>
         <p class="muted" id="graph-refresh-status">頁面每分鐘會檢查分身腦圖是否長出新節點；有新圖會自動刷新。</p>
         <p class="muted">安全邊界：我可以做夢、聯想、觀察、整理、延伸、產生 prompt；但夢不是事實，我也不會自己改 repo、commit、push、部署或讀 secrets。</p>
         <div class="node-drawer" id="node-drawer">
@@ -1605,7 +1736,15 @@ function renderIdea(idea: IdeaRecord): string {
   const handoff = idea.agentHandoff
   const projectHandoff = idea.projectHandoff
   const projectAnalysis = idea.existingProjectAnalysis
-  return `<a class="idea" href="/ideas/${escapeHtml(idea.id)}">
+  const isAi = idea.aiSource === 'ai-reflection'
+  const aiBadge = isAi ? '<span class="pill ai-pill">AI 生</span>' : ''
+  const evidenceLine = isAi && idea.aiReflection && idea.aiReflection.evidence.length > 0
+    ? `<div class="idea-meta">AI 證據：${escapeHtml(idea.aiReflection.evidence.slice(0, 3).join(' · '))}</div>`
+    : ''
+  const dismissButton = isAi
+    ? `<button type="button" class="secondary dismiss-ai-idea" data-id="${escapeHtml(idea.id)}" onclick="event.stopPropagation(); event.preventDefault();">永久略過</button>`
+    : ''
+  return `<a class="idea" id="idea-card-${escapeHtml(idea.id)}" href="/ideas/${escapeHtml(idea.id)}">
     <div>
       <span class="idea-icon">${escapeHtml(ideaIcon(idea))}</span>
       <div class="idea-meta">${escapeHtml(formatTaipeiTime(idea.createdAt))}</div>
@@ -1614,12 +1753,15 @@ function renderIdea(idea: IdeaRecord): string {
       <div class="idea-title">${escapeHtml(idea.title)}</div>
       <div class="idea-meta">分身狀態：${escapeHtml(ideaStatus(idea))}</div>
       <div class="muted">${escapeHtml(projectAnalysis.summary)}</div>
+      ${evidenceLine}
     </div>
     <div class="idea-status">
+      ${aiBadge}
       <span class="pill">${escapeHtml(idea.classification)}</span>
       <span class="pill ${idea.approvalRequired ? 'warn' : 'ok'}">${idea.approvalRequired ? '需要 approval' : '可先探索'}</span>
       <div class="idea-meta">${escapeHtml(idea.thinking.mode)}${handoff ? ` · ${escapeHtml(handoff.decision)}` : ''}</div>
       ${projectHandoff ? `<div class="idea-meta">Handoff: ${escapeHtml(projectHandoff.repoName)} · ${escapeHtml(projectHandoff.firstArtifact)}</div>` : ''}
+      ${dismissButton}
     </div>
   </a>`
 }
