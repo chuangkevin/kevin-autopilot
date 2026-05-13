@@ -40,4 +40,4 @@
 ## 7. Verification And Deploy
 
 - [x] 7.1 Rebuild the local Docker image (`docker build -f Dockerfile.local -t kevin-autopilot:local-test .`) and re-run the kevinhome local container; confirm `/health` returns `0.10.0`, the cockpit renders, clicking a node re-centers it, edge labels appear, and the EXTENSION ring no longer shows duplicates.
-- [ ] 7.2 Commit, push, and verify the `deploy-dev` workflow brings `https://kevin.sisihome.org/health` to `0.10.0`.
+- [x] 7.2 Commit, push, and verify the `deploy-dev` workflow brings `https://kevin.sisihome.org/health` to `0.10.0`.
