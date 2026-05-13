@@ -289,7 +289,7 @@ export async function reflect(input: ReflectionInput): Promise<ReflectionStateRe
   try {
     parsed = parseReflectionOutput(text, { knownNodeIds, maxNewSeeds })
   } catch (error) {
-    return baseSkip('error', `Failed to parse AI reflection output: ${error instanceof Error ? error.message : String(error)}`)
+    return baseSkip('error', `Failed to parse AI reflection output: ${error instanceof Error ? error.message : String(error)}; responseSnippet=${summarizeAiReflectionText(text)}`)
   }
 
   const record: ReflectionRecord = {
@@ -302,6 +302,12 @@ export async function reflect(input: ReflectionInput): Promise<ReflectionStateRe
     pendingAiIdeaCount: input.pendingAiIdeaCount,
   }
   return record
+}
+
+export function summarizeAiReflectionText(text: string): string {
+  const compact = text.replace(/\s+/g, ' ').trim()
+  if (!compact) return '<empty>'
+  return JSON.stringify(compact.length > 280 ? `${compact.slice(0, 280)}...` : compact)
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {

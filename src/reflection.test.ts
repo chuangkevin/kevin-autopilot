@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { computeReflectionSignature, parseReflectionOutput } from './reflection.js'
+import { computeReflectionSignature, parseReflectionOutput, summarizeAiReflectionText } from './reflection.js'
 import type {
   AutopilotConfig,
   BacklogItem,
@@ -159,6 +159,14 @@ test('parseReflectionOutput accepts JSON wrapped in code fences', () => {
 
 test('parseReflectionOutput throws when no JSON is present', () => {
   assert.throws(() => parseReflectionOutput('hello world', { knownNodeIds: new Set(), maxNewSeeds: 2 }))
+})
+
+test('summarizeAiReflectionText makes parse failures diagnosable without huge details', () => {
+  const summary = summarizeAiReflectionText(`\n\nI cannot comply with JSON only. ${'x'.repeat(400)}`)
+  assert.match(summary, /^"I cannot comply with JSON only\./)
+  assert.equal(summary.endsWith('..."'), true)
+  assert.equal(summary.length <= 285, true)
+  assert.equal(summarizeAiReflectionText('   \n '), '<empty>')
 })
 
 test('parseReflectionOutput truncates over-long fields', () => {
