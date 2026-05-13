@@ -25,6 +25,12 @@ const CENTER_NODE_ID = 'double-kevin-autopilot'
 const STOP_WORDS = new Set(['我要', '可以', '現在', '這個', '那個', '一個', '不是', '就是', '沒有', '什麼', 'the', 'and', 'with', 'that', 'for', 'safe'])
 const BORING_RESEARCH_KEYWORDS = new Set(['autopilot', 'docs', 'doc', 'work', 'homelab', 'uncommitted', 'kevin', 'repo', 'git', 'test', 'tests', 'handoff'])
 const LEGACY_LITERAL_METAPHOR_PATTERN = /電子羊|electric sheep/i
+const WORLD_DISCOVERY_SEEDS: Array<{ id: string, title: string, keywords: string[] }> = [
+  { id: 'agent-interface-experiments', title: '世界線索：AI agent interface experiments', keywords: ['ai', 'agent', 'interface', 'experiments'] },
+  { id: 'weird-personal-knowledge-tools', title: '世界線索：weird personal knowledge tools', keywords: ['personal', 'knowledge', 'tools', 'weird'] },
+  { id: 'research-workflow-cockpits', title: '世界線索：research workflow cockpits', keywords: ['research', 'workflow', 'cockpit', 'tools'] },
+  { id: 'calm-computing-prototypes', title: '世界線索：calm computing prototypes', keywords: ['calm', 'computing', 'prototype', 'ambient'] },
+]
 
 interface StoredIdeaGraph {
   nodes: IdeaGraphNode[]
@@ -330,16 +336,28 @@ function createProjectedGraph(
 }
 
 function makeWebResearchSeeds(ideas: IdeaRecord[], suppressedKeywords: Set<string>, feedback: GraphFeedbackProfile): WebResearchSeed[] {
-  return ideas
+  const ideaSeeds = ideas
     .filter((idea) => !hasSuppressedKeyword(idea.rawText, suppressedKeywords))
     .sort((a, b) => ideaFeedbackScore(b, feedback) - ideaFeedbackScore(a, feedback))
     .slice(0, 8)
     .map((idea) => ({
-    id: idea.id,
-    nodeId: `idea-${safeId(idea.id)}`,
-    title: idea.title,
-    keywords: filterSuppressedKeywords(extractIdeaKeywords(idea.rawText), suppressedKeywords),
-  }))
+      id: idea.id,
+      nodeId: `idea-${safeId(idea.id)}`,
+      title: idea.title,
+      keywords: filterSuppressedKeywords(extractIdeaKeywords(idea.rawText), suppressedKeywords),
+    }))
+  return [...ideaSeeds, ...makeWorldDiscoverySeeds(suppressedKeywords)]
+}
+
+function makeWorldDiscoverySeeds(suppressedKeywords: Set<string>): WebResearchSeed[] {
+  return WORLD_DISCOVERY_SEEDS
+    .filter((seed) => !hasSuppressedKeyword(`${seed.title} ${seed.keywords.join(' ')}`, suppressedKeywords))
+    .map((seed) => ({
+      id: `world-${seed.id}`,
+      nodeId: CENTER_NODE_ID,
+      title: seed.title,
+      keywords: seed.keywords,
+    }))
 }
 
 function makeCenterNode(report: ObservationReport, ideas: IdeaRecord[], now: string): IdeaGraphNode {
@@ -467,10 +485,11 @@ function makeResearchSeed(keyword: string, now: string): IdeaGraphNode {
 }
 
 function makeWebFindingNode(finding: WebResearchFinding): IdeaGraphNode {
+  const isWorldDiscovery = finding.seedId.startsWith('world-')
   return makeNode({
     id: `research-${safeId(finding.id)}`,
     type: 'research',
-    title: `網路發現：${finding.title}`,
+    title: `${isWorldDiscovery ? '世界發現' : '網路發現'}：${finding.title}`,
     summary: finding.summary.length > 220 ? `${finding.summary.slice(0, 217)}...` : finding.summary,
     source: `web-research:${finding.id}`,
     confidence: finding.url ? 'medium' : 'weak',
@@ -479,7 +498,7 @@ function makeWebFindingNode(finding: WebResearchFinding): IdeaGraphNode {
     now: finding.fetchedAt,
     thinking: {
       understanding: `這是分身針對「${finding.query}」做的公開網路 read-only 查詢摘要。`,
-      whyItMatters: 'Kevin 要的分身不能只順著話長節點，也要補外部線索，讓想法有可查證的研究素材。',
+      whyItMatters: isWorldDiscovery ? 'Kevin 要的是世界上有趣的事情：真實產品、研究、怪案例、可偷學的互動模式。' : 'Kevin 要的分身不能只順著話長節點，也要補外部線索，讓想法有可查證的研究素材。',
       nextExploration: finding.url ? `打開來源確認內容是否真的適合 Kevin：${finding.url}` : '換更具體的關鍵字重新搜尋。',
       evidence: [`查詢：${finding.query}`, `來源：${finding.sourceName}`, finding.url ? `URL: ${finding.url}` : '搜尋 API 未回傳可引用 URL'],
       missingEvidence: finding.url ? [] : ['需要更具體查詢或其他 approved web source。'],
