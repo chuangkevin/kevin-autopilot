@@ -17,6 +17,7 @@ import {
   getIdeaGraph,
   getIdeaGraphNodeDetail,
   markIdeaGraphNodeInteresting,
+  migrateExtensionDuplicates,
   stopExploringIdeaGraphNode,
 } from './idea-graph.js'
 import { observe } from './observer.js'
@@ -593,12 +594,289 @@ test('legacy stored graph nodes without prompt receive safe prompts on refresh',
 
     const report = await observe(config)
     const graph = await getIdeaGraph(config, report, [])
-    const legacy = graph.nodes.find((node) => node.id === 'extension-legacy-node')
+    const legacy = graph.nodes.find((node) => node.type === 'extension' && node.source === 'extension:legacy')
     assert.ok(legacy)
+    assert.match(legacy.id, /^extension-legacy-[0-9a-f]{6}$/)
     assert.match(legacy.prompt ?? '', /do not edit target repositories/i)
     assert.equal(legacy.actions.find((action) => action.id === 'copy-opencode-prompt')?.enabled, true)
   } finally {
     await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('extension nodes use deterministic signature-based ids', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-extension-signature-'))
+  const config: AutopilotConfig = {
+    environment: 'test',
+    dataDir,
+    ruleSources: [],
+    repositories: [],
+    services: [],
+  }
+  try {
+    const idea = await createIdea(config, '想做 agent cockpit 並延伸出研究種子')
+    const report = await observe(config)
+    const first = await getIdeaGraph(config, report, [idea])
+    const firstExtensionIds = first.nodes
+      .filter((node) => node.type === 'extension' && node.source.startsWith(`idea-extension:${idea.id}:`))
+      .map((node) => node.id)
+      .sort()
+    assert.equal(firstExtensionIds.length > 0, true)
+    assert.equal(firstExtensionIds.every((id) => /^extension-idea-[a-z0-9-]+-[0-9a-f]{6}$/.test(id)), true)
+
+    const second = await getIdeaGraph(config, report, [idea])
+    const secondExtensionIds = second.nodes
+      .filter((node) => node.type === 'extension' && node.source.startsWith(`idea-extension:${idea.id}:`))
+      .map((node) => node.id)
+      .sort()
+    assert.deepEqual(secondExtensionIds, firstExtensionIds)
+    const reloadedExtension = second.nodes.find((node) => node.id === firstExtensionIds[0])
+    assert.ok(reloadedExtension)
+    assert.equal((reloadedExtension.seenCount ?? 0) >= 2, true)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('extending a node twice upserts the same signature-based extension', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-extension-upsert-'))
+  const config: AutopilotConfig = {
+    environment: 'test',
+    dataDir,
+    ruleSources: [],
+    repositories: [],
+    services: [],
+  }
+  try {
+    const idea = await createIdea(config, 'agent cockpit extend test')
+    const report = await observe(config)
+    const graph = await getIdeaGraph(config, report, [idea])
+    const ideaNode = graph.nodes.find((node) => node.type === 'idea')
+    assert.ok(ideaNode)
+
+    const firstExtend = await extendIdeaGraphNode(config, report, [idea], ideaNode.id)
+    const secondExtend = await extendIdeaGraphNode(config, report, [idea], ideaNode.id)
+    const thirdExtend = await extendIdeaGraphNode(config, report, [idea], ideaNode.id)
+    assert.equal(firstExtend?.node.id, secondExtend?.node.id)
+    assert.equal(firstExtend?.node.id, thirdExtend?.node.id)
+
+    const refreshed = await getIdeaGraph(config, report, [idea])
+    const onDemandExtensions = refreshed.nodes.filter((node) => node.type === 'extension' && node.source === `extension:${ideaNode.id}`)
+    assert.equal(onDemandExtensions.length, 1)
+    assert.equal((onDemandExtensions[0].seenCount ?? 0) >= 2, true)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('extending a node respects the per-parent extension cap', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-extension-cap-'))
+  const config: AutopilotConfig = {
+    environment: 'test',
+    dataDir,
+    ruleSources: [],
+    repositories: [],
+    services: [],
+  }
+  try {
+    const idea = await createIdea(config, '想嘗試 agent cockpit 各種延伸方向')
+    const report = await observe(config)
+    const graph = await getIdeaGraph(config, report, [idea])
+    const ideaNode = graph.nodes.find((node) => node.type === 'idea')
+    assert.ok(ideaNode)
+
+    const now = new Date().toISOString()
+    const parentId = ideaNode.id
+    const syntheticChildren = Array.from({ length: 6 }, (_, index) => ({
+      id: `extension-${parentId}-synthetic${index}`,
+      type: 'extension' as const,
+      title: `延伸：分支線 ${index}`,
+      summary: `合成測試節點 ${index}`,
+      source: `extension:${parentId}`,
+      createdAt: now,
+      updatedAt: now,
+      confidence: 'medium' as const,
+      safety: 'read-only' as const,
+      keywords: [`branch-${index}`],
+      relatedProjectNames: [],
+      thinking: {
+        understanding: '',
+        whyItMatters: '',
+        nextExploration: '',
+        evidence: [],
+        missingEvidence: [],
+      },
+      actions: [],
+    }))
+    const existingRaw = JSON.parse(await readFile(join(dataDir, 'idea-graph.json'), 'utf8')) as { nodes: unknown[]; edges: unknown[] }
+    const mergedNodes = [...existingRaw.nodes, ...syntheticChildren]
+    const mergedEdges = [...existingRaw.edges, ...syntheticChildren.map((child) => ({
+      id: `extends-${parentId}-${child.id}`,
+      type: 'extends' as const,
+      from: parentId,
+      to: child.id,
+      rationale: 'synthetic edge for cap test',
+      confidence: 'medium' as const,
+      source: `extension:${parentId}`,
+      createdAt: now,
+      updatedAt: now,
+    }))]
+    await writeFile(join(dataDir, 'idea-graph.json'), JSON.stringify({ nodes: mergedNodes, edges: mergedEdges }), 'utf8')
+
+    const result = await extendIdeaGraphNode(config, report, [idea], ideaNode.id)
+    assert.ok(result)
+    const after = await getIdeaGraph(config, report, [idea])
+    const childExtensions = after.nodes.filter((node) => node.type === 'extension' && node.source === `extension:${parentId}`)
+    assert.equal(childExtensions.length, 6)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('migrateExtensionDuplicates keeps distinct legacy extensions distinct', () => {
+  const baseTimestamp = '2026-04-01T00:00:00.000Z'
+  const legacy = {
+    nodes: [
+      {
+        id: 'extension-test-parent-1',
+        type: 'extension',
+        title: '延伸：第一條探索線',
+        summary: 'legacy first',
+        source: 'idea-extension:test-parent:1',
+        createdAt: baseTimestamp,
+        updatedAt: baseTimestamp,
+        confidence: 'medium',
+        safety: 'read-only',
+        keywords: ['agent', 'cockpit'],
+        relatedProjectNames: [],
+        thinking: { understanding: '', whyItMatters: '', nextExploration: '', evidence: [], missingEvidence: [] },
+        actions: [],
+      },
+      {
+        id: 'extension-test-parent-2',
+        type: 'extension',
+        title: '延伸：第二條完全不同的方向',
+        summary: 'legacy second',
+        source: 'idea-extension:test-parent:2',
+        createdAt: baseTimestamp,
+        updatedAt: baseTimestamp,
+        confidence: 'medium',
+        safety: 'read-only',
+        keywords: ['research', 'prototype'],
+        relatedProjectNames: [],
+        thinking: { understanding: '', whyItMatters: '', nextExploration: '', evidence: [], missingEvidence: [] },
+        actions: [],
+      },
+    ],
+    edges: [
+      {
+        id: 'extends-idea-test-parent-extension-test-parent-1',
+        type: 'extends',
+        from: 'idea-test-parent',
+        to: 'extension-test-parent-1',
+        rationale: 'legacy edge 1',
+        confidence: 'medium',
+        source: 'idea-extension:test-parent:1',
+        createdAt: baseTimestamp,
+        updatedAt: baseTimestamp,
+      },
+      {
+        id: 'extends-idea-test-parent-extension-test-parent-2',
+        type: 'extends',
+        from: 'idea-test-parent',
+        to: 'extension-test-parent-2',
+        rationale: 'legacy edge 2',
+        confidence: 'medium',
+        source: 'idea-extension:test-parent:2',
+        createdAt: baseTimestamp,
+        updatedAt: baseTimestamp,
+      },
+    ],
+  }
+
+  const migrated = migrateExtensionDuplicates(legacy as never)
+  const extensions = migrated.nodes.filter((node) => node.type === 'extension')
+  assert.equal(extensions.length, 2, 'different titles produce different canonical ids and remain separate')
+  for (const extension of extensions) {
+    assert.match(extension.id, /^extension-[a-z0-9-]+-[0-9a-f]{6}$/)
+  }
+  for (const edge of migrated.edges) {
+    assert.equal(migrated.nodes.some((node) => node.id === edge.to) || edge.to === 'idea-test-parent', true)
+  }
+})
+
+test('migrateExtensionDuplicates merges true duplicates with the same canonical id', () => {
+  const baseTimestamp = '2026-04-01T00:00:00.000Z'
+  const laterTimestamp = '2026-04-02T00:00:00.000Z'
+  const sharedTitle = '延伸：完全相同的標題'
+  const sharedKeywords = ['agent', 'cockpit']
+  const parent = 'idea-shared-parent'
+  const legacy = {
+    nodes: [
+      {
+        id: `extension-${parent}-1`,
+        type: 'extension',
+        title: sharedTitle,
+        summary: 'oldest',
+        source: 'idea-extension:shared-parent:1',
+        createdAt: baseTimestamp,
+        updatedAt: baseTimestamp,
+        confidence: 'medium',
+        safety: 'read-only',
+        keywords: sharedKeywords,
+        relatedProjectNames: [],
+        thinking: { understanding: '', whyItMatters: '', nextExploration: '', evidence: [], missingEvidence: [] },
+        actions: [],
+      },
+      {
+        id: `extension-${parent}-1700000000000`,
+        type: 'extension',
+        title: sharedTitle,
+        summary: 'newer dup',
+        source: 'idea-extension:shared-parent:1',
+        createdAt: laterTimestamp,
+        updatedAt: laterTimestamp,
+        confidence: 'medium',
+        safety: 'read-only',
+        keywords: sharedKeywords,
+        relatedProjectNames: [],
+        thinking: { understanding: '', whyItMatters: '', nextExploration: '', evidence: [], missingEvidence: [] },
+        actions: [],
+      },
+    ],
+    edges: [
+      {
+        id: 'edge-old',
+        type: 'extends',
+        from: 'someone-else',
+        to: `extension-${parent}-1`,
+        rationale: 'older',
+        confidence: 'medium',
+        source: 'idea-extension:shared-parent:1',
+        createdAt: baseTimestamp,
+        updatedAt: baseTimestamp,
+      },
+      {
+        id: 'edge-new',
+        type: 'extends',
+        from: 'someone-else',
+        to: `extension-${parent}-1700000000000`,
+        rationale: 'newer',
+        confidence: 'medium',
+        source: 'idea-extension:shared-parent:1',
+        createdAt: laterTimestamp,
+        updatedAt: laterTimestamp,
+      },
+    ],
+  }
+
+  const migrated = migrateExtensionDuplicates(legacy as never)
+  const extensions = migrated.nodes.filter((node) => node.type === 'extension')
+  assert.equal(extensions.length, 1)
+  assert.equal(extensions[0].summary, 'oldest', 'winner is the older createdAt')
+  for (const edge of migrated.edges) {
+    assert.equal(edge.to, extensions[0].id, 'every edge endpoint points at the surviving canonical id')
+    assert.equal(migrated.nodes.some((node) => node.id === edge.from) || edge.from === 'someone-else', true)
   }
 })
 

@@ -346,6 +346,8 @@ export interface IdeaGraphNode {
   archived?: boolean
   ignored?: boolean
   prompt?: string
+  seenCount?: number
+  lastSeenAt?: string
 }
 
 export interface IdeaGraphEdge {

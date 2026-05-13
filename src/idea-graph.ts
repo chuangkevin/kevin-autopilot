@@ -22,6 +22,8 @@ import type {
 
 const GRAPH_FILE = 'idea-graph.json'
 const CENTER_NODE_ID = 'double-kevin-autopilot'
+const EXTENSION_PARENT_CAP = 6
+const EXTENSION_TITLE_PREFIX = /^延伸：/
 const STOP_WORDS = new Set(['我要', '可以', '現在', '這個', '那個', '一個', '不是', '就是', '沒有', '什麼', 'the', 'and', 'with', 'that', 'for', 'safe'])
 const BORING_RESEARCH_KEYWORDS = new Set(['autopilot', 'docs', 'doc', 'work', 'homelab', 'uncommitted', 'kevin', 'repo', 'git', 'test', 'tests', 'handoff'])
 const LEGACY_LITERAL_METAPHOR_PATTERN = /電子羊|electric sheep/i
@@ -66,14 +68,29 @@ export async function extendIdeaGraphNode(config: AutopilotConfig, report: Obser
   if (!selected) return undefined
 
   const now = new Date().toISOString()
-  const extensionNode = makeNode({
-    id: `extension-${safeId(selected.id)}-${Date.now()}`,
+  const extensionKeywords = selected.keywords.slice(0, 6)
+  const extensionTitle = `延伸：${selected.title}`
+  const proposedId = extensionId(selected.id, extensionTitle, extensionKeywords)
+
+  const childExtensions = graph.nodes.filter((node) => node.type === 'extension' && node.source === `extension:${selected.id}`)
+  const matchingChild = childExtensions.find((node) => node.id === proposedId)
+  let targetExtensionId = proposedId
+
+  if (!matchingChild && childExtensions.length >= EXTENSION_PARENT_CAP) {
+    const fallback = pickClosestExtensionByKeywords(childExtensions, extensionKeywords)
+      ?? [...childExtensions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
+    if (!fallback) return undefined
+    targetExtensionId = fallback.id
+  }
+
+  const baseExtensionNode = makeNode({
+    id: targetExtensionId,
     type: 'extension',
-    title: `延伸：${selected.title}`,
+    title: extensionTitle,
     summary: `從「${selected.title}」再長出一條可探索方向。`,
     source: `extension:${selected.id}`,
     confidence: selected.confidence === 'strong' ? 'medium' : selected.confidence,
-    keywords: selected.keywords.slice(0, 6),
+    keywords: extensionKeywords,
     relatedProjectNames: selected.relatedProjectNames,
     now,
     thinking: {
@@ -84,8 +101,9 @@ export async function extendIdeaGraphNode(config: AutopilotConfig, report: Obser
       missingEvidence: ['還沒有外部研究來源；目前只是 Autopilot-owned 延伸節點。'],
     },
   })
+  const extensionNode: IdeaGraphNode = { ...baseExtensionNode, seenCount: 1, lastSeenAt: now }
   const researchNode = makeNode({
-    id: `research-${safeId(selected.id)}-${Date.now()}`,
+    id: `research-${safeId(selected.id)}-${stableHash6(`research:${selected.id}:${selected.keywords[0] ?? selected.title}`)}`,
     type: 'research',
     title: `研究種子：${selected.keywords[0] ?? selected.title}`,
     summary: '這是待搜尋/待研究的方向；可能只是分身做夢般的聯想，不代表已經查過網路。',
@@ -111,6 +129,20 @@ export async function extendIdeaGraphNode(config: AutopilotConfig, report: Obser
   })
   await saveStoredGraph(config, nextGraph)
   return selectGraphNode({ ...toFocusedGraph(nextGraph, report), nodes: nextGraph.nodes, edges: nextGraph.edges }, extensionNode.id)
+}
+
+function pickClosestExtensionByKeywords(candidates: IdeaGraphNode[], keywords: string[]): IdeaGraphNode | undefined {
+  if (candidates.length === 0 || keywords.length === 0) return undefined
+  const target = new Set(keywords.map((keyword) => keyword.toLowerCase()))
+  let best: { node: IdeaGraphNode; score: number } | undefined
+  for (const node of candidates) {
+    const nodeKeywords = new Set(node.keywords.map((keyword) => keyword.toLowerCase()))
+    const intersection = [...target].filter((keyword) => nodeKeywords.has(keyword)).length
+    const union = new Set([...target, ...nodeKeywords]).size
+    const score = union === 0 ? 0 : intersection / union
+    if (score >= 0.5 && (!best || score > best.score)) best = { node, score }
+  }
+  return best?.node
 }
 
 export async function markIdeaGraphNodeInteresting(config: AutopilotConfig, report: ObservationReport, ideas: IdeaRecord[], nodeId: string): Promise<IdeaGraphNodeDetail | undefined> {
@@ -540,24 +572,37 @@ function makeNode(input: {
 function makeIdeaExtensionNodes(idea: IdeaRecord, keywords: string[], now: string): IdeaGraphNode[] {
   const firstStep = idea.suggestedNextSteps[0] ?? '先把這個想法拆成可探索的問題與成功條件。'
   const steps = [firstStep, creativeExplorationStep(idea, keywords)]
-  return steps.map((step, index) => makeNode({
-    id: `extension-${safeId(idea.id)}-${index + 1}`,
-    type: 'extension',
-    title: `延伸：${shortTitle(step)}`,
-    summary: step,
-    source: `idea-extension:${idea.id}:${index + 1}`,
-    confidence: idea.classification === 'blocked' ? 'weak' : 'medium',
-    keywords: extractIdeaKeywords(`${idea.title} ${step}`).filter((keyword) => keywords.includes(keyword) || keyword.length >= 3).slice(0, 6),
-    relatedProjectNames: idea.existingProjectAnalysis.matches.map((match) => match.projectName),
-    now,
-    thinking: {
-      understanding: `這是分身從「${idea.title}」自動延伸出的第 ${index + 1} 條探索線。`,
-      whyItMatters: 'Kevin 期待分身不是只顯示原始想法，而是能沿著想法繼續長出可追問、可研究、可交給 OpenCode 的節點。',
-      nextExploration: step,
-      evidence: [`來源想法：${idea.title}`, ...idea.reasons.slice(0, 2)],
-      missingEvidence: idea.classification === 'explore' ? ['需要 Kevin 補更多使用情境或判斷標準。'] : [],
-    },
-  }))
+  const parentId = `idea-${safeId(idea.id)}`
+  const generated = steps.map((step, index) => {
+    const title = `延伸：${shortTitle(step)}`
+    const extensionKeywords = extractIdeaKeywords(`${idea.title} ${step}`)
+      .filter((keyword) => keywords.includes(keyword) || keyword.length >= 3)
+      .slice(0, 6)
+    const node = makeNode({
+      id: extensionId(parentId, title, extensionKeywords),
+      type: 'extension',
+      title,
+      summary: step,
+      source: `idea-extension:${idea.id}:${index + 1}`,
+      confidence: idea.classification === 'blocked' ? 'weak' : 'medium',
+      keywords: extensionKeywords,
+      relatedProjectNames: idea.existingProjectAnalysis.matches.map((match) => match.projectName),
+      now,
+      thinking: {
+        understanding: `這是分身從「${idea.title}」自動延伸出的第 ${index + 1} 條探索線。`,
+        whyItMatters: 'Kevin 期待分身不是只顯示原始想法，而是能沿著想法繼續長出可追問、可研究、可交給 OpenCode 的節點。',
+        nextExploration: step,
+        evidence: [`來源想法：${idea.title}`, ...idea.reasons.slice(0, 2)],
+        missingEvidence: idea.classification === 'explore' ? ['需要 Kevin 補更多使用情境或判斷標準。'] : [],
+      },
+    })
+    return { ...node, seenCount: 1, lastSeenAt: now }
+  })
+  const deduped = new Map<string, IdeaGraphNode>()
+  for (const node of generated) {
+    if (!deduped.has(node.id)) deduped.set(node.id, node)
+  }
+  return [...deduped.values()]
 }
 
 function creativeExplorationStep(idea: IdeaRecord, keywords: string[]): string {
@@ -719,6 +764,7 @@ function isResearchWorthyKeyword(keyword: string): boolean {
 
 function mergeGraph(base: StoredIdeaGraph, projected: StoredIdeaGraph): StoredIdeaGraph {
   const nodes = new Map<string, IdeaGraphNode>()
+  const baseIds = new Set(base.nodes.map((node) => node.id))
   const hiddenBaseIds = new Set(base.nodes.filter((node) => node.archived || node.ignored).map((node) => node.id))
   for (const node of [...base.nodes, ...projected.nodes]) {
     if (hiddenBaseIds.has(node.id)) {
@@ -738,11 +784,28 @@ function mergeGraph(base: StoredIdeaGraph, projected: StoredIdeaGraph): StoredId
           interestingAt: existing.interestingAt,
         }
       : node
-    nodes.set(node.id, normalizeNodeActions(merged))
+    const upserted = applyExtensionUpsert(merged, existing, baseIds.has(node.id))
+    nodes.set(node.id, normalizeNodeActions(upserted))
   }
   const edges = new Map<string, IdeaGraphEdge>()
   for (const edge of [...base.edges, ...projected.edges]) edges.set(edge.id, edges.get(edge.id) ? { ...edges.get(edge.id), ...edge } : edge)
   return { nodes: [...nodes.values()], edges: [...edges.values()].filter((edge) => nodes.has(edge.from) && nodes.has(edge.to)) }
+}
+
+function applyExtensionUpsert(merged: IdeaGraphNode, existing: IdeaGraphNode | undefined, existedInBase: boolean): IdeaGraphNode {
+  if (merged.type !== 'extension') return merged
+  if (!existing) {
+    return {
+      ...merged,
+      seenCount: existedInBase ? Math.max(1, merged.seenCount ?? 1) : 1,
+      lastSeenAt: merged.lastSeenAt ?? merged.updatedAt,
+    }
+  }
+  return {
+    ...merged,
+    seenCount: (existing.seenCount ?? 1) + 1,
+    lastSeenAt: merged.updatedAt,
+  }
 }
 
 function isLegacyLiteralMetaphorNode(node: IdeaGraphNode): boolean {
@@ -799,10 +862,69 @@ function isNoisyResearchNode(node: IdeaGraphNode): boolean {
 async function loadStoredGraph(config: AutopilotConfig): Promise<StoredIdeaGraph> {
   try {
     const parsed = JSON.parse(await readFile(graphPath(config), 'utf8')) as Partial<StoredIdeaGraph>
-    return { nodes: Array.isArray(parsed.nodes) ? parsed.nodes : [], edges: Array.isArray(parsed.edges) ? parsed.edges : [] }
+    const raw: StoredIdeaGraph = {
+      nodes: Array.isArray(parsed.nodes) ? parsed.nodes : [],
+      edges: Array.isArray(parsed.edges) ? parsed.edges : [],
+    }
+    return migrateExtensionDuplicates(raw)
   } catch {
     return { nodes: [], edges: [] }
   }
+}
+
+export function migrateExtensionDuplicates(graph: StoredIdeaGraph): StoredIdeaGraph {
+  const idRewrites = new Map<string, string>()
+  for (const node of graph.nodes) {
+    if (node.type !== 'extension') continue
+    const parent = legacyExtensionParentId(node.source)
+    if (!parent) continue
+    const canonical = extensionId(parent, node.title, node.keywords)
+    if (canonical !== node.id) idRewrites.set(node.id, canonical)
+  }
+
+  if (idRewrites.size === 0) return graph
+
+  const winners = new Map<string, IdeaGraphNode>()
+  for (const node of graph.nodes) {
+    const targetId = idRewrites.get(node.id) ?? node.id
+    const existing = winners.get(targetId)
+    if (!existing) {
+      winners.set(targetId, { ...node, id: targetId })
+      continue
+    }
+    const winner = node.createdAt < existing.createdAt ? node : existing
+    const loser = node.createdAt < existing.createdAt ? existing : node
+    winners.set(targetId, {
+      ...winner,
+      id: targetId,
+      seenCount: Math.max(existing.seenCount ?? 1, node.seenCount ?? 1) + 1,
+      lastSeenAt: loser.updatedAt > (winner.lastSeenAt ?? winner.updatedAt) ? loser.updatedAt : (winner.lastSeenAt ?? winner.updatedAt),
+    })
+  }
+
+  const dedupedEdges = new Map<string, IdeaGraphEdge>()
+  for (const edge of graph.edges) {
+    const from = idRewrites.get(edge.from) ?? edge.from
+    const to = idRewrites.get(edge.to) ?? edge.to
+    const id = `${edge.type}-${safeId(from)}-${safeId(to)}`
+    dedupedEdges.set(id, { ...edge, id, from, to })
+  }
+
+  return { nodes: [...winners.values()], edges: [...dedupedEdges.values()] }
+}
+
+function legacyExtensionParentId(source: string): string | undefined {
+  if (source.startsWith('idea-extension:')) {
+    const rest = source.substring('idea-extension:'.length)
+    const colonIdx = rest.lastIndexOf(':')
+    const ideaId = colonIdx > 0 ? rest.substring(0, colonIdx) : rest
+    if (ideaId) return `idea-${safeId(ideaId)}`
+  }
+  if (source.startsWith('extension:')) {
+    const parent = source.substring('extension:'.length)
+    if (parent) return parent
+  }
+  return undefined
 }
 
 async function saveStoredGraph(config: AutopilotConfig, graph: StoredIdeaGraph): Promise<void> {
@@ -816,4 +938,28 @@ function graphPath(config: AutopilotConfig): string {
 
 function safeId(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'node'
+}
+
+function stableHash6(input: string): string {
+  let hash = 0x811c9dc5
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index)
+    hash = Math.imul(hash, 0x01000193) >>> 0
+  }
+  return hash.toString(16).padStart(8, '0').slice(0, 6)
+}
+
+function normalizeExtensionTitle(title: string): string {
+  const stripped = title.normalize('NFKC').replace(EXTENSION_TITLE_PREFIX, '').toLowerCase()
+  return stripped.replace(/\s+/g, ' ').replace(/[.。!?！？,，;；:：、…\-\.\s]+$/u, '').trim()
+}
+
+function signatureForExtension(parentId: string, title: string, keywords: string[]): string {
+  const normalizedTitle = normalizeExtensionTitle(title)
+  const topKeywords = [...new Set(keywords.map((keyword) => keyword.toLowerCase()))].sort().slice(0, 3).join('|')
+  return stableHash6(`${parentId}::${normalizedTitle}::${topKeywords}`)
+}
+
+function extensionId(parentId: string, title: string, keywords: string[]): string {
+  return `extension-${safeId(parentId)}-${signatureForExtension(parentId, title, keywords)}`
 }

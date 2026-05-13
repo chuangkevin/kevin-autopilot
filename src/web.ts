@@ -422,8 +422,13 @@ function renderPage(
     .neural-map { position: absolute; inset: 0; width: 100%; height: 100%; }
     .neural-edge { stroke: rgba(245,234,215,0.22); stroke-width: 1.4; }
     .neural-edge.strong { stroke: rgba(45,212,191,0.55); stroke-width: 2.2; }
+    .neural-edge.focused { stroke: rgba(251,191,36,0.78); stroke-width: 2.2; }
+    .neural-edge-label { fill: #fde68a; font-size: 2.4px; font-weight: 700; paint-order: stroke; stroke: rgba(11,9,7,0.92); stroke-width: 0.6px; pointer-events: none; }
     .brain-node { position: absolute; z-index: 1; transform: translate(-50%, -50%); display: grid; place-items: center; width: clamp(82px, 12vw, 126px); min-height: 72px; max-height: 132px; overflow: hidden; border: 1px solid rgba(245,234,215,0.24); border-radius: 26px; padding: 10px; background: rgba(11,9,7,0.74); color: #fef3c7; text-align: center; box-shadow: 0 0 34px rgba(251,191,36,0.14); backdrop-filter: blur(10px); cursor: pointer; transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease; }
     .brain-node:hover, .brain-node.active { z-index: 5; border-color: rgba(251,191,36,0.85); background: rgba(42,28,13,0.94); box-shadow: 0 0 42px rgba(251,191,36,0.36); }
+    .brain-node.faded { opacity: 0.32; filter: saturate(0.6); }
+    .brain-node.faded:hover { opacity: 0.9; }
+    .neural-hidden-chip { position: absolute; right: 12px; bottom: 10px; padding: 6px 12px; border-radius: 999px; background: rgba(11,9,7,0.78); color: #fde68a; font-size: 12px; font-weight: 700; border: 1px solid rgba(251,191,36,0.32); pointer-events: none; }
     .brain-node.double { width: clamp(138px, 20vw, 190px); min-height: 104px; max-height: 160px; border-radius: 999px; background: radial-gradient(circle, rgba(251,191,36,0.28), rgba(11,9,7,0.82)); }
     .brain-node.keyword { border-style: dashed; color: #fde68a; }
     .brain-node.project { color: #bbf7d0; }
@@ -701,6 +706,10 @@ function renderPage(
     setTimeout(() => location.reload(), 700);
   });
 
+  const initialGraphData = JSON.parse(document.getElementById('graph-data')?.textContent || '{}');
+  let focusedNodeId = (initialGraphData && typeof initialGraphData.centerNodeId === 'string') ? initialGraphData.centerNodeId : null;
+  const NEURAL_OUTER_RING_LIMIT = 14;
+
   const initialLoopData = JSON.parse(document.getElementById('loop-data')?.textContent || '{}');
   setInterval(async () => {
     const status = document.getElementById('graph-refresh-status');
@@ -721,19 +730,42 @@ function renderPage(
     }
   }, 60000);
 
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && focusedNodeId && initialGraphData?.centerNodeId && focusedNodeId !== initialGraphData.centerNodeId) {
+      focusedNodeId = initialGraphData.centerNodeId;
+      refreshGraphInPlace(focusedNodeId);
+    }
+  });
+
   document.addEventListener('click', async (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
+    const stage = document.getElementById('neural-stage');
     const nodeButton = target.closest('.brain-node');
     if (nodeButton) {
       const nodeId = nodeButton.getAttribute('data-node-id');
       if (!nodeId) return;
+      const previousFocus = focusedNodeId;
+      const defaultFocus = initialGraphData?.centerNodeId ?? null;
+      if (previousFocus === nodeId && defaultFocus && nodeId !== defaultFocus) {
+        focusedNodeId = defaultFocus;
+      } else {
+        focusedNodeId = nodeId;
+      }
       document.querySelectorAll('.brain-node').forEach((item) => item.classList.remove('active'));
       nodeButton.classList.add('active');
+      await refreshGraphInPlace(focusedNodeId);
       const response = await fetch('/api/graph/nodes/' + encodeURIComponent(nodeId));
       if (!response.ok) return;
       renderNodeDrawer(await response.json());
       return;
+    }
+    if (stage && (target === stage || stage.contains(target))) {
+      if (!target.closest('button') && !target.closest('a') && focusedNodeId && initialGraphData?.centerNodeId && focusedNodeId !== initialGraphData.centerNodeId) {
+        focusedNodeId = initialGraphData.centerNodeId;
+        await refreshGraphInPlace(focusedNodeId);
+        return;
+      }
     }
 
     const actionButton = target.closest('.node-action');
@@ -749,7 +781,8 @@ function renderPage(
         }
         const detail = await response.json();
         renderNodeDrawer(detail);
-        await refreshGraphInPlace(detail.node.id);
+        focusedNodeId = detail.node.id;
+        await refreshGraphInPlace(focusedNodeId);
         return;
       }
       if (action === 'copy-opencode-prompt') {
@@ -899,47 +932,113 @@ function renderPage(
     drawer.innerHTML = '<div class="recommendation"><strong>' + htmlEscape(node.title) + '</strong><div>' + htmlEscape(node.summary) + '</div><div class="muted">' + htmlEscape(node.type) + ' · ' + htmlEscape(node.confidence) + ' · ' + htmlEscape(node.source) + '</div></div><div class="trace-note"><strong>我怎麼理解它</strong><div>' + htmlEscape(node.thinking.understanding) + '</div><div class="muted">為什麼有關：' + htmlEscape(node.thinking.whyItMatters) + '</div><div class="muted">下一步：' + htmlEscape(node.thinking.nextExploration) + '</div></div><div><strong>關鍵字</strong><div class="workbench-meta">' + keywordHtml + '</div></div><div><strong>相連節點</strong>' + connectedHtml + '</div><div><strong>證據</strong>' + evidenceHtml + '</div><div><strong>缺的證據</strong>' + missingHtml + '</div>' + promptHtml;
   }
 
-  async function refreshGraphInPlace(selectedNodeId) {
+  async function refreshGraphInPlace(targetFocus) {
     const response = await fetch('/api/graph', { cache: 'no-store' });
     if (!response.ok) return;
     const graph = await response.json();
     const graphData = document.getElementById('graph-data');
     if (graphData) graphData.textContent = JSON.stringify(graph).replaceAll('<', '\\u003c').replaceAll('&', '\\u0026');
-    renderGraphStage(graph, selectedNodeId);
+    renderGraphStage(graph, targetFocus ?? focusedNodeId);
   }
 
-  function renderGraphStage(graph, selectedNodeId) {
+  function renderGraphStage(graph, focusId) {
     const stage = document.getElementById('neural-stage');
     if (!stage || !graph || !Array.isArray(graph.nodes)) return;
-    const layout = createBrowserGraphLayout(graph);
+    const layoutResult = createBrowserGraphLayout(graph, focusId);
+    const focused = focusId && focusId !== graph.centerNodeId;
     const edgeHtml = (graph.edges || []).map((edge) => {
-      const from = layout.get(edge.from);
-      const to = layout.get(edge.to);
+      const from = layoutResult.positions.get(edge.from);
+      const to = layoutResult.positions.get(edge.to);
       if (!from || !to) return '';
-      return '<line class="neural-edge ' + (edge.confidence === 'strong' ? 'strong' : '') + '" x1="' + from.x + '" y1="' + from.y + '" x2="' + to.x + '" y2="' + to.y + '"><title>' + htmlEscape(edge.rationale) + '</title></line>';
+      const isIncident = focused && (edge.from === focusId || edge.to === focusId);
+      const strongClass = edge.confidence === 'strong' ? ' strong' : '';
+      const focusClass = isIncident ? ' focused' : '';
+      const labelHtml = isIncident
+        ? '<text class="neural-edge-label" x="' + ((from.x + to.x) / 2) + '" y="' + ((from.y + to.y) / 2 - 1) + '" text-anchor="middle">' + htmlEscape(edgeLabelText(edge.rationale)) + '</text>'
+        : '';
+      return '<line class="neural-edge' + strongClass + focusClass + '" x1="' + from.x + '" y1="' + from.y + '" x2="' + to.x + '" y2="' + to.y + '"><title>' + htmlEscape(edge.rationale) + '</title></line>' + labelHtml;
     }).join('');
-    const nodeHtml = graph.nodes.map((node) => {
-      const point = layout.get(node.id) || { x: 50, y: 50 };
-      return '<button type="button" class="brain-node ' + htmlEscape(node.type) + (node.id === selectedNodeId ? ' active' : '') + '" data-node-id="' + htmlEscape(node.id) + '" style="left:' + point.x + '%;top:' + point.y + '%"><span class="node-type">' + htmlEscape(node.type) + '</span><span class="node-title">' + htmlEscape(node.title) + '</span></button>';
+    const visibleIds = layoutResult.visibleIds;
+    const nodeHtml = graph.nodes.filter((node) => visibleIds.has(node.id)).map((node) => {
+      const point = layoutResult.positions.get(node.id) || { x: 50, y: 50 };
+      const fadedClass = layoutResult.fadedIds.has(node.id) ? ' faded' : '';
+      const activeClass = node.id === focusId ? ' active' : '';
+      return '<button type="button" class="brain-node ' + htmlEscape(node.type) + activeClass + fadedClass + '" data-node-id="' + htmlEscape(node.id) + '" style="left:' + point.x + '%;top:' + point.y + '%"><span class="node-type">' + htmlEscape(node.type) + '</span><span class="node-title">' + htmlEscape(node.title) + '</span></button>';
     }).join('');
-    stage.innerHTML = '<svg class="neural-map" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">' + edgeHtml + '</svg>' + nodeHtml;
+    const hiddenChip = layoutResult.hiddenCount > 0
+      ? '<div class="neural-hidden-chip">+' + layoutResult.hiddenCount + ' 已折疊</div>'
+      : '';
+    stage.innerHTML = '<svg class="neural-map" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">' + edgeHtml + '</svg>' + nodeHtml + hiddenChip;
   }
 
-  function createBrowserGraphLayout(graph) {
+  function edgeLabelText(rationale) {
+    const value = String(rationale || '').replace(/\s+/g, ' ').trim();
+    return value.length > 18 ? value.slice(0, 18) + '…' : value;
+  }
+
+  function createBrowserGraphLayout(graph, focusId) {
     const positions = new Map();
-    const center = graph.nodes.find((node) => node.id === graph.centerNodeId) || graph.nodes[0];
-    if (center) positions.set(center.id, { x: 50, y: 50 });
-    const others = graph.nodes.filter((node) => node.id !== (center && center.id));
-    others.forEach((node, index) => {
-      const ring = index < 12 ? 1 : 2;
-      const ringIndex = ring === 1 ? index : index - 12;
-      const ringCount = ring === 1 ? Math.min(12, others.length) : Math.max(1, others.length - 12);
-      const angle = (Math.PI * 2 * ringIndex) / ringCount - Math.PI / 2;
-      const radiusX = ring === 1 ? 32 : 43;
-      const radiusY = ring === 1 ? 31 : 41;
-      positions.set(node.id, { x: Math.round((50 + Math.cos(angle) * radiusX) * 10) / 10, y: Math.round((50 + Math.sin(angle) * radiusY) * 10) / 10 });
+    const fadedIds = new Set();
+    const visibleIds = new Set();
+    const centerId = graph.centerNodeId;
+    const focused = focusId && focusId !== centerId;
+    const focusedNode = focused ? graph.nodes.find((node) => node.id === focusId) : null;
+    if (focused && !focusedNode) return createBrowserGraphLayout(graph, centerId);
+
+    if (!focused) {
+      const center = graph.nodes.find((node) => node.id === centerId) || graph.nodes[0];
+      if (center) {
+        positions.set(center.id, { x: 50, y: 50 });
+        visibleIds.add(center.id);
+      }
+      const others = graph.nodes.filter((node) => node.id !== (center && center.id));
+      others.forEach((node, index) => {
+        const ring = index < 12 ? 1 : 2;
+        const ringIndex = ring === 1 ? index : index - 12;
+        const ringCount = ring === 1 ? Math.min(12, others.length) : Math.max(1, others.length - 12);
+        const angle = (Math.PI * 2 * ringIndex) / ringCount - Math.PI / 2;
+        const radiusX = ring === 1 ? 32 : 43;
+        const radiusY = ring === 1 ? 31 : 41;
+        positions.set(node.id, { x: Math.round((50 + Math.cos(angle) * radiusX) * 10) / 10, y: Math.round((50 + Math.sin(angle) * radiusY) * 10) / 10 });
+        visibleIds.add(node.id);
+      });
+      return { positions, fadedIds, visibleIds, hiddenCount: 0 };
+    }
+
+    positions.set(focusedNode.id, { x: 50, y: 50 });
+    visibleIds.add(focusedNode.id);
+
+    const neighbourIds = new Set();
+    for (const edge of (graph.edges || [])) {
+      if (edge.from === focusedNode.id) neighbourIds.add(edge.to);
+      else if (edge.to === focusedNode.id) neighbourIds.add(edge.from);
+    }
+    neighbourIds.delete(focusedNode.id);
+
+    const neighbourNodes = graph.nodes.filter((node) => neighbourIds.has(node.id));
+    neighbourNodes.forEach((node, index) => {
+      const angle = (Math.PI * 2 * index) / Math.max(1, neighbourNodes.length) - Math.PI / 2;
+      positions.set(node.id, {
+        x: Math.round((50 + Math.cos(angle) * 30) * 10) / 10,
+        y: Math.round((50 + Math.sin(angle) * 29) * 10) / 10,
+      });
+      visibleIds.add(node.id);
     });
-    return positions;
+
+    const nonNeighbours = graph.nodes.filter((node) => node.id !== focusedNode.id && !neighbourIds.has(node.id));
+    const visibleNonNeighbours = nonNeighbours.slice(0, NEURAL_OUTER_RING_LIMIT);
+    const hiddenCount = Math.max(0, nonNeighbours.length - visibleNonNeighbours.length);
+    visibleNonNeighbours.forEach((node, index) => {
+      const angle = (Math.PI * 2 * index) / Math.max(1, visibleNonNeighbours.length) - Math.PI / 2;
+      positions.set(node.id, {
+        x: Math.round((50 + Math.cos(angle) * 46) * 10) / 10,
+        y: Math.round((50 + Math.sin(angle) * 44) * 10) / 10,
+      });
+      visibleIds.add(node.id);
+      fadedIds.add(node.id);
+    });
+
+    return { positions, fadedIds, visibleIds, hiddenCount };
   }
 
   function renderNodeActionBar(node) {

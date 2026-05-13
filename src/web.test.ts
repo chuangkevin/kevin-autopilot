@@ -150,7 +150,15 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(pageBody.includes('id="node-action-bar"'), true)
     assert.equal(pageBody.indexOf('id="node-action-bar"') < pageBody.indexOf('分身現在在想'), true)
     assert.equal(pageBody.includes('setTimeout(() => location.reload(), 900)'), false)
-    assert.equal(pageBody.includes('refreshGraphInPlace(detail.node.id)'), true)
+    assert.equal(pageBody.includes('focusedNodeId = detail.node.id'), true)
+    assert.equal(pageBody.includes('refreshGraphInPlace(focusedNodeId)'), true)
+    assert.equal(pageBody.includes('createBrowserGraphLayout(graph, focusId)'), true)
+    assert.equal(pageBody.includes('neural-hidden-chip'), true)
+    assert.equal(pageBody.includes('neural-edge-label'), true)
+    assert.equal(pageBody.includes('NEURAL_OUTER_RING_LIMIT'), true)
+    assert.match(pageBody, /event\.key === 'Escape'/)
+    const focusIdAssignments = pageBody.match(/focusedNodeId = /g) || []
+    assert.equal(focusIdAssignments.length >= 3, true)
     assert.equal(pageBody.includes("fetch('/api/graph', { cache: 'no-store' })"), true)
 
     const graph = await fetch(`${baseUrl}/api/graph`)

@@ -354,8 +354,14 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
-v0.9.8 Neural Cockpit web-research prototype. See `docs/` for architecture, safety,
-and OpenCode workflow.
+v0.10.0 Neural Cockpit hub-spoke focus and EXTENSION dedup. Clicking a node
+re-centers the graph on it, lays its direct neighbours on the inner ring, fades
+non-neighbours, and shows the relationship rationale inline on every incident
+edge (no hover required). EXTENSION nodes now use deterministic
+signature-based ids (parent + normalised title + top keywords) so the same
+conceptual extension stops duplicating across cycles or user-triggered
+extends, and legacy timestamp-suffix duplicates collapse on graph load. See
+`docs/` for architecture, safety, and OpenCode workflow.
 
 ## Deployment
 
