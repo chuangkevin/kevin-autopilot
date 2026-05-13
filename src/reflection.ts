@@ -13,6 +13,7 @@ import type {
   ReflectionNextExploration,
   ReflectionRecord,
   ReflectionStateRecord,
+  ReflectionTokenUsage,
   SkippedReflectionRecord,
   SkippedReflectionReason,
 } from './types.js'
@@ -29,9 +30,9 @@ const PROMPT_MAX_DISMISSED_TITLES = 20
 
 const SEED_CAP = 2
 const REWRITE_CAP = 1
-const SEED_TITLE_MAX = 60
-const SEED_RAWTEXT_MAX = 320
-const REWRITE_TEXT_MAX = 140
+const SEED_TITLE_MAX = 48
+const SEED_RAWTEXT_MAX = 160
+const REWRITE_TEXT_MAX = 90
 const EVIDENCE_MAX_LEN = 200
 
 export interface ReflectionInput {
@@ -88,7 +89,7 @@ export function buildReflectionPromptInput(input: ReflectionInput, maxNewSeeds: 
     knownNodeIds,
     payload: {
       promptVersion: PROMPT_VERSION,
-      task: 'Reflect on Kevin Autopilot\'s current graph and propose at most two new idea seeds with audit evidence, and at most one rewrite of a node\'s nextExploration. Output JSON only.',
+      task: 'Reflect on Kevin Autopilot\'s current graph. Output one-line minified JSON only: no Markdown, no code fences, no explanation. If unsure, return empty arrays.',
       signature,
       caps: {
         maxNewIdeaSeeds: maxNewSeeds,
@@ -107,16 +108,16 @@ export function buildReflectionPromptInput(input: ReflectionInput, maxNewSeeds: 
       outputSchema: {
         newIdeaSeeds: [
           {
-            title: 'string ≤ 60 chars',
-            rawText: 'string ≤ 320 chars',
-            evidence: ['short string referencing a known node id or backlog id'],
+            title: 'string <= 48 chars',
+            rawText: 'string <= 160 chars',
+            evidence: ['1-2 known node ids or backlog ids only'],
             approvalRequired: 'boolean',
           },
         ],
         nextExplorationRewrites: [
           {
             nodeId: 'must be one of knownNodeIds',
-            nextExploration: 'string ≤ 140 chars',
+            nextExploration: 'string <= 90 chars',
           },
         ],
       },
@@ -263,6 +264,7 @@ export async function reflect(input: ReflectionInput): Promise<ReflectionStateRe
   const timeoutMs = aiConfig.timeoutMs ?? DEFAULT_TIMEOUT_MS
 
   let text: string
+  let usage: ReflectionTokenUsage | undefined
   try {
     const client = new GeminiClient(new KeyPool(new FileKeyStorageAdapter(input.config)), { maxRetries: 2 })
     const response = await withTimeout(
@@ -281,6 +283,7 @@ export async function reflect(input: ReflectionInput): Promise<ReflectionStateRe
       timeoutMs,
     )
     text = response.text
+    usage = response.usage ? { input: response.usage.promptTokens, output: response.usage.completionTokens } : undefined
   } catch (error) {
     return baseSkip('offline', error instanceof Error ? error.message : String(error))
   }
@@ -289,7 +292,7 @@ export async function reflect(input: ReflectionInput): Promise<ReflectionStateRe
   try {
     parsed = parseReflectionOutput(text, { knownNodeIds, maxNewSeeds })
   } catch (error) {
-    return baseSkip('error', `Failed to parse AI reflection output: ${error instanceof Error ? error.message : String(error)}; responseSnippet=${summarizeAiReflectionText(text)}`)
+    return baseSkip('error', `Failed to parse AI reflection output: ${error instanceof Error ? error.message : String(error)}; providerStatus=success/no-http-status-exposed; usage=${formatUsage(usage)}; responseSnippet=${summarizeAiReflectionText(text)}`)
   }
 
   const record: ReflectionRecord = {
@@ -302,6 +305,11 @@ export async function reflect(input: ReflectionInput): Promise<ReflectionStateRe
     pendingAiIdeaCount: input.pendingAiIdeaCount,
   }
   return record
+}
+
+function formatUsage(usage: ReflectionTokenUsage | undefined): string {
+  if (!usage) return 'unknown'
+  return `prompt:${usage.input ?? 'unknown'},completion:${usage.output ?? 'unknown'}`
 }
 
 export function summarizeAiReflectionText(text: string): string {
