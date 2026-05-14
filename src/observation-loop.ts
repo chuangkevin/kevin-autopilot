@@ -22,6 +22,7 @@ import type {
 } from './types.js'
 
 const DEFAULT_INTERVAL_MS = 5 * 60 * 1000
+const MIN_INTERVAL_MS = 60_000
 
 export class ObservationLoop {
   private state: ObservationLoopState
@@ -161,12 +162,35 @@ export class ObservationLoop {
   private async scheduleNextRun(): Promise<void> {
     await this.refreshLoopConfig()
     if (!this.state.enabled) return
-    const nextRunAt = new Date(Date.now() + this.state.intervalMs).toISOString()
-    this.state = { ...this.state, nextRunAt }
+
+    const base = this.state.intervalMs
+    const score = this.state.lastExcitementScore
+
+    if (score > 0) {
+      this.currentIntervalMs = MIN_INTERVAL_MS
+    } else {
+      this.currentIntervalMs = Math.min(this.currentIntervalMs * 2, base)
+    }
+
+    const excitementMode: ObservationLoopState['excitementMode'] =
+      this.currentIntervalMs <= MIN_INTERVAL_MS
+        ? 'excited'
+        : this.currentIntervalMs < base
+          ? 'cooling'
+          : 'normal'
+
+    const nextRunAt = new Date(Date.now() + this.currentIntervalMs).toISOString()
+    this.state = {
+      ...this.state,
+      nextRunAt,
+      currentIntervalMs: this.currentIntervalMs,
+      baseIntervalMs: base,
+      excitementMode,
+    }
     this.timer = setTimeout(() => {
       this.timer = undefined
       void this.runOnce()
-    }, this.state.intervalMs)
+    }, this.currentIntervalMs)
     this.timer.unref?.()
   }
 
@@ -263,6 +287,10 @@ export class ObservationLoop {
   private async refreshLoopConfig(): Promise<void> {
     const effectiveConfig = await getEffectiveConfig(this.config)
     const enabled = effectiveConfig.backgroundObservation?.enabled !== false
+    const newBase = effectiveConfig.backgroundObservation?.intervalMs ?? DEFAULT_INTERVAL_MS
+    if (newBase !== this.state.intervalMs) {
+      this.currentIntervalMs = Math.min(this.currentIntervalMs, newBase)
+    }
     if (!enabled) this.stop()
     this.state = {
       ...this.state,
