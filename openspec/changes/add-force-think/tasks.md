@@ -44,5 +44,5 @@
 
 ## 8. Verification And Deploy
 
-- [ ] 8.1 Commit, push, verify `deploy-dev` brings `https://kevin.sisihome.org/health` to `0.15.0`
+- [ ] 8.1 Commit, push, verify `deploy-dev` brings `https://kevin.sisihome.org/health` to `0.15.0` — pushed at 9c4bc3b
 - [ ] 8.2 Open `/` on Android, tap 分身 tab, tap "⚡ 強制思考", confirm button disables, status shows "辯論進行中…", and result card appears after completion
