@@ -45,7 +45,10 @@ fail-soft skip records, and v0.12.0 trusted-settings runtime overrides for
 the safe whitelist `aiReflection.enabled`, `aiReflection.maxOutputTokens`,
 `aiReflection.maxPendingAiIdeas`, `backgroundObservation.enabled`, and
 `backgroundObservation.intervalMs` via `/settings` and Autopilot-owned
-`data/runtime-overrides.json`.
+`data/runtime-overrides.json`, plus v0.12.x Neural Cockpit question-thinking
+where graph nodes surface "分身正在問" premise/evidence/counterexample questions
+and repeated extension clicks create readable continuation branches rather than
+duplicate bubbles.
 Keep these versions read-only: they may observe, classify, report, and store
 Autopilot-owned reports/idea records/supplements, but they must not modify target
 repos, create repos, deploy, commit/push other projects, or perform destructive

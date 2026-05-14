@@ -53,4 +53,4 @@
 ## 9. Verification And Deploy
 
 - [ ] 9.1 Rebuild the local Docker image, verify `/settings` renders the new section, flip `aiReflection.enabled` true via the UI, refresh `/`, and confirm the cockpit reflection-status line transitions from "反思離線：disabled" to a non-disabled state on the next cycle without restarting.
-- [ ] 9.2 Commit, push, verify `deploy-dev` brings `https://kevin.sisihome.org/health` to `0.12.0`. Once live, optionally flip `aiReflection.enabled` true on the kevinhome instance via `/settings` to clear `add-ai-graph-reflection` task 10.2 in one click.
+- [x] 9.2 Commit, push, verify `deploy-dev` brings `https://kevin.sisihome.org/health` to `0.12.0`. Once live, optionally flip `aiReflection.enabled` true on the kevinhome instance via `/settings` to clear `add-ai-graph-reflection` task 10.2 in one click.

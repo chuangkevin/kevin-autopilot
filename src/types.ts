@@ -397,6 +397,7 @@ export type IdeaGraphConfidence = 'weak' | 'medium' | 'strong'
 export interface IdeaGraphThinkingSummary {
   understanding: string
   whyItMatters: string
+  questions?: string[]
   nextExploration: string
   evidence: string[]
   missingEvidence: string[]

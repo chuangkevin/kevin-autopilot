@@ -363,6 +363,13 @@ restarting the container. Overrides live in Autopilot-owned
 repositories, services, rule sources, AI model/provider, key storage, `dataDir`,
 or web research settings.
 
+v0.12.x also makes the Neural Cockpit less like a bubble wall and more like a
+thinking workbench: repeated "extend" clicks create readable continuation
+branches instead of reusing the same extension, manual extension no longer adds
+extra research bubbles, and every graph node carries explicit "分身正在問"
+questions that challenge the premise, evidence, counterexamples, and whether the
+idea should keep going.
+
 v0.11.0 真正的「分身大腦」：每個 5-min observation cycle 在 graph
 signature 變動時呼叫一次 Gemini 反思，產出 0–2 個帶 evidence chain 的
 AI idea seed 與最多 1 個焦點節點的 nextExploration 改寫。AI idea 顯示

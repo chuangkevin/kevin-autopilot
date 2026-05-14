@@ -183,6 +183,8 @@ test('extending graph node creates a readable next thought without extra researc
     const detail = await extendIdeaGraphNode(config, report, [idea], ideaNode.id)
     assert.equal(detail?.node.type, 'extension')
     assert.equal(detail?.node.safety, 'read-only')
+    assert.equal((detail?.node.thinking.questions?.length ?? 0) > 0, true)
+    assert.match(detail?.node.thinking.questions?.join(' ') ?? '', /證據|問題|前提|Kevin/)
     assert.equal(detail?.connectedNodes.some((node) => node.type === 'research'), false)
     assert.match(detail?.node.thinking.whyItMatters ?? '', /不是只看到更多泡泡/)
   } finally {

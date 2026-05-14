@@ -112,7 +112,7 @@ export async function extendIdeaGraphNode(config: AutopilotConfig, report: Obser
   return selectGraphNode({ ...toFocusedGraph(nextGraph, report), nodes: nextGraph.nodes, edges: nextGraph.edges }, extensionNode.id)
 }
 
-function makeContinuation(selected: IdeaGraphNode, existingCount: number): { title: string; summary: string; understanding: string; whyItMatters: string; missingEvidence: string[] } {
+function makeContinuation(selected: IdeaGraphNode, existingCount: number): { title: string; summary: string; understanding: string; whyItMatters: string; questions: string[]; missingEvidence: string[] } {
   const subject = selected.title.replace(EXTENSION_TITLE_PREFIX, '')
   const primary = selected.keywords[0] ?? subject
   const next = selected.thinking.nextExploration || selected.summary
@@ -120,31 +120,37 @@ function makeContinuation(selected: IdeaGraphNode, existingCount: number): { tit
     {
       title: `補一個可驗證證據`,
       summary: `先替「${subject}」找一個可觀察證據：今天看到什麼才算它真的值得繼續？`,
+      questions: [`如果今天只能找一個證據，哪個現象最能證明「${subject}」值得繼續？`, '什麼情況會讓我判斷這條想法其實該停？'],
       missingEvidence: ['缺一個可驗證的成功/失敗訊號。'],
     },
     {
       title: `做一個最小 prototype`,
       summary: `把「${subject}」縮成一個怪但可驗證的小畫面或 prompt，只證明一件事。`,
+      questions: [`「${subject}」最小到只剩一個畫面時，還要保留哪個核心感覺？`, '這個 prototype 要讓 Kevin 少想哪一步才算有效？'],
       missingEvidence: ['缺最小可跑 artifact。'],
     },
     {
       title: `找外部參照`,
       summary: `搜尋跟「${primary}」相似的產品/研究/agent workflow，挑一個可偷學的互動模式。`,
+      questions: [`世界上有沒有已經把「${primary}」做得很怪但好用的例子？`, '如果外部案例都很無聊，是不是代表問題定義錯了？'],
       missingEvidence: ['缺外部參照和反例。'],
     },
     {
       title: `收斂成 OpenCode 任務`,
       summary: `把「${subject}」整理成 read-only OpenCode 任務：要查哪裡、不能碰什麼、完成證據是什麼。`,
+      questions: [`這件事交給 OpenCode 前，哪個問題必須先問清楚？`, '哪些檔案、repo、部署或 secrets 絕對不能碰？'],
       missingEvidence: ['缺清楚的 handoff 邊界。'],
     },
     {
       title: `反過來驗證前提`,
       summary: `反過來問：如果「${subject}」其實不重要，最可能是哪個前提錯了？先找警訊。`,
+      questions: [`如果「${subject}」是錯方向，最可能錯在哪個前提？`, 'Kevin 真的會重複遇到這個痛點，還是只是現在覺得酷？'],
       missingEvidence: ['缺反例或停止條件。'],
     },
     {
       title: `接回下一步`,
       summary: `沿著目前下一步「${next}」再切一刀，只留下 Kevin 今天能判斷的一個問題。`,
+      questions: [`今天只問一題的話，「${next}」裡哪個判斷最關鍵？`, '這個下一步是在推進問題，還是在製造更多泡泡？'],
       missingEvidence: ['缺今天就能回答的問題。'],
     },
   ]
@@ -576,6 +582,10 @@ function makeNode(input: {
   thinking: IdeaGraphNode['thinking']
   prompt?: string
 }): IdeaGraphNode {
+  const thinking: IdeaGraphNode['thinking'] = {
+    ...input.thinking,
+    questions: input.thinking.questions?.length ? input.thinking.questions.slice(0, 3) : defaultThinkingQuestions(input),
+  }
   return {
     id: input.id,
     type: input.type,
@@ -588,10 +598,24 @@ function makeNode(input: {
     safety: 'read-only',
     keywords: input.keywords,
     relatedProjectNames: input.relatedProjectNames,
-    thinking: input.thinking,
+    thinking,
     actions: makeActions(input.type, true, input.confidence),
     prompt: input.prompt ?? makeNodePrompt(input),
   }
+}
+
+function defaultThinkingQuestions(input: { type: IdeaGraphNodeType; title: string; confidence: IdeaGraphConfidence; thinking: IdeaGraphNode['thinking'] }): string[] {
+  const title = input.title.replace(EXTENSION_TITLE_PREFIX, '')
+  const base = input.type === 'idea'
+    ? [`這個想法真正想解決的痛點是什麼，不只是聽起來酷？`, `如果「${title}」失敗，最可能是哪個前提錯了？`]
+    : input.type === 'research'
+      ? [`這個外部線索跟 Kevin 的真實工作流有什麼關係？`, '它是可偷學的模式，還是只是新奇資訊？']
+      : input.type === 'signal'
+        ? [`這是一次性噪音，還是反覆出現的問題？`, '還缺哪個證據才值得交給 OpenCode？']
+        : input.type === 'project'
+          ? [`這個專案現在最需要觀察的是 UX、穩定性，還是可驗證性？`, '新想法該接到這裡，還是避免干擾它？']
+          : [`我現在對「${title}」的理解哪裡可能錯？`, '下一步是在收斂問題，還是在發散更多泡泡？']
+  return [...base, `如果只能問 Kevin 一題，哪一題會最快讓「${title}」變清楚？`].slice(0, 3)
 }
 
 function makeIdeaExtensionNodes(idea: IdeaRecord, keywords: string[], now: string): IdeaGraphNode[] {
@@ -717,6 +741,7 @@ function makeNodePrompt(input: {
     `Confidence: ${input.confidence}`,
     `Summary: ${input.summary}`,
     `Why it matters: ${input.thinking.whyItMatters}`,
+    `Questions to answer: ${(input.thinking.questions?.length ? input.thinking.questions : defaultThinkingQuestions(input)).join(' | ')}`,
     `Next exploration: ${input.thinking.nextExploration}`,
     `Keywords: ${input.keywords.join(', ') || 'none'}`,
     `Related projects: ${input.relatedProjectNames.join(', ') || 'none'}`,

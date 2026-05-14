@@ -1145,8 +1145,10 @@ function renderPage(
     const promptHtml = node.prompt ? '<details><summary>OpenCode prompt</summary><button type="button" class="secondary copy-prompt">複製 Prompt</button><span class="copy-status" aria-live="polite"></span><pre>' + htmlEscape(node.prompt) + '</pre></details>' : '';
     const evidenceHtml = node.thinking.evidence.length === 0 ? '<p class="muted">目前沒有證據。</p>' : '<ul class="radar-signals">' + node.thinking.evidence.slice(0, 4).map((item) => '<li>' + htmlEscape(item) + '</li>').join('') + '</ul>';
     const missingHtml = node.thinking.missingEvidence.length === 0 ? '<p class="muted">目前沒有明確缺口。</p>' : '<ul class="radar-signals">' + node.thinking.missingEvidence.slice(0, 4).map((item) => '<li>' + htmlEscape(item) + '</li>').join('') + '</ul>';
+    const questionList = Array.isArray(node.thinking.questions) && node.thinking.questions.length ? node.thinking.questions : ['這個想法真正想解決的問題是什麼？'];
+    const questionHtml = '<div class="recommendation"><strong>分身正在問</strong><ul class="radar-signals">' + questionList.slice(0, 3).map((item) => '<li>' + htmlEscape(item) + '</li>').join('') + '</ul></div>';
     const nextExplorationTag = node.thinking.nextExplorationAi ? '<span class="ai-tag">AI 改寫</span>' : '';
-    drawer.innerHTML = '<div class="recommendation"><strong>' + htmlEscape(node.title) + '</strong><div>' + htmlEscape(node.summary) + '</div><div class="muted">' + htmlEscape(node.type) + ' · ' + htmlEscape(node.confidence) + ' · ' + htmlEscape(node.source) + '</div></div><div class="trace-note"><strong>我怎麼理解它</strong><div>' + htmlEscape(node.thinking.understanding) + '</div><div class="muted">為什麼有關：' + htmlEscape(node.thinking.whyItMatters) + '</div><div class="muted">下一步：' + htmlEscape(node.thinking.nextExploration) + nextExplorationTag + '</div></div><div><strong>關鍵字</strong><div class="workbench-meta">' + keywordHtml + '</div></div><div><strong>相連節點</strong>' + connectedHtml + '</div><div><strong>證據</strong>' + evidenceHtml + '</div><div><strong>缺的證據</strong>' + missingHtml + '</div>' + promptHtml;
+    drawer.innerHTML = '<div class="recommendation"><strong>' + htmlEscape(node.title) + '</strong><div>' + htmlEscape(node.summary) + '</div><div class="muted">' + htmlEscape(node.type) + ' · ' + htmlEscape(node.confidence) + ' · ' + htmlEscape(node.source) + '</div></div>' + questionHtml + '<div class="trace-note"><strong>我怎麼理解它</strong><div>' + htmlEscape(node.thinking.understanding) + '</div><div class="muted">為什麼有關：' + htmlEscape(node.thinking.whyItMatters) + '</div><div class="muted">下一步：' + htmlEscape(node.thinking.nextExploration) + nextExplorationTag + '</div></div><div><strong>關鍵字</strong><div class="workbench-meta">' + keywordHtml + '</div></div><div><strong>相連節點</strong>' + connectedHtml + '</div><div><strong>證據</strong>' + evidenceHtml + '</div><div><strong>缺的證據</strong>' + missingHtml + '</div>' + promptHtml;
   }
 
   async function refreshGraphInPlace(targetFocus) {
@@ -1427,6 +1429,10 @@ function renderSelectedNode(node: IdeaGraphNode, graph: IdeaGraph): string {
     <strong>${escapeHtml(node.title)}</strong>
     <div>${escapeHtml(node.summary)}</div>
     <div class="muted">${escapeHtml(node.type)} · ${escapeHtml(node.confidence)} · ${escapeHtml(node.source)}</div>
+  </div>
+  <div class="recommendation">
+    <strong>分身正在問</strong>
+    <ul class="radar-signals">${(node.thinking.questions?.length ? node.thinking.questions : ['這個想法真正想解決的問題是什麼？']).slice(0, 3).map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
   </div>
   <div class="trace-note">
     <strong>我怎麼理解它</strong>
