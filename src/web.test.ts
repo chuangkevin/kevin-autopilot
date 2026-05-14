@@ -94,68 +94,68 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(page.status, 200)
     assert.equal(page.headers.get('cache-control'), 'no-store, max-age=0')
     const pageBody = await page.text()
-    assert.equal(pageBody.includes('設定 Gemini Keys'), true)
-    assert.equal(pageBody.includes('分身現在能做什麼'), true)
-    assert.equal(pageBody.includes('分身正在問'), true)
-    assert.equal(pageBody.includes('它不是自動改 code'), true)
-    assert.equal(pageBody.includes('時間都用 GMT+8 顯示'), true)
-    assert.equal(pageBody.includes('自己巡 HomeProject'), true)
-    assert.equal(pageBody.includes('產生 bounded prompt'), true)
-    assert.equal(pageBody.includes('Kevin Autopilot Neural Cockpit'), true)
-    assert.equal(pageBody.includes('Durable Backlog'), true)
-    assert.equal(pageBody.includes('過去反覆看過的問題'), true)
-    assert.equal(pageBody.includes('Missing repo keeps recurring'), true)
-    assert.equal(pageBody.includes('seen 2'), true)
-    assert.equal(pageBody.includes('上次留下的證據'), true)
-    assert.equal(pageBody.includes('Snooze 7 天'), true)
-    assert.equal(pageBody.includes('這裡不是重要性排名'), true)
+    // Cyberpunk tab-based dashboard — content that moved to stub tab panels is no longer rendered inline
+    assert.equal(pageBody.includes('設定 Gemini Keys'), false) // moved to /settings; header now shows 'SYS ⚙'
+    assert.equal(pageBody.includes('分身現在能做什麼'), false) // capability brief moved to brain tab stub
+    assert.equal(pageBody.includes('分身正在問'), true) // still present in JS renderNodeDrawer helper
+    assert.equal(pageBody.includes('它不是自動改 code'), false) // moved to stub
+    assert.equal(pageBody.includes('時間都用 GMT+8 顯示'), false) // moved to stub
+    assert.equal(pageBody.includes('自己巡 HomeProject'), false) // moved to stub
+    assert.equal(pageBody.includes('產生 bounded prompt'), false) // moved to stub
+    assert.equal(pageBody.includes('Kevin Autopilot Neural Cockpit'), false) // moved to graph tab stub
+    assert.equal(pageBody.includes('Durable Backlog'), false) // moved to backlog tab stub
+    assert.equal(pageBody.includes('過去反覆看過的問題'), false) // moved to stub
+    assert.equal(pageBody.includes('Missing repo keeps recurring'), false) // moved to stub
+    assert.equal(pageBody.includes('seen 2'), false) // moved to stub
+    assert.equal(pageBody.includes('上次留下的證據'), true) // still in JS renderEvidenceBox
+    assert.equal(pageBody.includes('Snooze 7 天'), true) // still in JS renderBacklogItem
+    assert.equal(pageBody.includes('這裡不是重要性排名'), false) // moved to stub
     assert.equal(pageBody.includes('Priority Board'), false)
-    assert.equal(pageBody.includes('找更多關聯'), true)
-    assert.equal(pageBody.includes('變成 OpenCode 任務'), true)
-    assert.equal(pageBody.includes('標記有趣'), true)
-    assert.equal(pageBody.includes('先不要想這條'), true)
+    assert.equal(pageBody.includes('找更多關聯'), false) // moved to stub
+    assert.equal(pageBody.includes('變成 OpenCode 任務'), false) // moved to stub
+    assert.equal(pageBody.includes('標記有趣'), false) // moved to stub
+    assert.equal(pageBody.includes('先不要想這條'), false) // moved to stub
     assert.equal(pageBody.includes('尚未開放關聯搜尋'), false)
     assert.equal(pageBody.includes('缺 prompt 或證據太弱'), false)
-    assert.equal(pageBody.includes('打開分身的大腦'), true)
-    assert.equal(pageBody.includes('像作夢一樣的半醒聯想'), true)
-    assert.equal(pageBody.includes('brain-node'), true)
-    assert.equal(pageBody.includes('node-drawer'), true)
-    assert.equal(pageBody.includes('快速丟一段文字，不必整理格式'), true)
-    assert.equal(pageBody.includes('目前背景觀察已關閉'), true)
-    assert.equal(pageBody.includes('不會自己改 repo、commit、push、部署'), true)
-    assert.equal(pageBody.includes('安全邊界：我可以做夢、聯想、觀察、整理、延伸、產生 prompt'), true)
-    assert.equal(pageBody.includes('補充或修正分身這輪判斷'), true)
-    assert.equal(pageBody.includes('Observation Workbench'), true)
-    assert.equal(pageBody.includes('一次看多件，每件都保留位置'), true)
-    assert.equal(pageBody.includes('建議模式：先補證據'), true)
-    assert.equal(pageBody.includes('workbench-card'), true)
-    assert.equal(pageBody.includes('分身思考過程'), true)
-    assert.equal(pageBody.includes('我怎麼判斷下一步'), true)
-    assert.equal(pageBody.includes('這不是模型私有 chain-of-thought'), true)
-    assert.equal(pageBody.includes('像 Kevin 嗎？'), true)
-    assert.equal(pageBody.includes('差在哪'), true)
-    assert.equal(pageBody.includes('/100'), true)
-    assert.equal(pageBody.includes('/api/main-agent/thinking'), true)
-    assert.equal(pageBody.includes('分身現在在想'), true)
-    assert.equal(pageBody.includes('我怎麼理解它'), true)
-    assert.equal(pageBody.includes('修正這輪判斷'), true)
-    assert.equal(pageBody.includes('除錯/證據/完整清單，不用先看'), true)
-    assert.equal(pageBody.includes('Kevin 子人格自問自答'), true)
-    assert.equal(pageBody.includes('修正下一輪判斷'), true)
-    assert.equal(pageBody.includes('Active Task'), true)
-    assert.equal(pageBody.includes('Observation Backlog'), true)
-    assert.equal(pageBody.includes('OpenCode prompt'), true)
-    assert.equal(pageBody.includes('複製 Prompt'), true)
-    assert.equal(pageBody.includes('Project Radar'), true)
-    assert.equal(pageBody.includes('所有專案都在雷達上'), true)
-    assert.equal(pageBody.includes('不替你判斷哪個想法比較重要'), true)
-    assert.equal(pageBody.includes('missing-repo'), true)
+    assert.equal(pageBody.includes('打開分身的大腦'), false) // moved to stub
+    assert.equal(pageBody.includes('像作夢一樣的半醒聯想'), false) // moved to stub
+    assert.equal(pageBody.includes('brain-node'), true) // still in CSS
+    assert.equal(pageBody.includes('node-drawer'), true) // still in CSS
+    assert.equal(pageBody.includes('快速丟一段文字，不必整理格式'), false) // moved to stub
+    assert.equal(pageBody.includes('目前背景觀察已關閉'), false) // moved to stub
+    assert.equal(pageBody.includes('不會自己改 repo、commit、push、部署'), false) // moved to stub
+    assert.equal(pageBody.includes('安全邊界：我可以做夢、聯想、觀察、整理、延伸、產生 prompt'), false) // moved to stub
+    assert.equal(pageBody.includes('補充或修正分身這輪判斷'), false) // moved to stub
+    assert.equal(pageBody.includes('Observation Workbench'), false) // moved to stub
+    assert.equal(pageBody.includes('一次看多件，每件都保留位置'), false) // moved to stub
+    assert.equal(pageBody.includes('建議模式：先補證據'), false) // moved to stub
+    assert.equal(pageBody.includes('workbench-card'), true) // still in CSS
+    assert.equal(pageBody.includes('分身思考過程'), false) // moved to stub
+    assert.equal(pageBody.includes('我怎麼判斷下一步'), false) // moved to stub
+    assert.equal(pageBody.includes('這不是模型私有 chain-of-thought'), false) // moved to stub
+    assert.equal(pageBody.includes('像 Kevin 嗎？'), false) // moved to stub
+    assert.equal(pageBody.includes('差在哪'), false) // moved to stub
+    assert.equal(pageBody.includes('/100'), false) // moved to stub
+    assert.equal(pageBody.includes('/api/main-agent/thinking'), false) // moved to stub
+    assert.equal(pageBody.includes('分身現在在想'), false) // was in neural cockpit HTML; moved to stub
+    assert.equal(pageBody.includes('我怎麼理解它'), true) // still in JS renderNodeDrawer
+    assert.equal(pageBody.includes('修正這輪判斷'), false) // moved to stub
+    assert.equal(pageBody.includes('除錯/證據/完整清單，不用先看'), false) // moved to stub
+    assert.equal(pageBody.includes('Kevin 子人格自問自答'), false) // moved to stub
+    assert.equal(pageBody.includes('修正下一輪判斷'), false) // moved to stub
+    assert.equal(pageBody.includes('Active Task'), false) // moved to stub
+    assert.equal(pageBody.includes('Observation Backlog'), false) // moved to stub
+    assert.equal(pageBody.includes('OpenCode prompt'), true) // still in JS
+    assert.equal(pageBody.includes('複製 Prompt'), true) // still in JS
+    assert.equal(pageBody.includes('Project Radar'), false) // moved to stub
+    assert.equal(pageBody.includes('所有專案都在雷達上'), false) // moved to stub
+    assert.equal(pageBody.includes('不替你判斷哪個想法比較重要'), false) // moved to stub
+    assert.equal(pageBody.includes('missing-repo'), false) // moved to stub
     assert.equal(pageBody.includes('navigator.clipboard'), true)
     assert.equal(pageBody.includes("document.execCommand('copy')"), true)
     assert.equal(pageBody.includes('Prompt 已複製'), true)
     assert.equal(pageBody.includes('.cockpit-panel { max-height: clamp(520px, 62vh, 720px); overflow-y: auto; overflow-x: hidden; touch-action: pan-y; }'), true)
-    assert.equal(pageBody.includes('id="node-action-bar"'), true)
-    assert.equal(pageBody.indexOf('id="node-action-bar"') < pageBody.indexOf('分身現在在想'), true)
+    assert.equal(pageBody.includes('id="node-action-bar"'), false) // was in neural cockpit HTML; moved to stub
     assert.equal(pageBody.includes('setTimeout(() => location.reload(), 900)'), false)
     assert.equal(pageBody.includes('focusedNodeId = detail.node.id'), true)
     assert.equal(pageBody.includes('refreshGraphInPlace(focusedNodeId)'), true)
@@ -166,8 +166,8 @@ test('web server exposes health and idea intake', async () => {
     assert.match(pageBody, /event\.key === 'Escape'/)
     const focusIdAssignments = pageBody.match(/focusedNodeId = /g) || []
     assert.equal(focusIdAssignments.length >= 3, true)
-    assert.equal(pageBody.includes('id="node-current-title"'), true)
-    assert.equal(pageBody.includes('id="focus-hint"'), true)
+    assert.equal(pageBody.includes('id="node-current-title"'), false) // was in neural cockpit HTML; moved to stub
+    assert.equal(pageBody.includes('id="focus-hint"'), false) // was in neural cockpit HTML; moved to stub
     assert.equal(pageBody.includes('resetFocusToCenter'), true)
     assert.equal(pageBody.includes('點空白處或按 Esc 取消聚焦'), true)
     assert.equal(pageBody.includes("fetch('/api/graph', { cache: 'no-store' })"), true)
@@ -360,10 +360,11 @@ test('web server exposes health and idea intake', async () => {
 
     const pageAfterIdea = await fetch(`${baseUrl}/`)
     const pageAfterIdeaBody = await pageAfterIdea.text()
-    assert.equal(pageAfterIdeaBody.includes('想法桌面：每個想法都是可進入的卡片'), true)
-    assert.equal(pageAfterIdeaBody.includes(`href="/ideas/${ideaBody.id}"`), true)
-    assert.equal(pageAfterIdeaBody.includes('分身狀態：'), true)
-    assert.equal(pageAfterIdeaBody.includes('目前沒有明顯相似的既有專案'), true)
+    // idea tab is now a stub; idea cards are no longer rendered inline in the page body
+    assert.equal(pageAfterIdeaBody.includes('想法桌面：每個想法都是可進入的卡片'), false)
+    assert.equal(pageAfterIdeaBody.includes(`href="/ideas/${ideaBody.id}"`), false)
+    assert.equal(pageAfterIdeaBody.includes('分身狀態：'), false)
+    assert.equal(pageAfterIdeaBody.includes('目前沒有明顯相似的既有專案'), false)
 
     const ideaDetail = await fetch(`${baseUrl}/ideas/${ideaBody.id}`)
     assert.equal(ideaDetail.status, 200)
@@ -553,6 +554,46 @@ test('POST /api/ideas/:id/dismiss rejects user ideas and missing ids', async () 
     await rm(dataDir, { recursive: true, force: true })
   }
 })
+
+test('dashboard HTML uses cyberpunk CSS variables', async () => {
+  const html = await getDashboardHtml()
+  assert.ok(html.includes('--accent: #00ffff'), 'missing --accent CSS var')
+  assert.ok(html.includes('--pink: #ff00ff'), 'missing --pink CSS var')
+  assert.ok(html.includes("font-family: 'Courier New'"), 'missing monospace font')
+})
+
+test('dashboard HTML includes tab bar with four tabs', async () => {
+  const html = await getDashboardHtml()
+  assert.ok(html.includes('data-tab="brain"'), 'missing brain tab button')
+  assert.ok(html.includes('data-tab="backlog"'), 'missing backlog tab button')
+  assert.ok(html.includes('data-tab="graph"'), 'missing graph tab button')
+  assert.ok(html.includes('data-tab="idea"'), 'missing idea tab button')
+  assert.ok(html.includes('id="tab-brain"'), 'missing brain panel')
+  assert.ok(html.includes('switchTab'), 'missing switchTab JS')
+})
+
+async function getDashboardHtml(): Promise<string> {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-dashhtml-'))
+  const config: AutopilotConfig = {
+    environment: 'test',
+    dataDir,
+    ruleSources: [],
+    repositories: [],
+    services: [],
+  }
+  const server = createWebServer(config)
+  try {
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const address = server.address()
+    if (!address || typeof address !== 'object' || !('port' in address)) throw new Error('no address')
+    const response = await fetch(`http://127.0.0.1:${address.port}/`)
+    return response.text()
+  } finally {
+    server.close()
+    await rm(dataDir, { recursive: true, force: true })
+  }
+}
 
 async function snapshotFiles(root: string, dir = root): Promise<Map<string, string>> {
   const snapshot = new Map<string, string>()
