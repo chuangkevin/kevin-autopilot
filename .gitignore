@@ -6,3 +6,4 @@ dist/
 data/
 .turbo/
 .ai-review/pre-commit-review.json
+.superpowers/
