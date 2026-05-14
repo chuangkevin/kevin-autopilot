@@ -48,7 +48,9 @@ the safe whitelist `aiReflection.enabled`, `aiReflection.maxOutputTokens`,
 `data/runtime-overrides.json`, plus v0.12.x Neural Cockpit question-thinking
 where graph nodes surface "分身正在問" premise/evidence/counterexample questions
 and repeated extension clicks create readable continuation branches rather than
-duplicate bubbles.
+duplicate bubbles, and v0.13.0 Android Mode with adaptive observation timer
+(excited/cooling/normal modes, 60 s floor) and cyberpunk neural tab UI
+(分身/Backlog/圖/想法 tabs, SVG neural map, scanlines, cyan/magenta palette).
 Keep these versions read-only: they may observe, classify, report, and store
 Autopilot-owned reports/idea records/supplements, but they must not modify target
 repos, create repos, deploy, commit/push other projects, or perform destructive

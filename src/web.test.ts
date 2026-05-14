@@ -111,10 +111,10 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(pageBody.includes('Snooze 7 天'), true) // still in JS renderBacklogItem
     assert.equal(pageBody.includes('這裡不是重要性排名'), false) // moved to stub
     assert.equal(pageBody.includes('Priority Board'), false)
-    assert.equal(pageBody.includes('找更多關聯'), false) // moved to stub
-    assert.equal(pageBody.includes('變成 OpenCode 任務'), false) // moved to stub
-    assert.equal(pageBody.includes('標記有趣'), false) // moved to stub
-    assert.equal(pageBody.includes('先不要想這條'), false) // moved to stub
+    assert.equal(pageBody.includes('找更多關聯'), true) // still in embedded graph JSON (action labels)
+    assert.equal(pageBody.includes('變成 OpenCode 任務'), true) // still in embedded graph JSON (action labels)
+    assert.equal(pageBody.includes('標記有趣'), true) // still in embedded graph JSON (action labels)
+    assert.equal(pageBody.includes('先不要想這條'), true) // still in embedded graph JSON (action labels)
     assert.equal(pageBody.includes('尚未開放關聯搜尋'), false)
     assert.equal(pageBody.includes('缺 prompt 或證據太弱'), false)
     assert.equal(pageBody.includes('打開分身的大腦'), false) // moved to stub
@@ -150,7 +150,7 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(pageBody.includes('Project Radar'), false) // moved to stub
     assert.equal(pageBody.includes('所有專案都在雷達上'), false) // moved to stub
     assert.equal(pageBody.includes('不替你判斷哪個想法比較重要'), false) // moved to stub
-    assert.equal(pageBody.includes('missing-repo'), false) // moved to stub
+    assert.equal(pageBody.includes('missing-repo'), true) // still in embedded graph JSON (node source/id)
     assert.equal(pageBody.includes('navigator.clipboard'), true)
     assert.equal(pageBody.includes("document.execCommand('copy')"), true)
     assert.equal(pageBody.includes('Prompt 已複製'), true)
@@ -364,7 +364,7 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(pageAfterIdeaBody.includes('想法桌面：每個想法都是可進入的卡片'), false)
     assert.equal(pageAfterIdeaBody.includes(`href="/ideas/${ideaBody.id}"`), false)
     assert.equal(pageAfterIdeaBody.includes('分身狀態：'), false)
-    assert.equal(pageAfterIdeaBody.includes('目前沒有明顯相似的既有專案'), false)
+    assert.equal(pageAfterIdeaBody.includes('目前沒有明顯相似的既有專案'), true) // still in embedded graph JSON (idea node thinking.whyItMatters)
 
     const ideaDetail = await fetch(`${baseUrl}/ideas/${ideaBody.id}`)
     assert.equal(ideaDetail.status, 200)
@@ -608,6 +608,20 @@ test('backlog tab renders items with severity classes', async () => {
   assert.ok(html.includes('id="tab-backlog"'), 'missing backlog panel')
   assert.ok(html.includes('bl-item'), 'missing bl-item class')
   assert.ok(html.includes('filter-pill'), 'missing filter pills')
+})
+
+test('graph tab renders SVG neural map', async () => {
+  const html = await getDashboardHtml()
+  assert.ok(html.includes('id="tab-graph"'), 'missing graph panel')
+  assert.ok(html.includes('class="graph-wrap"'), 'missing graph-wrap')
+  assert.ok(html.includes('<svg'), 'missing SVG element')
+})
+
+test('idea tab renders textarea and transmit button', async () => {
+  const html = await getDashboardHtml()
+  assert.ok(html.includes('id="tab-idea"'), 'missing idea panel')
+  assert.ok(html.includes('class="idea-textarea"'), 'missing textarea')
+  assert.ok(html.includes('TRANSMIT'), 'missing transmit button text')
 })
 
 async function getDashboardHtml(): Promise<string> {

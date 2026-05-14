@@ -354,6 +354,15 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
+v0.13.0 ships Android Mode: adaptive observation timer + cyberpunk neural UI.
+The timer shortens the reflection interval to 60 s on excited signals (new AI
+seeds, newly interesting graph nodes, backlog spikes) and anneals back to the
+base interval when signals cool. The UI replaces the old cockpit layout with a
+mobile-first tab-based design (分身 / Backlog / 圖 / 想法) using a cyberpunk
+color palette (cyan/magenta on near-black), scanline overlay, and a full SVG
+neural map in the graph tab. Desktop falls through to a three-column sidebar
+layout. All 115 tests pass.
+
 v0.12.0 adds trusted-settings runtime overrides on `/settings`. Kevin can flip
 the whitelisted fields `aiReflection.enabled`, `aiReflection.maxOutputTokens`,
 `aiReflection.maxPendingAiIdeas`, `backgroundObservation.enabled`, and

@@ -1551,11 +1551,98 @@ function renderCpBacklogItem(item: BacklogItem): string {
 }
 
 function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): string {
-  return `<div class="sys-label">/// 圖 — coming soon</div>`
+  const layout = createGraphLayout(graph)
+  const firstNode = graph.nodes.find((node) => node.id === graph.centerNodeId) ?? graph.nodes[0]
+  const svgEdges = graph.edges.map((edge) => {
+    const from = layout.get(edge.from)
+    const to = layout.get(edge.to)
+    if (!from || !to) return ''
+    const isStrong = edge.confidence === 'strong'
+    const stroke = isStrong ? 'rgba(0,255,255,0.5)' : 'rgba(0,255,255,0.18)'
+    const dash = isStrong ? '' : 'stroke-dasharray="4,3"'
+    return `<line x1="${from.x}%" y1="${from.y}%" x2="${to.x}%" y2="${to.y}%" stroke="${stroke}" stroke-width="${isStrong ? 1.2 : 0.8}" ${dash}><title>${escapeHtml(edge.rationale)}</title></line>`
+  }).join('')
+  const svgNodes = graph.nodes.map((node) => {
+    const point = layout.get(node.id) ?? { x: 50, y: 50 }
+    const isInteresting = node.interesting
+    const isCenter = node.id === firstNode?.id
+    const r = isInteresting ? 14 : isCenter ? 13 : 10
+    const stroke = isInteresting ? 'rgba(255,0,255,0.7)' : 'rgba(0,255,255,0.5)'
+    const filter = isInteresting ? 'filter: drop-shadow(0 0 6px rgba(255,0,255,0.6))' : 'filter: drop-shadow(0 0 4px rgba(0,255,255,0.4))'
+    const pulse = isCenter ? `<circle cx="${point.x}%" cy="${point.y}%" r="${r + 4}" fill="none" stroke="rgba(0,255,255,0.25)" stroke-width="1"><animate attributeName="r" values="${r + 2};${r + 7};${r + 2}" dur="2s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.6;0;0.6" dur="2s" repeatCount="indefinite"/></circle>` : ''
+    return `${pulse}<circle class="cp-node${isCenter ? ' selected' : ''}" cx="${point.x}%" cy="${point.y}%" r="${r}" fill="rgba(5,5,5,0.9)" stroke="${stroke}" stroke-width="1.5" style="${filter}" data-node-id="${escapeHtml(node.id)}" aria-label="${escapeHtml(node.title)}"><title>${escapeHtml(node.title)}</title></circle>`
+  }).join('')
+
+  return `
+<div class="graph-wrap" id="neural-graph-wrap">
+  <svg class="graph-svg" id="neural-map" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" style="background:rgba(0,255,255,0.02)">
+    <defs>
+      <pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse">
+        <path d="M 10 0 L 0 0 0 10" fill="none" stroke="rgba(0,255,255,0.04)" stroke-width="0.3"/>
+      </pattern>
+      <rect width="100" height="100" fill="url(#grid)"/>
+    </defs>
+    <rect width="100" height="100" fill="url(#grid)"/>
+    ${svgEdges}
+    ${svgNodes}
+  </svg>
+</div>
+<div class="node-drawer" id="node-drawer" style="display:${firstNode ? 'block' : 'none'}">
+  <div class="sys-label">/// Selected Node</div>
+  <div id="node-drawer-content">
+    ${firstNode ? `<div style="color:var(--accent);font-weight:bold;margin-bottom:4px">${escapeHtml(firstNode.title)}</div><div class="muted" style="font-size:10px">${graph.edges.filter((e) => e.from === firstNode.id || e.to === firstNode.id).length} 個關聯</div>` : ''}
+  </div>
+</div>
+<script id="graph-data" type="application/json">${jsonForScript(graph)}</script>
+<script id="loop-data" type="application/json">${jsonForScript({ lastGraphAt: loopState.lastGraphAt ?? '', lastReportAt: loopState.lastReportAt ?? '' })}</script>`
 }
 
 function renderIdeaTab(ideas: IdeaRecord[]): string {
-  return `<div class="sys-label">/// 想法 — coming soon</div>`
+  const recent = ideas.slice(0, 8)
+  return `
+<div>
+  <div class="sys-label" style="margin-bottom:8px">/// Input to Neural</div>
+  <textarea class="idea-textarea" id="idea-input" placeholder="輸入想法，分身會整理…" rows="5"></textarea>
+  <button class="transmit-btn" id="idea-submit">[ TRANSMIT ]</button>
+  <div id="idea-result" class="muted" style="margin-top:6px;font-size:11px"></div>
+
+  <div class="sys-label" style="margin:12px 0 6px">/// Recent Ideas</div>
+  ${recent.length === 0 ? '<div class="muted" style="font-size:11px">尚無想法</div>' : recent.map(renderCpIdeaItem).join('')}
+</div>
+
+<script>
+(function() {
+  var btn = document.getElementById('idea-submit');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var text = document.getElementById('idea-input').value.trim();
+    if (!text) return;
+    btn.disabled = true;
+    btn.textContent = '[ TRANSMITTING... ]';
+    fetch('/api/ideas', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ rawText: text }) })
+      .then(function(r) { return r.json(); })
+      .then(function() {
+        document.getElementById('idea-result').textContent = '✓ 已送出';
+        document.getElementById('idea-input').value = '';
+        btn.textContent = '[ TRANSMIT ]';
+        btn.disabled = false;
+      })
+      .catch(function() {
+        document.getElementById('idea-result').textContent = '✗ 送出失敗';
+        btn.textContent = '[ TRANSMIT ]';
+        btn.disabled = false;
+      });
+  });
+})();
+</script>`
+}
+
+function renderCpIdeaItem(idea: IdeaRecord): string {
+  return `
+<div class="idea-item">
+  <span class="idea-name">${escapeHtml(idea.title ?? idea.rawText.slice(0, 40))}</span>
+  <span class="idea-status">${escapeHtml(idea.classification)}</span>
+</div>`
 }
 
 function renderDurableBacklogPanel(backlog: BacklogPanelData): string {
