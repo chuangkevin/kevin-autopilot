@@ -13,6 +13,7 @@ import { reflect } from './reflection.js'
 import { getEffectiveConfig } from './runtime-overrides.js'
 import type {
   AutopilotConfig,
+  BacklogItem,
   IdeaGraph,
   ObservationLoopState,
   ObservationReport,
@@ -113,6 +114,18 @@ export class ObservationLoop {
       const ideas = await listIdeas(effectiveConfig, 40)
       const graph = await getIdeaGraph(effectiveConfig, report, ideas)
       const reflectionResult = await this.runReflectionSafely(effectiveConfig, graph)
+      const backlogSnapshot = listBacklogSnapshot(effectiveConfig)
+      const excitementScore = this.computeExcitementScore(
+        graph,
+        backlogSnapshot,
+        reflectionResult?.newSeedCount ?? 0,
+      )
+      this.lastInterestingNodeIds = new Set(
+        graph.nodes.filter((node) => node.interesting).map((node) => node.id),
+      )
+      this.lastBacklogSeenCounts = new Map(
+        backlogSnapshot.map((item) => [item.id, item.seenCount]),
+      )
       this.lastReport = report
       this.state = {
         ...this.state,
@@ -126,6 +139,7 @@ export class ObservationLoop {
         lastReflectionAt: reflectionResult?.at ?? this.state.lastReflectionAt,
         lastReportPath: written.jsonPath,
         lastMarkdownPath: written.markdownPath,
+        lastExcitementScore: excitementScore,
       }
       return report
     } catch (error) {
@@ -216,6 +230,17 @@ export class ObservationLoop {
       } catch {}
       return { at: skipped.generatedAt, newSeedCount: 0 }
     }
+  }
+
+  private computeExcitementScore(graph: IdeaGraph, backlog: BacklogItem[], newSeedCount: number): number {
+    const newInteresting = graph.nodes.filter(
+      (node) => node.interesting && !this.lastInterestingNodeIds.has(node.id),
+    ).length
+    const spikes = backlog.filter((item) => {
+      const prev = this.lastBacklogSeenCounts.get(item.id) ?? 0
+      return item.seenCount - prev >= 3
+    }).length
+    return newSeedCount + newInteresting + spikes
   }
 
   private async persistState(): Promise<void> {
