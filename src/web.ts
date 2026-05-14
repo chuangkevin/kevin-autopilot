@@ -1393,8 +1393,85 @@ function switchTab(name) {
 </html>`
 }
 
-function renderBrainTab(loopState: ObservationLoopState): string {
-  return `<div class="sys-label">/// 分身 — coming soon</div>`
+export function renderBrainTab(loopState: ObservationLoopState): string {
+  const isExcited = loopState.excitementMode === 'excited'
+  const isCooling = loopState.excitementMode === 'cooling'
+  const isDim = !isExcited && !isCooling
+
+  const modeText = isExcited ? '⚡ EXCITED' : isCooling ? '🌡 COOLING' : '😴 STANDBY'
+  const intervalSec = Math.round((loopState.currentIntervalMs ?? loopState.intervalMs) / 1000)
+  const intervalLabel = intervalSec >= 60 ? `${Math.round(intervalSec / 60)}m` : `${intervalSec}s`
+  const nextLabel = loopState.nextRunAt
+    ? `next cycle: ${formatCountdown(loopState.nextRunAt)}`
+    : `every ${intervalLabel}`
+
+  const score = loopState.lastExcitementScore ?? 0
+  const runCount = loopState.runCount
+
+  return `
+<div class="cp-card${isDim ? ' dim' : ''}">
+  <div class="sys-label">/// Neural Status</div>
+  <div class="brain-mode${isDim ? ' dim' : ''}">${escapeHtml(modeText)}</div>
+  <div class="brain-sub${isDim ? ' dim' : ''}">${escapeHtml(nextLabel)}</div>
+  <div class="stats-row">
+    <div class="stat-box">
+      <div class="stat-label">INTERVAL</div>
+      <div class="stat-val${isDim ? ' dim' : ''}">${escapeHtml(intervalLabel)}</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">SCORE</div>
+      <div class="stat-val${isDim ? ' dim' : ''}">+${score}</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">RUNS</div>
+      <div class="stat-val${isDim ? ' dim' : ''}">${runCount}</div>
+    </div>
+  </div>
+  ${renderBrainSeedsBox(loopState)}
+</div>
+${renderBrainSignals(loopState)}`
+}
+
+function renderBrainSeedsBox(loopState: ObservationLoopState): string {
+  const lastAt = loopState.lastReflectionAt
+    ? formatTaipeiTime(loopState.lastReflectionAt)
+    : '—'
+  return `
+<div class="seeds-box">
+  <div class="sys-label" style="margin-bottom:4px">/// Last Reflection · ${escapeHtml(lastAt)}</div>
+  <div id="brain-seeds-placeholder" class="muted" style="font-size:11px">
+    ${loopState.lastReflectionAt ? '反思已完成，查看圖 Tab 看最新 ideas' : '尚未執行反思'}
+  </div>
+</div>`
+}
+
+function renderBrainSignals(loopState: ObservationLoopState): string {
+  const lastRun = loopState.lastFinishedAt
+  if (!lastRun) return `<div class="muted" style="margin-top:8px;font-size:11px">尚未執行任何 cycle</div>`
+  return `
+<div>
+  <div class="sys-label" style="margin: 10px 0 6px">/// System</div>
+  <div class="signal-list">
+    <div class="signal-item">
+      <span>🔄</span>
+      <span class="signal-text">上次完成</span>
+      <span class="signal-time">${escapeHtml(formatTaipeiTime(lastRun))}</span>
+    </div>
+    ${loopState.lastSuccess === false && loopState.lastError ? `
+    <div class="signal-item" style="border-color:rgba(239,68,68,0.3)">
+      <span>⚠</span>
+      <span class="signal-text" style="color:#ef4444">${escapeHtml(loopState.lastError.slice(0, 60))}</span>
+    </div>` : ''}
+  </div>
+</div>`
+}
+
+function formatCountdown(isoString: string): string {
+  const diff = new Date(isoString).getTime() - Date.now()
+  if (diff <= 0) return 'now'
+  const sec = Math.round(diff / 1000)
+  if (sec < 60) return `${sec}s`
+  return `${Math.round(sec / 60)}m`
 }
 
 function renderBacklogTab(backlog: BacklogPanelData): string {

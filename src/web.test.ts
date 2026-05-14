@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createWebServer, formatTaipeiTime, isTrustedSettingsAddress, isTrustedSettingsSource } from './web.js'
+import { createWebServer, formatTaipeiTime, isTrustedSettingsAddress, isTrustedSettingsSource, renderBrainTab } from './web.js'
 import { mergeCandidatesIntoBacklog, openBacklogDatabase } from './backlog.js'
 import { saveRuntimeOverrides } from './runtime-overrides.js'
 import type { AutopilotConfig, ObservationCandidate } from './types.js'
@@ -570,6 +570,37 @@ test('dashboard HTML includes tab bar with four tabs', async () => {
   assert.ok(html.includes('data-tab="idea"'), 'missing idea tab button')
   assert.ok(html.includes('id="tab-brain"'), 'missing brain panel')
   assert.ok(html.includes('switchTab'), 'missing switchTab JS')
+})
+
+test('brain tab renders excited mode when excitementMode is excited', async () => {
+  const html = renderBrainTab({
+    mode: 'read-only-background-observation',
+    enabled: true,
+    intervalMs: 60_000,
+    currentIntervalMs: 60_000,
+    baseIntervalMs: 60_000,
+    excitementMode: 'excited',
+    lastExcitementScore: 2,
+    running: false,
+    runCount: 5,
+  })
+  assert.ok(html.includes('EXCITED'), 'missing EXCITED text')
+  assert.ok(html.includes('brain-mode'), 'missing brain-mode class')
+})
+
+test('brain tab renders normal mode when excitementMode is normal', async () => {
+  const html = renderBrainTab({
+    mode: 'read-only-background-observation',
+    enabled: true,
+    intervalMs: 300_000,
+    currentIntervalMs: 300_000,
+    baseIntervalMs: 300_000,
+    excitementMode: 'normal',
+    lastExcitementScore: 0,
+    running: false,
+    runCount: 0,
+  })
+  assert.ok(html.includes('STANDBY'), 'missing STANDBY text')
 })
 
 async function getDashboardHtml(): Promise<string> {
