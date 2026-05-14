@@ -707,8 +707,7 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
 .bl-btn:hover { border-color: var(--accent); color: var(--accent); }
 
 /* Neural graph */
-.graph-wrap { position: relative; background: #020202; border: 1px solid var(--accent-border); border-radius: 12px; overflow: hidden; height: calc(100dvh - 200px); min-height: 300px; }
-.graph-svg { width: 100%; height: 100%; }
+.cy-container { background: #020202; border: 1px solid var(--accent-border); border-radius: 12px; height: calc(100dvh - 200px); min-height: 300px; }
 .node-drawer { background: rgba(0,0,0,0.95); border-top: 1px solid var(--accent-border); padding: 10px 14px; }
 
 /* Idea input */
@@ -886,6 +885,7 @@ summary { cursor: pointer; color: #bfdbfe; font-weight: 700; }
 @media (max-width: 820px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .command-grid, .focus-grid, .agent-board, .thinking-grid, .neural-shell, .backlog-evidence { grid-template-columns: minmax(0, 1fr); } .neural-stage { min-height: 430px; } table { font-size: 13px; } }
 @media (max-width: 520px) { .grid { grid-template-columns: 1fr 1fr; } .value { font-size: 24px; } a.button, button { min-height: 44px; } .cockpit-panel { max-height: 72vh; padding: 12px; } .node-action-bar { margin: 0 0 12px; } }
   </style>
+  <script src="https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js"></script>
 </head>
 <body>
 <main>
@@ -1062,7 +1062,12 @@ function switchTab(name) {
   }
 
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') resetFocusToCenter();
+    if (event.key === 'Escape') {
+      resetFocusToCenter();
+      (window._cyInstances || []).forEach(function(cy) { cy.nodes().removeClass('cy-selected'); });
+      var drawer = document.getElementById('node-drawer');
+      if (drawer) drawer.style.display = 'none';
+    }
   });
 
   document.addEventListener('click', async (event) => {
@@ -1081,6 +1086,7 @@ function switchTab(name) {
       document.querySelectorAll('.brain-node').forEach((item) => item.classList.remove('active'));
       nodeButton.classList.add('active');
       await refreshGraphInPlace(focusedNodeId);
+      refreshCyGraph();
       const response = await fetch('/api/graph/nodes/' + encodeURIComponent(targetNodeId));
       if (!response.ok) return;
       renderNodeDrawer(await response.json());
@@ -1108,6 +1114,7 @@ function switchTab(name) {
         renderNodeDrawer(detail);
         focusedNodeId = detail.node.id;
         await refreshGraphInPlace(focusedNodeId);
+        refreshCyGraph();
         return;
       }
       if (action === 'copy-opencode-prompt') {
@@ -1608,55 +1615,177 @@ function renderCpBacklogItem(item: BacklogItem): string {
 }
 
 function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): string {
-  const layout = createGraphLayout(graph)
   const firstNode = graph.nodes.find((node) => node.id === graph.centerNodeId) ?? graph.nodes[0]
-  const svgEdges = graph.edges.map((edge) => {
-    const from = layout.get(edge.from)
-    const to = layout.get(edge.to)
-    if (!from || !to) return ''
-    const isStrong = edge.confidence === 'strong'
-    const stroke = isStrong ? 'rgba(0,255,255,0.5)' : 'rgba(0,255,255,0.18)'
-    const dash = isStrong ? '' : 'stroke-dasharray="4,3"'
-    return `<line x1="${from.x}%" y1="${from.y}%" x2="${to.x}%" y2="${to.y}%" stroke="${stroke}" stroke-width="${isStrong ? 1.2 : 0.8}" ${dash}><title>${escapeHtml(edge.rationale)}</title></line>`
-  }).join('')
-  const svgNodes = graph.nodes.map((node) => {
-    const point = layout.get(node.id) ?? { x: 50, y: 50 }
-    const isInteresting = node.interesting
-    const isCenter = node.id === firstNode?.id
-    const r = isInteresting ? 14 : isCenter ? 13 : 10
-    const stroke = isInteresting ? 'rgba(255,0,255,0.7)' : 'rgba(0,255,255,0.5)'
-    const textColor = isInteresting ? 'rgba(255,0,255,0.95)' : isCenter ? 'rgba(0,255,255,1)' : 'rgba(0,255,255,0.8)'
-    const filter = isInteresting ? 'filter: drop-shadow(0 0 6px rgba(255,0,255,0.6))' : 'filter: drop-shadow(0 0 4px rgba(0,255,255,0.4))'
-    const pulse = isCenter ? `<circle cx="${point.x}%" cy="${point.y}%" r="${r + 4}" fill="none" stroke="rgba(0,255,255,0.25)" stroke-width="1"><animate attributeName="r" values="${r + 2};${r + 7};${r + 2}" dur="2s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.6;0;0.6" dur="2s" repeatCount="indefinite"/></circle>` : ''
-    const maxChars = isCenter ? 12 : 8
-    const label = node.title.length > maxChars ? node.title.slice(0, maxChars - 1) + '…' : node.title
-    const fontSize = isCenter ? 3.2 : 2.6
-    const labelEl = `<text x="${point.x}%" y="${point.y}%" text-anchor="middle" dominant-baseline="middle" font-family="'Courier New',monospace" font-size="${fontSize}" fill="${textColor}" style="pointer-events:none;font-weight:${isCenter ? 700 : 400}">${escapeHtml(label)}</text>`
-    return `${pulse}<circle class="cp-node${isCenter ? ' selected' : ''}" cx="${point.x}%" cy="${point.y}%" r="${r}" fill="rgba(5,5,5,0.9)" stroke="${stroke}" stroke-width="1.5" style="${filter}" data-node-id="${escapeHtml(node.id)}" aria-label="${escapeHtml(node.title)}"><title>${escapeHtml(node.title)}</title></circle>${labelEl}`
-  }).join('')
-
   return `
-<div class="graph-wrap" id="neural-graph-wrap">
-  <svg class="graph-svg" id="neural-map" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" style="background:rgba(0,255,255,0.02)">
-    <defs>
-      <pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse">
-        <path d="M 10 0 L 0 0 0 10" fill="none" stroke="rgba(0,255,255,0.04)" stroke-width="0.3"/>
-      </pattern>
-      <rect width="100" height="100" fill="url(#grid)"/>
-    </defs>
-    <rect width="100" height="100" fill="url(#grid)"/>
-    ${svgEdges}
-    ${svgNodes}
-  </svg>
-</div>
+<div class="cy-container" data-center-node="${escapeHtml(graph.centerNodeId ?? '')}"></div>
 <div class="node-drawer" id="node-drawer" style="display:${firstNode ? 'block' : 'none'}">
-  <div class="sys-label">/// Selected Node</div>
+  <div class="sys-label">/// SELECTED NODE</div>
   <div id="node-drawer-content">
     ${firstNode ? `<div style="color:var(--accent);font-weight:bold;margin-bottom:4px">${escapeHtml(firstNode.title)}</div><div class="muted" style="font-size:10px">${graph.edges.filter((e) => e.from === firstNode.id || e.to === firstNode.id).length} 個關聯</div>` : ''}
   </div>
 </div>
 <script id="graph-data" type="application/json">${jsonForScript(graph)}</script>
-<script id="loop-data" type="application/json">${jsonForScript({ lastGraphAt: loopState.lastGraphAt ?? '', lastReportAt: loopState.lastReportAt ?? '' })}</script>`
+<script id="loop-data" type="application/json">${jsonForScript({ lastGraphAt: loopState.lastGraphAt ?? '', lastReportAt: loopState.lastReportAt ?? '' })}</script>
+<script>
+(function() {
+  if (typeof cytoscape === 'undefined') {
+    document.querySelectorAll('.cy-container:not([data-cy-init])').forEach(function(c) { c.textContent = '圖形載入失敗，請檢查網路'; });
+    return;
+  }
+  var graphDataEl = document.getElementById('graph-data');
+  if (!graphDataEl) return;
+  var graph;
+  try { graph = JSON.parse(graphDataEl.textContent || '{}'); } catch { return; }
+  if (!graph || !Array.isArray(graph.nodes)) return;
+
+  function truncateLabel(str, max) {
+    return str && str.length > max ? str.slice(0, max - 1) + '\\u2026' : (str || '');
+  }
+
+  function toElements(g) {
+    var els = [];
+    var cid = g.centerNodeId;
+    (g.nodes || []).forEach(function(node) {
+      els.push({ data: {
+        id: node.id,
+        label: truncateLabel(node.title, node.id === cid ? 12 : 8),
+        interesting: node.interesting ? true : undefined,
+        ignored: (node.ignored || node.archived) ? true : undefined,
+        isCenter: node.id === cid ? true : undefined,
+      }});
+    });
+    (g.edges || []).forEach(function(edge) {
+      els.push({ data: {
+        id: edge.from + '--' + edge.to,
+        source: edge.from,
+        target: edge.to,
+        confidence: edge.confidence,
+        rationale: edge.rationale || '',
+      }});
+    });
+    return els;
+  }
+
+  function getCyStyle() {
+    return [
+      { selector: 'node', style: {
+        'background-color': 'rgba(5,5,5,0.9)', 'border-color': 'rgba(0,255,255,0.5)',
+        'border-width': 1.5, 'color': 'rgba(0,255,255,0.8)', 'label': 'data(label)',
+        'font-family': 'Courier New, monospace', 'font-size': 10,
+        'text-valign': 'center', 'text-halign': 'center',
+        'width': 40, 'height': 40, 'text-wrap': 'wrap', 'text-max-width': 36, 'shape': 'ellipse',
+      }},
+      { selector: 'node[?interesting]', style: {
+        'border-color': 'rgba(255,0,255,0.7)', 'color': 'rgba(255,0,255,0.95)', 'border-width': 2.5,
+      }},
+      { selector: 'node[?isCenter]', style: {
+        'width': 56, 'height': 56, 'border-color': 'rgba(0,255,255,0.9)',
+        'color': 'rgba(0,255,255,1)', 'font-size': 12, 'font-weight': 'bold', 'border-width': 2.5,
+      }},
+      { selector: 'node[?ignored]', style: {
+        'opacity': 0.35, 'border-color': 'rgba(100,100,100,0.4)', 'color': 'rgba(150,150,150,0.6)',
+      }},
+      { selector: 'node.cy-selected', style: { 'border-color': 'rgba(251,191,36,0.85)', 'border-width': 2.5 }},
+      { selector: 'edge', style: {
+        'line-color': 'rgba(0,255,255,0.18)', 'width': 0.8, 'curve-style': 'bezier',
+        'line-style': 'dashed', 'line-dash-pattern': [4, 3], 'target-arrow-shape': 'none',
+      }},
+      { selector: 'edge[confidence = "strong"]', style: {
+        'line-color': 'rgba(0,255,255,0.5)', 'width': 1.2, 'line-style': 'solid',
+      }},
+    ];
+  }
+
+  function debounce(fn, delay) {
+    var timer;
+    return function() { clearTimeout(timer); timer = setTimeout(fn, delay); };
+  }
+
+  window._cyInstances = window._cyInstances || [];
+  window._cyToElements = toElements;
+  window._cyGetStyle = getCyStyle;
+
+  function initContainer(container, savedPositions) {
+    container.setAttribute('data-cy-init', '1');
+    var hasSaved = Object.keys(savedPositions).length > 0 &&
+      (graph.nodes || []).every(function(n) { return savedPositions[n.id]; });
+    var layoutConfig = hasSaved
+      ? { name: 'preset', positions: function(node) { return savedPositions[node.id()]; } }
+      : { name: 'cose', animate: false, randomize: false,
+          nodeRepulsion: function() { return 8000; },
+          idealEdgeLength: function() { return 120; },
+          gravity: 0.4, numIter: 1000 };
+
+    var cy = cytoscape({
+      container: container,
+      elements: toElements(graph),
+      style: getCyStyle(),
+      layout: layoutConfig,
+      minZoom: 0.15, maxZoom: 4, wheelSensitivity: 0.3, boxSelectionEnabled: false,
+    });
+    window._cyInstances.push(cy);
+
+    var savePositions = debounce(function() {
+      var positions = {};
+      cy.nodes().forEach(function(node) { positions[node.id()] = node.position(); });
+      fetch('/api/graph/positions', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ positions: positions }) });
+    }, 800);
+
+    cy.on('layoutstop', savePositions);
+    cy.on('dragfree', 'node', savePositions);
+
+    cy.on('tap', 'node', function(event) {
+      var nodeId = event.target.id();
+      window._cyInstances.forEach(function(inst) { inst.nodes().removeClass('cy-selected'); });
+      event.target.addClass('cy-selected');
+      var drawer = document.getElementById('node-drawer');
+      var drawerContent = document.getElementById('node-drawer-content');
+      if (drawer) drawer.style.display = 'block';
+      if (drawerContent) drawerContent.textContent = '載入中…';
+      fetch('/api/graph/nodes/' + encodeURIComponent(nodeId))
+        .then(function(r) { return r.json(); })
+        .then(function(data) { renderNodeDrawer(data); })
+        .catch(function() { if (drawerContent) drawerContent.textContent = '載入失敗'; });
+    });
+
+    cy.on('tap', function(event) {
+      if (event.target === cy) {
+        window._cyInstances.forEach(function(inst) { inst.nodes().removeClass('cy-selected'); });
+        var drawer = document.getElementById('node-drawer');
+        if (drawer) drawer.style.display = 'none';
+      }
+    });
+  }
+
+  function initAllContainers(savedPositions) {
+    document.querySelectorAll('.cy-container:not([data-cy-init])').forEach(function(container) {
+      initContainer(container, savedPositions);
+    });
+  }
+
+  fetch('/api/graph/positions')
+    .then(function(r) { return r.json(); })
+    .then(function(data) { initAllContainers((data && data.positions) ? data.positions : {}); })
+    .catch(function() { initAllContainers({}); });
+})();
+
+function refreshCyGraph() {
+  fetch('/api/graph', { cache: 'no-store' })
+    .then(function(r) { return r.json(); })
+    .then(function(graph) {
+      var graphDataEl = document.getElementById('graph-data');
+      if (graphDataEl) graphDataEl.textContent = JSON.stringify(graph).replaceAll('<', '\\u003c').replaceAll('&', '\\u0026');
+      var toEls = window._cyToElements;
+      var getStyle = window._cyGetStyle;
+      if (!toEls || !getStyle) return;
+      (window._cyInstances || []).forEach(function(cy) {
+        cy.json({ elements: toEls(graph) });
+        cy.style(getStyle());
+      });
+    })
+    .catch(function() {});
+}
+</script>`
 }
 
 function renderIdeaTab(ideas: IdeaRecord[]): string {

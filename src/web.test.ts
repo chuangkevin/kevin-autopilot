@@ -633,11 +633,12 @@ test('backlog tab renders items with severity classes', async () => {
   assert.ok(html.includes('filter-pill'), 'missing filter pills')
 })
 
-test('graph tab renders SVG neural map', async () => {
+test('graph tab renders Cytoscape container', async () => {
   const html = await getDashboardHtml()
   assert.ok(html.includes('id="tab-graph"'), 'missing graph panel')
-  assert.ok(html.includes('class="graph-wrap"'), 'missing graph-wrap')
-  assert.ok(html.includes('<svg'), 'missing SVG element')
+  assert.ok(html.includes('class="cy-container"'), 'missing cy-container div')
+  assert.ok(html.includes('cytoscape.min.js'), 'missing cytoscape CDN script')
+  assert.ok(html.includes('refreshCyGraph'), 'missing refreshCyGraph function')
 })
 
 test('idea tab renders textarea and transmit button', async () => {
