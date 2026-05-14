@@ -169,3 +169,52 @@ test('observation loop reads runtime overrides for reflection and scheduling', a
     await rm(dataDir, { recursive: true, force: true })
   }
 })
+
+test('ObservationLoop reports excited mode after cycle with high excitement, then cools', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-adaptive-'))
+  try {
+    const config: AutopilotConfig = {
+      environment: 'test',
+      dataDir,
+      backgroundObservation: { enabled: false, intervalMs: 300_000 },
+      ruleSources: [],
+      repositories: [],
+      services: [],
+    }
+    const loop = createObservationLoop(config)
+
+    await loop.runOnce()
+    const state = loop.getState()
+    loop.stop()
+
+    // empty dataDir → no seeds, no interesting nodes, no spikes → score=0, mode=normal
+    assert.equal(state.lastExcitementScore, 0)
+    assert.equal(state.excitementMode, 'normal')
+    assert.equal(state.currentIntervalMs, state.baseIntervalMs)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('ObservationLoop currentIntervalMs starts at baseIntervalMs', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-base-'))
+  try {
+    const config: AutopilotConfig = {
+      environment: 'test',
+      dataDir,
+      backgroundObservation: { enabled: false, intervalMs: 120_000 },
+      ruleSources: [],
+      repositories: [],
+      services: [],
+    }
+    const loop = createObservationLoop(config)
+    const state = loop.getState()
+    loop.stop()
+
+    assert.equal(state.baseIntervalMs, 120_000)
+    assert.equal(state.currentIntervalMs, 120_000)
+    assert.equal(state.excitementMode, 'normal')
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
