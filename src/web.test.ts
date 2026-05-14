@@ -603,6 +603,13 @@ test('brain tab renders normal mode when excitementMode is normal', async () => 
   assert.ok(html.includes('STANDBY'), 'missing STANDBY text')
 })
 
+test('backlog tab renders items with severity classes', async () => {
+  const html = await getDashboardHtml()
+  assert.ok(html.includes('id="tab-backlog"'), 'missing backlog panel')
+  assert.ok(html.includes('bl-item'), 'missing bl-item class')
+  assert.ok(html.includes('filter-pill'), 'missing filter pills')
+})
+
 async function getDashboardHtml(): Promise<string> {
   const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-dashhtml-'))
   const config: AutopilotConfig = {

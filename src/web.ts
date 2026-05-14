@@ -1388,6 +1388,56 @@ function switchTab(name) {
     document.execCommand('copy');
     textArea.remove();
   }
+
+  var cpBlCurrentFilter = 'active';
+
+  function switchBacklogFilter(key, btn) {
+    cpBlCurrentFilter = key;
+    document.querySelectorAll('.filter-pill').forEach(function(p) { p.classList.remove('active'); });
+    if (btn) btn.classList.add('active');
+    cpLoadBacklogTab(key);
+  }
+
+  function cpLoadBacklogTab(status) {
+    fetch('/api/backlog?status=' + encodeURIComponent(status), { cache: 'no-store' })
+      .then(function(r) { return r.json(); })
+      .then(function(payload) {
+        var list = document.getElementById('cp-bl-list');
+        if (!list) return;
+        var items = payload.items || [];
+        var counts = payload.counts || {};
+        ['active','snoozed','resolved'].forEach(function(k) {
+          var el = document.getElementById('cp-bl-count-' + k);
+          if (el && counts[k] !== undefined) el.textContent = String(counts[k]);
+        });
+        if (items.length === 0) {
+          list.innerHTML = '<div class="muted" style="text-align:center;padding:24px">無此狀態的項目</div>';
+          return;
+        }
+        list.innerHTML = items.map(function(item) {
+          var sev = item.seenCount >= 8 || item.kind === 'bug_watch' || item.kind === 'bug_fix_candidate' ? 'high' : item.seenCount >= 4 ? 'med' : 'low';
+          return '<div class="bl-item ' + sev + '">' +
+            '<div class="bl-title">' + htmlEscape(item.title) + '</div>' +
+            '<div class="bl-meta">出現 ' + item.seenCount + ' 次 · ' + htmlEscape(item.kind) + '</div>' +
+            '<div class="bl-actions">' +
+            '<button class="bl-btn" onclick="cpSnoozeItem(\'' + htmlEscape(item.id) + '\', this)">暫緩 7d</button>' +
+            '<button class="bl-btn" onclick="cpDismissItem(\'' + htmlEscape(item.id) + '\', this)">略過</button>' +
+            '</div></div>';
+        }).join('');
+      });
+  }
+
+  function cpSnoozeItem(id, btn) {
+    fetch('/api/backlog/' + encodeURIComponent(id) + '/snooze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ days: 7 }) })
+      .then(function() { btn.closest('.bl-item').style.opacity = '0.3'; btn.disabled = true; setTimeout(function() { cpLoadBacklogTab(cpBlCurrentFilter); }, 800); });
+  }
+
+  function cpDismissItem(id, btn) {
+    fetch('/api/backlog/' + encodeURIComponent(id) + '/dismiss', { method: 'POST' })
+      .then(function() { btn.closest('.bl-item').style.opacity = '0.3'; btn.disabled = true; setTimeout(function() { cpLoadBacklogTab(cpBlCurrentFilter); }, 800); });
+  }
+
+  cpLoadBacklogTab('active');
 </script>
 </body>
 </html>`
@@ -1475,7 +1525,29 @@ function formatCountdown(isoString: string): string {
 }
 
 function renderBacklogTab(backlog: BacklogPanelData): string {
-  return `<div class="sys-label">/// Backlog — coming soon</div>`
+  return `
+<div>
+  <div class="filter-pills">
+    <button class="filter-pill active" onclick="switchBacklogFilter('active',this)">● 活躍 <span id="cp-bl-count-active">${backlog.counts.active}</span></button>
+    <button class="filter-pill" onclick="switchBacklogFilter('snoozed',this)">暫緩 <span id="cp-bl-count-snoozed">${backlog.counts.snoozed}</span></button>
+    <button class="filter-pill" onclick="switchBacklogFilter('resolved',this)">完成 <span id="cp-bl-count-resolved">${backlog.counts.resolved}</span></button>
+  </div>
+  <div id="cp-bl-list"></div>
+</div>`
+}
+
+function renderCpBacklogItem(item: BacklogItem): string {
+  const severity = item.seenCount >= 8 || item.kind === 'bug_watch' || item.kind === 'bug_fix_candidate' ? 'high'
+    : item.seenCount >= 4 ? 'med' : 'low'
+  return `
+<div class="bl-item ${severity}">
+  <div class="bl-title">${escapeHtml(item.title)}</div>
+  <div class="bl-meta">出現 ${item.seenCount} 次 · ${escapeHtml(item.kind)}</div>
+  <div class="bl-actions">
+    <button class="bl-btn" onclick="cpSnoozeItem('${escapeHtml(item.id)}', this)">暫緩 7d</button>
+    <button class="bl-btn" onclick="cpDismissItem('${escapeHtml(item.id)}', this)">略過</button>
+  </div>
+</div>`
 }
 
 function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): string {
