@@ -1,7 +1,7 @@
 # double-research-loop Specification
 
 ## Purpose
-TBD - created by archiving change add-ai-graph-reflection. Update Purpose after archive.
+Kevin Autopilot's background observation engine: a self-scheduling loop that runs observation cycles, merges backlog signals, refreshes the idea graph, invokes AI reflection, and adapts its cadence based on excitement score. Runtime overrides (aiReflection.enabled, intervalMs, etc.) are read per cycle so changes take effect without a container restart.
 ## Requirements
 ### Requirement: Background Cycle Invokes AI Reflection
 Kevin Autopilot SHALL, at the end of every successful background observation cycle (after graph refresh and backlog merge), invoke the AI reflection module described in the `ai-graph-reflection` capability and persist the resulting record without blocking the next cycle's scheduling.
@@ -72,4 +72,38 @@ Kevin Autopilot SHALL treat public web research as an explicit approved-source c
 #### Scenario: Future web source enabled
 - **WHEN** an approved web research source is configured in a later change
 - **THEN** every fetched finding must record source URL, query, fetched time, timeout/error status, and why it was connected to Kevin's graph.
+
+### Requirement: Adaptive Observation Timer
+Kevin Autopilot's background loop SHALL adjust its cadence based on an excitement score derived from each cycle's outputs, entering excited mode (faster cycles), cooling mode (slightly slower), or normal mode, with a minimum floor of 60 seconds.
+
+#### Scenario: Excited mode after high-signal cycle
+- **WHEN** a cycle produces a high excitement score (e.g. new interesting backlog signals, AI-minted ideas)
+- **THEN** the loop SHALL enter `excitementMode: 'excited'`, set the next interval to `excitedIntervalMs` (shorter), and expose `excitementMode: 'excited'` on `GET /api/observation-loop`.
+
+#### Scenario: Cooling mode after excited cycle
+- **WHEN** a cycle runs in excited mode but the excitement score drops below the excited threshold
+- **THEN** the loop SHALL enter `excitementMode: 'cooling'` and schedule the next cycle at `coolingIntervalMs` before returning to normal.
+
+#### Scenario: Normal mode baseline
+- **WHEN** no high-signal condition applies
+- **THEN** the loop SHALL run at the configured `backgroundObservation.intervalMs` with `excitementMode: 'normal'`.
+
+#### Scenario: Minimum interval floor
+- **WHEN** any computed next interval would be shorter than 60 seconds
+- **THEN** the loop SHALL clamp the interval to 60 000 ms to avoid runaway polling.
+
+### Requirement: Observation Loop Reads Effective Config Each Cycle
+Kevin Autopilot's background observation loop SHALL call `getEffectiveConfig` at the start of every cycle and SHALL use the returned config for all decisions about whether to call AI reflection, what cycle interval to schedule next, and whether to continue scheduling future cycles.
+
+#### Scenario: Override flips reflection on between cycles
+- **WHEN** `aiReflection.enabled` override is changed from false to true while the loop is idle
+- **THEN** the next `executeRun` SHALL load the override and invoke the AI reflection module without requiring a container restart.
+
+#### Scenario: Override stops scheduling
+- **WHEN** `backgroundObservation.enabled` override is changed from true to false
+- **THEN** the currently in-flight cycle (if any) SHALL finish normally, no further cycles SHALL be scheduled, and `ObservationLoopState.enabled` SHALL report `false` on the next status read.
+
+#### Scenario: Override updates the next interval
+- **WHEN** `backgroundObservation.intervalMs` override changes mid-run
+- **THEN** the next scheduled cycle SHALL be queued at the new interval, and the persisted `nextRunAt` SHALL match.
 
