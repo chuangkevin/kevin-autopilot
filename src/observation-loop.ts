@@ -112,7 +112,7 @@ export class ObservationLoop {
       const backlogAt = await this.mergeBacklogSafely(effectiveConfig, report)
       const ideas = await listIdeas(effectiveConfig, 40)
       const graph = await getIdeaGraph(effectiveConfig, report, ideas)
-      const reflectionAt = await this.runReflectionSafely(effectiveConfig, graph)
+      const reflectionResult = await this.runReflectionSafely(effectiveConfig, graph)
       this.lastReport = report
       this.state = {
         ...this.state,
@@ -123,7 +123,7 @@ export class ObservationLoop {
         lastReportAt: report.generatedAt,
         lastGraphAt: new Date().toISOString(),
         lastBacklogAt: backlogAt,
-        lastReflectionAt: reflectionAt ?? this.state.lastReflectionAt,
+        lastReflectionAt: reflectionResult?.at ?? this.state.lastReflectionAt,
         lastReportPath: written.jsonPath,
         lastMarkdownPath: written.markdownPath,
       }
@@ -166,7 +166,7 @@ export class ObservationLoop {
     }
   }
 
-  private async runReflectionSafely(config: AutopilotConfig, graph: IdeaGraph): Promise<string | undefined> {
+  private async runReflectionSafely(config: AutopilotConfig, graph: IdeaGraph): Promise<{ at: string; newSeedCount: number } | undefined> {
     try {
       const previous = await readReflectionState(config)
       const backlog = listBacklogSnapshot(config)
@@ -202,7 +202,7 @@ export class ObservationLoop {
       }
 
       await writeReflectionState(config, record)
-      return record.generatedAt
+      return { at: record.generatedAt, newSeedCount: record.skipped === false ? record.newIdeaSeeds.length : 0 }
     } catch (error) {
       const skipped: SkippedReflectionRecord = {
         generatedAt: new Date().toISOString(),
@@ -214,7 +214,7 @@ export class ObservationLoop {
       try {
         await writeReflectionState(config, skipped)
       } catch {}
-      return skipped.generatedAt
+      return { at: skipped.generatedAt, newSeedCount: 0 }
     }
   }
 
