@@ -218,3 +218,51 @@ test('ObservationLoop currentIntervalMs starts at baseIntervalMs', async () => {
     await rm(dataDir, { recursive: true, force: true })
   }
 })
+
+test('forceRun fires full cycle even when enabled is false', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-force-'))
+  try {
+    const config: AutopilotConfig = {
+      environment: 'test',
+      dataDir,
+      backgroundObservation: { enabled: false, intervalMs: 60_000 },
+      ruleSources: [],
+      repositories: [],
+      services: [],
+    }
+    const loop = createObservationLoop(config)
+    const report = await loop.forceRun()
+    const state = loop.getState()
+    loop.stop()
+
+    assert.ok(report, 'forceRun should return a report even when enabled=false')
+    assert.equal(state.runCount, 1)
+    assert.equal(state.lastSuccess, true)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('forceRun waits for in-flight runOnce before starting a new cycle', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-force-inflight-'))
+  try {
+    const config: AutopilotConfig = {
+      environment: 'test',
+      dataDir,
+      backgroundObservation: { enabled: true, intervalMs: 60_000 },
+      ruleSources: [],
+      repositories: [],
+      services: [],
+    }
+    const loop = createObservationLoop(config)
+    const first = loop.runOnce()
+    const second = loop.forceRun()
+    await Promise.all([first, second])
+    const state = loop.getState()
+    loop.stop()
+
+    assert.equal(state.runCount, 2, 'both runOnce and forceRun should each count as a separate cycle')
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})

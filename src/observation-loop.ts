@@ -81,11 +81,13 @@ export class ObservationLoop {
   }
 
   async runOnce(): Promise<ObservationReport | undefined> {
-    await this.refreshLoopConfig()
-    if (!this.state.enabled) return this.lastReport
     if (this.inFlight) return this.inFlight
 
-    this.inFlight = this.executeRun()
+    this.inFlight = (async () => {
+      await this.refreshLoopConfig()
+      if (!this.state.enabled) return this.lastReport
+      return this.executeRun()
+    })()
     try {
       return await this.inFlight
     } finally {
@@ -93,7 +95,19 @@ export class ObservationLoop {
     }
   }
 
-  private async executeRun(): Promise<ObservationReport | undefined> {
+  async forceRun(): Promise<ObservationReport | undefined> {
+    if (this.inFlight) {
+      try { await this.inFlight } catch {}
+    }
+    this.inFlight = this.executeRun(true)
+    try {
+      return await this.inFlight
+    } finally {
+      this.inFlight = undefined
+    }
+  }
+
+  private async executeRun(force = false): Promise<ObservationReport | undefined> {
     const effectiveConfig = await getEffectiveConfig(this.config)
     this.stop()
     this.state = {
@@ -108,7 +122,7 @@ export class ObservationLoop {
     await this.persistStateSafely()
 
     try {
-      if (!this.state.enabled) return this.lastReport
+      if (!force && !this.state.enabled) return this.lastReport
       const report = await observe(effectiveConfig)
       const written = await writeReports(report, effectiveConfig.dataDir)
       const backlogAt = await this.mergeBacklogSafely(effectiveConfig, report)

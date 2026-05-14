@@ -50,7 +50,7 @@ where graph nodes surface "分身正在問" premise/evidence/counterexample ques
 and repeated extension clicks create readable continuation branches rather than
 duplicate bubbles, and v0.13.0 Android Mode with adaptive observation timer
 (excited/cooling/normal modes, 60 s floor) and cyberpunk neural tab UI
-(分身/Backlog/圖/想法 tabs, SVG neural map, scanlines, cyan/magenta palette), and v0.14.0 interactive Cytoscape.js neural graph with drag, zoom/pan, force-directed layout, and backend-persisted node positions.
+(分身/Backlog/圖/想法 tabs, SVG neural map, scanlines, cyan/magenta palette), and v0.14.0 interactive Cytoscape.js neural graph with drag, zoom/pan, force-directed layout, and backend-persisted node positions, and v0.15.0 multi-agent deliberation engine (分身辯論): force-think button triggers role-picker → parallel independent analysis → 2 debate rounds → synthesis, results saved to `data/deliberations/`, up to 3 seeds injected into idea graph; `ObservationLoop.forceRun()` bypasses the enabled guard for immediate cycles.
 Keep these versions read-only: they may observe, classify, report, and store
 Autopilot-owned reports/idea records/supplements, but they must not modify target
 repos, create repos, deploy, commit/push other projects, or perform destructive

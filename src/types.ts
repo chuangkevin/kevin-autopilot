@@ -528,6 +528,45 @@ export interface IdeaThinkingSummary {
   error?: string
 }
 
+export interface DeliberationPersona {
+  name: string
+  perspective: string
+}
+
+export interface PersonaRound {
+  persona: DeliberationPersona
+  round: number
+  analysis: string
+  keyInsights: string[]
+  challenges: string[]
+}
+
+export interface DeliberationSynthesis {
+  summary: string
+  consensusPoints: string[]
+  blindspotsFound: string[]
+  seeds: ReflectionIdeaSeed[]
+  seedsInjected: number
+}
+
+export interface DeliberationRecord {
+  id: string
+  startedAt: string
+  finishedAt: string
+  environment: string
+  personas: DeliberationPersona[]
+  rounds: PersonaRound[][]
+  synthesis: DeliberationSynthesis
+  model: string
+  tokenUsage: { input: number; output: number }
+}
+
+export interface DeliberationState {
+  status: 'idle' | 'running' | 'done' | 'error'
+  record: DeliberationRecord | null
+  error?: string
+}
+
 export interface KeyStatusSummary {
   storedCount: number
   envCount: number

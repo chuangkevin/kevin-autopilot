@@ -354,6 +354,18 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
+v0.15.0 adds the multi-agent deliberation engine (分身辯論) and force-think trigger:
+Tap ⚡ 強制思考 in the 分身 tab to instantly start one deliberation cycle without
+waiting for the background timer. The engine dynamically picks 2–4 AI personas,
+each independently analyzes the current project state, then runs 2 debate rounds
+where personas challenge each other's blindspots. A synthesis agent produces a
+consensus summary, lists blindspots found, and injects up to 3 high-quality idea
+seeds into the graph. Results persist to `data/deliberations/<id>.json` (max 10
+records). The deliberation card renders immediately in the 分身 tab after completion
+with personas, round-0 key insights, synthesis, and seed count.
+`ObservationLoop.forceRun()` was also added: bypasses the `enabled` guard and waits
+for any in-flight cycle before starting a fresh one. All 131 tests pass.
+
 v0.14.0 replaces the SVG neural map with a fully interactive Cytoscape.js graph:
 Drag nodes freely — positions persist to `data/graph-positions.json` via `PUT /api/graph/positions`.
 Force-directed initial layout (`cose`) — no more uniform circle; nodes spread organically.

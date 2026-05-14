@@ -7,6 +7,7 @@ import assert from 'node:assert/strict'
 import { createWebServer, formatTaipeiTime, isTrustedSettingsAddress, isTrustedSettingsSource, renderBrainTab } from './web.js'
 import { mergeCandidatesIntoBacklog, openBacklogDatabase } from './backlog.js'
 import { saveRuntimeOverrides } from './runtime-overrides.js'
+import { _setDeliberationRunning } from './deliberation.js'
 import type { AutopilotConfig, ObservationCandidate } from './types.js'
 
 const GEMINI_KEY = `AIzaSy${'C'.repeat(33)}`
@@ -646,6 +647,108 @@ test('idea tab renders textarea and transmit button', async () => {
   assert.ok(html.includes('id="tab-idea"'), 'missing idea panel')
   assert.ok(html.includes('class="idea-textarea"'), 'missing textarea')
   assert.ok(html.includes('TRANSMIT'), 'missing transmit button text')
+})
+
+test('GET /api/deliberation/latest returns idle with null when no record exists', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-deliberation-idle-'))
+  const config: AutopilotConfig = { environment: 'test', dataDir, ruleSources: [], repositories: [], services: [] }
+  const server = createWebServer(config)
+  try {
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const address = server.address()
+    if (!address || typeof address !== 'object' || !('port' in address)) throw new Error('no address')
+    const res = await fetch(`http://127.0.0.1:${address.port}/api/deliberation/latest`)
+    assert.equal(res.status, 200)
+    const body = await res.json() as { status: string; record: unknown }
+    assert.equal(body.status, 'idle')
+    assert.equal(body.record, null)
+  } finally {
+    server.close()
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('POST /api/deliberation from trusted source returns 202', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-deliberation-202-'))
+  const config: AutopilotConfig = { environment: 'test', dataDir, ruleSources: [], repositories: [], services: [] }
+  const server = createWebServer(config)
+  try {
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const address = server.address()
+    if (!address || typeof address !== 'object' || !('port' in address)) throw new Error('no address')
+    const res = await fetch(`http://127.0.0.1:${address.port}/api/deliberation`, { method: 'POST' })
+    assert.equal(res.status, 202)
+    const body = await res.json() as { status: string }
+    assert.equal(body.status, 'started')
+  } finally {
+    server.close()
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('POST /api/deliberation from untrusted source returns 403', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-deliberation-403-'))
+  const config: AutopilotConfig = { environment: 'test', dataDir, ruleSources: [], repositories: [], services: [] }
+  const server = createWebServer(config)
+  try {
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const address = server.address()
+    if (!address || typeof address !== 'object' || !('port' in address)) throw new Error('no address')
+    const res = await fetch(`http://127.0.0.1:${address.port}/api/deliberation`, {
+      method: 'POST',
+      headers: { 'x-forwarded-for': '8.8.8.8' },
+    })
+    assert.equal(res.status, 403)
+  } finally {
+    server.close()
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('POST /api/deliberation returns 409 while deliberation is in flight', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-deliberation-409-'))
+  const config: AutopilotConfig = { environment: 'test', dataDir, ruleSources: [], repositories: [], services: [] }
+  const server = createWebServer(config)
+  _setDeliberationRunning(true)
+  try {
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const address = server.address()
+    if (!address || typeof address !== 'object' || !('port' in address)) throw new Error('no address')
+    const res = await fetch(`http://127.0.0.1:${address.port}/api/deliberation`, { method: 'POST' })
+    assert.equal(res.status, 409)
+    const body = await res.json() as { status: string }
+    assert.equal(body.status, 'already_running')
+  } finally {
+    _setDeliberationRunning(false)
+    server.close()
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('GET /api/deliberation/latest returns running status while deliberation is in flight', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-deliberation-running-'))
+  const config: AutopilotConfig = { environment: 'test', dataDir, ruleSources: [], repositories: [], services: [] }
+  const server = createWebServer(config)
+  _setDeliberationRunning(true)
+  try {
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const address = server.address()
+    if (!address || typeof address !== 'object' || !('port' in address)) throw new Error('no address')
+    const res = await fetch(`http://127.0.0.1:${address.port}/api/deliberation/latest`)
+    assert.equal(res.status, 200)
+    const body = await res.json() as { status: string; record: unknown }
+    assert.equal(body.status, 'running')
+    assert.equal(body.record, null)
+  } finally {
+    _setDeliberationRunning(false)
+    server.close()
+    await rm(dataDir, { recursive: true, force: true })
+  }
 })
 
 async function getDashboardHtml(): Promise<string> {

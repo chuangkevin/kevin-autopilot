@@ -25,6 +25,7 @@ import {
   stopExploringIdeaGraphNode,
 } from './idea-graph.js'
 import { clearStoredGeminiKeys, getKeyStatus, importGeminiKeys } from './keys.js'
+import { isDeliberationRunning, loadLatestDeliberation, runDeliberation } from './deliberation.js'
 import { createObservationLoop, readReflectionState, type ObservationLoop } from './observation-loop.js'
 import { isReflectionRewriteFresh } from './reflection.js'
 import { observe } from './observer.js'
@@ -41,6 +42,8 @@ import type {
   BacklogItem,
   BacklogStatus,
   BacklogStatusFilter,
+  DeliberationRecord,
+  DeliberationState,
   IdeaGraph,
   IdeaGraphNode,
   IdeaRecord,
@@ -101,6 +104,38 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
 
   if (url.pathname === '/api/observation-loop') {
     writeJson(response, observationLoop ? await observationLoop.getEffectiveState() : createManualLoopState())
+    return
+  }
+
+  if (url.pathname === '/api/deliberation/latest') {
+    const record = await loadLatestDeliberation(config)
+    const deliberationState: DeliberationState = {
+      status: isDeliberationRunning() ? 'running' : 'idle',
+      record,
+    }
+    writeJson(response, deliberationState)
+    return
+  }
+
+  if (url.pathname === '/api/deliberation' && request.method === 'POST') {
+    if (!isTrustedSettingsRequest(request)) {
+      writeText(response, '強制思考需要 loopback、私有 LAN、Docker 或 Tailscale 連線', 403)
+      return
+    }
+    if (isDeliberationRunning()) {
+      writeJson(response, { status: 'already_running' }, 409)
+      return
+    }
+    const report = await getVisibleReport(config, observationLoop)
+    const ideas = await listIdeas(config, 40)
+    const graph = await getIdeaGraph(config, report, ideas)
+    const db = openBacklogDatabase(config)
+    let backlog: BacklogItem[]
+    try { backlog = listBacklog(db, 'all', new Date()) } finally { db.close() }
+    void runDeliberation(config, report, graph, backlog).catch((error) => {
+      console.error('deliberation failed:', error instanceof Error ? error.message : String(error))
+    })
+    writeJson(response, { status: 'started' }, 202)
     return
   }
 
@@ -403,8 +438,13 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
     const ideas = await listIdeas(config, 12)
     const graph = await getIdeaGraph(config, report, ideas)
     const backlog = loadBacklogResponse(config, 'active')
+    const latestDeliberation = await loadLatestDeliberation(config)
+    const deliberationState: DeliberationState = {
+      status: isDeliberationRunning() ? 'running' : 'idle',
+      record: latestDeliberation,
+    }
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', ...NO_STORE_HEADERS })
-    response.end(renderPage(report, ideas, Boolean(config.ai?.enabled), observationLoop ? await observationLoop.getEffectiveState() : createManualLoopState(), graph, backlog))
+    response.end(renderPage(report, ideas, Boolean(config.ai?.enabled), observationLoop ? await observationLoop.getEffectiveState() : createManualLoopState(), graph, backlog, deliberationState))
     return
   }
 
@@ -557,6 +597,7 @@ function renderPage(
   loopState: ObservationLoopState,
   graph: IdeaGraph,
   backlog: BacklogPanelData,
+  deliberationState: DeliberationState,
 ): string {
   const dirtyRepos = report.repositories.filter((repo) => repo.dirty).length
   const bugCandidates = report.candidates.filter((candidate) => candidate.category === 'bug_watch' || candidate.category === 'bug_fix_candidate').length
@@ -685,6 +726,15 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
 /* Seeds */
 .seeds-box { background: var(--bg-card2); border: 1px solid rgba(0,255,255,0.1); border-radius: 8px; padding: 10px; }
 .seed-bullet { color: var(--pink); text-shadow: 0 0 4px var(--pink); margin-right: 6px; }
+
+/* Deliberation */
+.deliberation-btn { background: linear-gradient(135deg,rgba(0,255,255,0.08),rgba(255,0,255,0.08)); border: 1px solid var(--accent-border); color: var(--accent); padding: 7px 14px; border-radius: 6px; cursor: pointer; font-family: 'Courier New',monospace; font-size: 11px; font-weight: bold; letter-spacing: 0.05em; transition: all 0.2s; }
+.deliberation-btn:hover { border-color: var(--accent); box-shadow: 0 0 10px rgba(0,255,255,0.3); }
+.deliberation-btn:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
+.persona-chip { display: inline-block; background: rgba(255,0,255,0.1); border: 1px solid rgba(255,0,255,0.3); border-radius: 12px; padding: 2px 8px; font-size: 10px; color: var(--pink); margin: 2px; }
+.deliberation-round { background: var(--bg-card2); border: 1px solid rgba(255,255,255,0.07); border-radius: 8px; padding: 8px; margin-bottom: 6px; }
+.deliberation-insight { color: rgba(0,255,255,0.7); font-size: 10px; padding: 2px 0; }
+.synthesis-box { background: linear-gradient(135deg,rgba(0,255,255,0.05),rgba(255,0,255,0.05)); border: 1px solid var(--accent-border); border-radius: 10px; padding: 12px; margin-top: 8px; }
 
 /* Signal list */
 .signal-list { display: flex; flex-direction: column; gap: 5px; margin-top: 4px; }
@@ -897,13 +947,13 @@ summary { cursor: pointer; color: #bfdbfe; font-weight: 700; }
   <!-- Mobile: individual tab panels; default tab = graph (神經圖) -->
   <div id="mobile-panels" class="tab-panels">
     <div class="tab-panel" id="tab-graph">${renderGraphTab(graph, loopState)}</div>
-    <div class="tab-panel" id="tab-brain" hidden>${renderBrainTab(loopState, graph)}</div>
+    <div class="tab-panel" id="tab-brain" hidden>${renderBrainTab(loopState, graph, deliberationState)}</div>
     <div class="tab-panel" id="tab-backlog" hidden>${renderBacklogTab(backlog)}</div>
     <div class="tab-panel" id="tab-idea" hidden>${renderIdeaTab(ideas)}</div>
   </div>
   <!-- Desktop: always-visible three-column layout -->
   <div id="desktop-panels" class="desktop-layout" style="display:none">
-    <div>${renderBrainTab(loopState, graph)}</div>
+    <div>${renderBrainTab(loopState, graph, deliberationState)}</div>
     <div>${renderGraphTab(graph, loopState)}</div>
     <div>
       ${renderBacklogTab(backlog)}
@@ -1490,7 +1540,7 @@ function switchTab(name) {
 </html>`
 }
 
-export function renderBrainTab(loopState: ObservationLoopState, graph?: IdeaGraph): string {
+export function renderBrainTab(loopState: ObservationLoopState, graph?: IdeaGraph, deliberationState?: DeliberationState): string {
   const isExcited = loopState.excitementMode === 'excited'
   const isCooling = loopState.excitementMode === 'cooling'
   const isDim = !isExcited && !isCooling
@@ -1527,7 +1577,56 @@ export function renderBrainTab(loopState: ObservationLoopState, graph?: IdeaGrap
   ${renderBrainSeedsBox(loopState)}
 </div>
 ${renderBrainFocus(graph)}
-${renderBrainSignals(loopState)}`
+${renderBrainSignals(loopState)}
+${deliberationState ? renderDeliberationCard(deliberationState) : ''}
+${deliberationState ? `<script>
+function triggerDeliberation(){var btn=document.getElementById('deliberation-btn'),status=document.getElementById('deliberation-status');if(!btn||btn.disabled)return;btn.disabled=true;btn.textContent='⏳ 辯論進行中…';if(status)status.textContent='辯論進行中，每 3 秒更新…';fetch('/api/deliberation',{method:'POST'}).then(function(r){if(r.status===409){if(status)status.textContent='已有辯論在進行中，請稍候';pollDeliberation();}else if(r.status===202){pollDeliberation();}else{if(status)status.textContent='啟動失敗：'+r.status;btn.disabled=false;btn.textContent='⚡ 強制思考';}}).catch(function(e){if(status)status.textContent='啟動失敗：'+String(e);btn.disabled=false;btn.textContent='⚡ 強制思考';});}
+function pollDeliberation(){setTimeout(function(){fetch('/api/deliberation/latest',{cache:'no-store'}).then(function(r){return r.json();}).then(function(d){updateDeliberationUI(d);}).catch(function(){pollDeliberation();});},3000);}
+function updateDeliberationUI(d){var btn=document.getElementById('deliberation-btn'),status=document.getElementById('deliberation-status');if(d.status==='running'){if(btn){btn.disabled=true;btn.textContent='⏳ 辯論進行中…';}if(status)status.textContent='辯論進行中，每 3 秒更新…';pollDeliberation();}else{if(btn){btn.disabled=false;btn.textContent='⚡ 強制思考';}if(status)status.textContent='';location.reload();}}
+${deliberationState.status === 'running' ? 'pollDeliberation();' : ''}
+</script>` : ''}`
+}
+
+function renderDeliberationCard(state: DeliberationState): string {
+  const isRunning = state.status === 'running'
+  const btnLabel = isRunning ? '⏳ 辯論進行中…' : '⚡ 強制思考'
+  const btnDisabled = isRunning ? ' disabled' : ''
+
+  let resultHtml = ''
+  if (state.record) {
+    const { record } = state
+    const personasHtml = record.personas.map((p) => `<span class="persona-chip">${escapeHtml(p.name)}</span>`).join('')
+    const round0 = record.rounds[0] ?? []
+    const insightsHtml = round0
+      .flatMap((pr) => pr.keyInsights.slice(0, 2).map((ins) => `<div class="deliberation-insight">▸ [${escapeHtml(pr.persona.name)}] ${escapeHtml(ins)}</div>`))
+      .join('')
+    const { synthesis } = record
+    const consensusHtml = synthesis.consensusPoints
+      .map((p) => `<div style="font-size:10px;color:rgba(0,255,255,0.6);margin-bottom:2px">✓ ${escapeHtml(p)}</div>`)
+      .join('')
+    const blindspotsHtml = synthesis.blindspotsFound
+      .map((b) => `<div style="font-size:10px;color:var(--pink);margin-bottom:2px">⚠ ${escapeHtml(b)}</div>`)
+      .join('')
+    const finishedAt = record.finishedAt ? formatTaipeiTime(record.finishedAt) : '—'
+    resultHtml = `
+<div class="synthesis-box">
+  <div class="sys-label" style="margin-bottom:6px">/// 最近一次辯論 · ${escapeHtml(finishedAt)}</div>
+  <div style="margin-bottom:6px">${personasHtml}</div>
+  ${insightsHtml ? `<div class="deliberation-round">${insightsHtml}</div>` : ''}
+  <div style="font-size:11px;color:rgba(255,255,255,0.7);margin-bottom:6px">${escapeHtml(synthesis.summary)}</div>
+  ${consensusHtml}
+  ${blindspotsHtml}
+  ${synthesis.seedsInjected > 0 ? `<div style="margin-top:6px;font-size:10px;color:var(--accent)">▶ ${synthesis.seedsInjected} ideas 已注入圖</div>` : ''}
+</div>`
+  }
+
+  return `
+<div class="cp-card" style="margin-top:8px" id="deliberation-section">
+  <div class="sys-label" style="margin-bottom:8px">/// 分身辯論引擎</div>
+  <button class="deliberation-btn" id="deliberation-btn" onclick="triggerDeliberation()"${btnDisabled}>${escapeHtml(btnLabel)}</button>
+  <div id="deliberation-status" style="margin-top:6px;font-size:10px;color:var(--muted)">${isRunning ? '辯論進行中，每 3 秒更新…' : ''}</div>
+  ${resultHtml}
+</div>`
 }
 
 function renderBrainSeedsBox(loopState: ObservationLoopState): string {
