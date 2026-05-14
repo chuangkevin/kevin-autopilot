@@ -354,6 +354,14 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
+v0.14.0 replaces the SVG neural map with a fully interactive Cytoscape.js graph:
+Drag nodes freely — positions persist to `data/graph-positions.json` via `PUT /api/graph/positions`.
+Force-directed initial layout (`cose`) — no more uniform circle; nodes spread organically.
+Zoom (scroll wheel / pinch) and pan (drag background).
+Tap node → loads node detail and actions in the drawer (same behaviour as before).
+Cyberpunk styling preserved: cyan nodes, magenta for interesting, dimmed for stop-exploring.
+All tests pass (119 total).
+
 v0.13.0 ships Android Mode: adaptive observation timer + cyberpunk neural UI.
 The timer shortens the reflection interval to 60 s on excited signals (new AI
 seeds, newly interesting graph nodes, backlog spikes) and anneals back to the
