@@ -685,6 +685,7 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
 .idea-status { font-size: 9px; color: rgba(0,255,255,0.4); }
 
 /* Desktop sidebar layout */
+.desktop-layout { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; align-items: start; }
 @media (min-width: 768px) {
   #mobile-panels { display: none; }
   #desktop-panels { display: grid !important; }
@@ -887,7 +888,7 @@ summary { cursor: pointer; color: #bfdbfe; font-weight: 700; }
 </main>
 <script>
 function switchTab(name) {
-  document.querySelectorAll('.tab-panel').forEach(function(el) { el.hidden = true; });
+  document.querySelectorAll('#mobile-panels .tab-panel').forEach(function(el) { el.hidden = true; });
   document.querySelectorAll('.tab-btn').forEach(function(el) { el.classList.remove('active'); });
   var panel = document.getElementById('tab-' + name);
   if (panel) panel.hidden = false;
