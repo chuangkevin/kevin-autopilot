@@ -1586,9 +1586,14 @@ function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): stri
     const isCenter = node.id === firstNode?.id
     const r = isInteresting ? 14 : isCenter ? 13 : 10
     const stroke = isInteresting ? 'rgba(255,0,255,0.7)' : 'rgba(0,255,255,0.5)'
+    const textColor = isInteresting ? 'rgba(255,0,255,0.95)' : isCenter ? 'rgba(0,255,255,1)' : 'rgba(0,255,255,0.8)'
     const filter = isInteresting ? 'filter: drop-shadow(0 0 6px rgba(255,0,255,0.6))' : 'filter: drop-shadow(0 0 4px rgba(0,255,255,0.4))'
     const pulse = isCenter ? `<circle cx="${point.x}%" cy="${point.y}%" r="${r + 4}" fill="none" stroke="rgba(0,255,255,0.25)" stroke-width="1"><animate attributeName="r" values="${r + 2};${r + 7};${r + 2}" dur="2s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.6;0;0.6" dur="2s" repeatCount="indefinite"/></circle>` : ''
-    return `${pulse}<circle class="cp-node${isCenter ? ' selected' : ''}" cx="${point.x}%" cy="${point.y}%" r="${r}" fill="rgba(5,5,5,0.9)" stroke="${stroke}" stroke-width="1.5" style="${filter}" data-node-id="${escapeHtml(node.id)}" aria-label="${escapeHtml(node.title)}"><title>${escapeHtml(node.title)}</title></circle>`
+    const maxChars = isCenter ? 12 : 8
+    const label = node.title.length > maxChars ? node.title.slice(0, maxChars - 1) + '…' : node.title
+    const fontSize = isCenter ? 3.2 : 2.6
+    const labelEl = `<text x="${point.x}%" y="${point.y}%" text-anchor="middle" dominant-baseline="middle" font-family="'Courier New',monospace" font-size="${fontSize}" fill="${textColor}" style="pointer-events:none;font-weight:${isCenter ? 700 : 400}">${escapeHtml(label)}</text>`
+    return `${pulse}<circle class="cp-node${isCenter ? ' selected' : ''}" cx="${point.x}%" cy="${point.y}%" r="${r}" fill="rgba(5,5,5,0.9)" stroke="${stroke}" stroke-width="1.5" style="${filter}" data-node-id="${escapeHtml(node.id)}" aria-label="${escapeHtml(node.title)}"><title>${escapeHtml(node.title)}</title></circle>${labelEl}`
   }).join('')
 
   return `
