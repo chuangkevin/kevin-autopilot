@@ -25,17 +25,21 @@ const DEFAULT_INTERVAL_MS = 5 * 60 * 1000
 export class ObservationLoop {
   private state: ObservationLoopState
   private timer: ReturnType<typeof setTimeout> | undefined
+  private currentIntervalMs: number
+  private lastInterestingNodeIds: Set<string> = new Set()
+  private lastBacklogSeenCounts: Map<string, number> = new Map()
   private lastReport: ObservationReport | undefined
   private inFlight: Promise<ObservationReport | undefined> | undefined
 
   constructor(private readonly config: AutopilotConfig) {
-    const baseInterval = config.backgroundObservation?.intervalMs ?? DEFAULT_INTERVAL_MS
+    const baseIntervalMs = config.backgroundObservation?.intervalMs ?? DEFAULT_INTERVAL_MS
+    this.currentIntervalMs = baseIntervalMs
     this.state = {
       mode: 'read-only-background-observation',
       enabled: config.backgroundObservation?.enabled !== false,
-      intervalMs: baseInterval,
-      currentIntervalMs: baseInterval,
-      baseIntervalMs: baseInterval,
+      intervalMs: baseIntervalMs,
+      currentIntervalMs: baseIntervalMs,
+      baseIntervalMs,
       lastExcitementScore: 0,
       excitementMode: 'normal',
       running: false,
