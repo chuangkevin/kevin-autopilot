@@ -685,8 +685,9 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
 .idea-status { font-size: 9px; color: rgba(0,255,255,0.4); }
 
 /* Desktop sidebar layout */
-.desktop-layout { display: grid; grid-template-columns: 260px 1fr 280px; gap: 14px; align-items: start; }
+.desktop-layout { display: grid; grid-template-columns: 300px 1fr 300px; gap: 16px; align-items: start; }
 @media (min-width: 768px) {
+  main { max-width: 1400px; padding: 0 20px; }
   #mobile-panels { display: none; }
   #desktop-panels { display: grid !important; }
   .tab-bar { display: none; }
@@ -854,11 +855,11 @@ summary { cursor: pointer; color: #bfdbfe; font-weight: 700; }
     <a class="cp-settings-link" href="/settings">SYS ⚙</a>
   </header>
 
-  <!-- Mobile: individual tab panels -->
+  <!-- Mobile: individual tab panels; default tab = graph (神經圖) -->
   <div id="mobile-panels" class="tab-panels">
-    <div class="tab-panel" id="tab-brain">${renderBrainTab(loopState, graph)}</div>
+    <div class="tab-panel" id="tab-graph">${renderGraphTab(graph, loopState)}</div>
+    <div class="tab-panel" id="tab-brain" hidden>${renderBrainTab(loopState, graph)}</div>
     <div class="tab-panel" id="tab-backlog" hidden>${renderBacklogTab(backlog)}</div>
-    <div class="tab-panel" id="tab-graph" hidden>${renderGraphTab(graph, loopState)}</div>
     <div class="tab-panel" id="tab-idea" hidden>${renderIdeaTab(ideas)}</div>
   </div>
   <!-- Desktop: always-visible three-column layout -->
@@ -872,14 +873,14 @@ summary { cursor: pointer; color: #bfdbfe; font-weight: 700; }
   </div>
 
   <nav class="tab-bar">
-    <button class="tab-btn active" data-tab="brain" onclick="switchTab('brain')">
+    <button class="tab-btn active" data-tab="graph" onclick="switchTab('graph')">
+      <span class="tab-icon">🕸</span>圖
+    </button>
+    <button class="tab-btn" data-tab="brain" onclick="switchTab('brain')">
       <span class="tab-icon">🧠</span>分身
     </button>
     <button class="tab-btn" data-tab="backlog" onclick="switchTab('backlog')">
       <span class="tab-icon">📋</span>Backlog
-    </button>
-    <button class="tab-btn" data-tab="graph" onclick="switchTab('graph')">
-      <span class="tab-icon">🕸</span>圖
     </button>
     <button class="tab-btn" data-tab="idea" onclick="switchTab('idea')">
       <span class="tab-icon">✏️</span>想法
@@ -1420,8 +1421,8 @@ function switchTab(name) {
             '<div class="bl-title">' + htmlEscape(item.title) + '</div>' +
             '<div class="bl-meta">出現 ' + item.seenCount + ' 次 · ' + htmlEscape(item.kind) + '</div>' +
             '<div class="bl-actions">' +
-            '<button class="bl-btn" onclick="cpSnoozeItem(\'' + htmlEscape(item.id) + '\', this)">暫緩 7d</button>' +
-            '<button class="bl-btn" onclick="cpDismissItem(\'' + htmlEscape(item.id) + '\', this)">略過</button>' +
+            '<button class="bl-btn" onclick="cpSnoozeItem(\\'' + htmlEscape(item.id) + '\\', this)">暫緩 7d</button>' +
+            '<button class="bl-btn" onclick="cpDismissItem(\\'' + htmlEscape(item.id) + '\\', this)">略過</button>' +
             '</div></div>';
         }).join('');
       });
