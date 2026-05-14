@@ -685,7 +685,7 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
 .idea-status { font-size: 9px; color: rgba(0,255,255,0.4); }
 
 /* Desktop sidebar layout */
-.desktop-layout { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; align-items: start; }
+.desktop-layout { display: grid; grid-template-columns: 260px 1fr 280px; gap: 14px; align-items: start; }
 @media (min-width: 768px) {
   #mobile-panels { display: none; }
   #desktop-panels { display: grid !important; }
@@ -856,14 +856,14 @@ summary { cursor: pointer; color: #bfdbfe; font-weight: 700; }
 
   <!-- Mobile: individual tab panels -->
   <div id="mobile-panels" class="tab-panels">
-    <div class="tab-panel" id="tab-brain">${renderBrainTab(loopState)}</div>
+    <div class="tab-panel" id="tab-brain">${renderBrainTab(loopState, graph)}</div>
     <div class="tab-panel" id="tab-backlog" hidden>${renderBacklogTab(backlog)}</div>
     <div class="tab-panel" id="tab-graph" hidden>${renderGraphTab(graph, loopState)}</div>
     <div class="tab-panel" id="tab-idea" hidden>${renderIdeaTab(ideas)}</div>
   </div>
   <!-- Desktop: always-visible three-column layout -->
   <div id="desktop-panels" class="desktop-layout" style="display:none">
-    <div>${renderBrainTab(loopState)}</div>
+    <div>${renderBrainTab(loopState, graph)}</div>
     <div>${renderGraphTab(graph, loopState)}</div>
     <div>
       ${renderBacklogTab(backlog)}
@@ -1443,7 +1443,7 @@ function switchTab(name) {
 </html>`
 }
 
-export function renderBrainTab(loopState: ObservationLoopState): string {
+export function renderBrainTab(loopState: ObservationLoopState, graph?: IdeaGraph): string {
   const isExcited = loopState.excitementMode === 'excited'
   const isCooling = loopState.excitementMode === 'cooling'
   const isDim = !isExcited && !isCooling
@@ -1479,6 +1479,7 @@ export function renderBrainTab(loopState: ObservationLoopState): string {
   </div>
   ${renderBrainSeedsBox(loopState)}
 </div>
+${renderBrainFocus(graph)}
 ${renderBrainSignals(loopState)}`
 }
 
@@ -1492,6 +1493,22 @@ function renderBrainSeedsBox(loopState: ObservationLoopState): string {
   <div id="brain-seeds-placeholder" class="muted" style="font-size:11px">
     ${loopState.lastReflectionAt ? '反思已完成，查看圖 Tab 看最新 ideas' : '尚未執行反思'}
   </div>
+</div>`
+}
+
+function renderBrainFocus(graph?: IdeaGraph): string {
+  if (!graph || !graph.focus?.headline) return ''
+  const centerNode = graph.nodes.find((n) => n.id === graph.centerNodeId)
+  const interesting = graph.nodes.filter((n) => n.interesting && !n.archived && !n.ignored)
+  return `
+<div class="cp-card" style="margin-top:8px">
+  <div class="sys-label">/// 分身焦點</div>
+  <div style="font-size:12px;color:var(--accent);margin:6px 0 2px;font-weight:700">${escapeHtml(graph.focus.headline)}</div>
+  <div style="font-size:11px;color:rgba(0,255,255,0.55);line-height:1.5">${escapeHtml(graph.focus.nextThought)}</div>
+  ${centerNode ? `<div style="margin-top:8px;font-size:10px;color:rgba(255,255,255,0.35)">CENTER · ${escapeHtml(centerNode.title)}</div>` : ''}
+  ${interesting.length > 0 ? `
+  <div class="sys-label" style="margin-top:10px;margin-bottom:4px">/// 有趣節點 (${interesting.length})</div>
+  ${interesting.slice(0, 3).map((n) => `<div style="font-size:11px;color:var(--pink);margin-bottom:3px">★ ${escapeHtml(n.title)}</div>`).join('')}` : ''}
 </div>`
 }
 
