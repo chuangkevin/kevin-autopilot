@@ -339,6 +339,10 @@ export interface ObservationLoopState {
   mode: 'read-only-background-observation'
   enabled: boolean
   intervalMs: number
+  currentIntervalMs: number
+  baseIntervalMs: number
+  lastExcitementScore: number
+  excitementMode: 'excited' | 'cooling' | 'normal'
   running: boolean
   runCount: number
   lastStartedAt?: string

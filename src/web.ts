@@ -426,6 +426,10 @@ function createManualLoopState(): ObservationLoopState {
     mode: 'read-only-background-observation',
     enabled: false,
     intervalMs: 0,
+    currentIntervalMs: 0,
+    baseIntervalMs: 0,
+    lastExcitementScore: 0,
+    excitementMode: 'normal',
     running: false,
     runCount: 0,
   }

@@ -29,10 +29,15 @@ export class ObservationLoop {
   private inFlight: Promise<ObservationReport | undefined> | undefined
 
   constructor(private readonly config: AutopilotConfig) {
+    const baseInterval = config.backgroundObservation?.intervalMs ?? DEFAULT_INTERVAL_MS
     this.state = {
       mode: 'read-only-background-observation',
       enabled: config.backgroundObservation?.enabled !== false,
-      intervalMs: config.backgroundObservation?.intervalMs ?? DEFAULT_INTERVAL_MS,
+      intervalMs: baseInterval,
+      currentIntervalMs: baseInterval,
+      baseIntervalMs: baseInterval,
+      lastExcitementScore: 0,
+      excitementMode: 'normal',
       running: false,
       runCount: 0,
     }
