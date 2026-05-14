@@ -51,6 +51,7 @@ import type {
   UserSupplement,
 } from './types.js'
 import { APP_VERSION } from './version.js'
+import { loadGraphPositions, saveGraphPositions, type GraphPositions } from './graph-positions.js'
 
 const DEFAULT_PORT = 3023
 const MAX_REQUEST_BODY_BYTES = 64 * 1024
@@ -356,6 +357,44 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
     } finally {
       db.close()
     }
+    return
+  }
+
+  if (url.pathname === '/api/graph/positions' && request.method === 'GET') {
+    const positions = await loadGraphPositions(config)
+    writeJson(response, { positions })
+    return
+  }
+
+  if (url.pathname === '/api/graph/positions' && request.method === 'PUT') {
+    let body: { positions?: unknown }
+    try {
+      const rawBody = await readBody(request)
+      body = rawBody.trim() ? (JSON.parse(rawBody) as { positions?: unknown }) : {}
+    } catch {
+      writeText(response, 'positions request body must be JSON', 400)
+      return
+    }
+    if (!body.positions || typeof body.positions !== 'object' || Array.isArray(body.positions)) {
+      writeText(response, 'positions must be an object mapping nodeId to {x, y}', 400)
+      return
+    }
+    const positions: GraphPositions = {}
+    for (const [id, pos] of Object.entries(body.positions as Record<string, unknown>)) {
+      if (
+        pos !== null &&
+        typeof pos === 'object' &&
+        !Array.isArray(pos) &&
+        'x' in pos &&
+        'y' in pos &&
+        typeof (pos as { x: unknown }).x === 'number' &&
+        typeof (pos as { y: unknown }).y === 'number'
+      ) {
+        positions[id] = { x: (pos as { x: number }).x, y: (pos as { y: number }).y }
+      }
+    }
+    await saveGraphPositions(config, positions)
+    writeJson(response, { ok: true })
     return
   }
 

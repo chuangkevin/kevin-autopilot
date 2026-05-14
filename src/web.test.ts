@@ -423,6 +423,29 @@ test('web server exposes health and idea intake', async () => {
     const keyClear = await fetch(`${baseUrl}/api/keys`, { method: 'DELETE' })
     assert.equal(keyClear.status, 200)
     assert.equal((await keyClear.json()).storedCount, 0)
+
+    const posGet = await fetch(`${baseUrl}/api/graph/positions`)
+    assert.equal(posGet.status, 200)
+    const posGetBody = await posGet.json()
+    assert.deepEqual(posGetBody.positions, {})
+
+    const posPut = await fetch(`${baseUrl}/api/graph/positions`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ positions: { 'node-abc': { x: 120, y: 240 } } }),
+    })
+    assert.equal(posPut.status, 200)
+    assert.equal((await posPut.json()).ok, true)
+
+    const posGetAfter = await fetch(`${baseUrl}/api/graph/positions`)
+    assert.deepEqual((await posGetAfter.json()).positions, { 'node-abc': { x: 120, y: 240 } })
+
+    const posPutBad = await fetch(`${baseUrl}/api/graph/positions`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ positions: 'not-an-object' }),
+    })
+    assert.equal(posPutBad.status, 400)
   } finally {
     server.close()
     await rm(dataDir, { recursive: true, force: true })
