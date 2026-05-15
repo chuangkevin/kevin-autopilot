@@ -1748,7 +1748,7 @@ function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): stri
     (g.nodes || []).forEach(function(node) {
       els.push({ data: {
         id: node.id,
-        label: truncateLabel(node.title, node.id === cid ? (compact ? 10 : 12) : (compact ? 6 : 8)),
+        label: truncateLabel(node.title, node.id === cid ? (compact ? 22 : 12) : (compact ? 18 : 8)),
         interesting: node.interesting ? true : undefined,
         ignored: (node.ignored || node.archived) ? true : undefined,
         isCenter: node.id === cid ? true : undefined,
@@ -1772,16 +1772,16 @@ function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): stri
       { selector: 'node', style: {
         'background-color': 'rgba(5,5,5,0.9)', 'border-color': 'rgba(0,255,255,0.5)',
         'border-width': 1.5, 'color': 'rgba(0,255,255,0.8)', 'label': 'data(label)',
-        'font-family': 'Courier New, monospace', 'font-size': compact ? 7 : 10,
+        'font-family': 'Courier New, monospace', 'font-size': compact ? 8 : 10,
         'text-valign': 'center', 'text-halign': 'center',
-        'width': compact ? 30 : 40, 'height': compact ? 30 : 40, 'text-wrap': 'wrap', 'text-max-width': compact ? 26 : 36, 'shape': 'ellipse',
+        'width': compact ? 72 : 40, 'height': compact ? 48 : 40, 'text-wrap': 'wrap', 'text-max-width': compact ? 66 : 36, 'shape': 'round-rectangle',
       }},
       { selector: 'node[?interesting]', style: {
         'border-color': 'rgba(255,0,255,0.7)', 'color': 'rgba(255,0,255,0.95)', 'border-width': 2.5,
       }},
       { selector: 'node[?isCenter]', style: {
-        'width': compact ? 44 : 56, 'height': compact ? 44 : 56, 'border-color': 'rgba(0,255,255,0.9)',
-        'color': 'rgba(0,255,255,1)', 'font-size': compact ? 9 : 12, 'font-weight': 'bold', 'border-width': 2.5,
+        'width': compact ? 96 : 56, 'height': compact ? 62 : 56, 'border-color': 'rgba(0,255,255,0.9)',
+        'color': 'rgba(0,255,255,1)', 'font-size': compact ? 11 : 12, 'font-weight': 'bold', 'border-width': 2.5,
       }},
       { selector: 'node[?ignored]', style: {
         'opacity': 0.35, 'border-color': 'rgba(100,100,100,0.4)', 'color': 'rgba(150,150,150,0.6)',
@@ -1809,7 +1809,7 @@ function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): stri
   function fitCy(cy) {
     if (!cy || cy.destroyed()) return;
     var compact = window.matchMedia && window.matchMedia('(max-width: 520px)').matches;
-    cy.fit(cy.elements(), compact ? 36 : 56);
+    cy.fit(cy.elements(), compact ? 24 : 56);
     cy.minZoom(compact ? 0.25 : 0.15);
   }
   window._cyFitGraph = fitCy;
@@ -1822,7 +1822,7 @@ function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): stri
       ? { name: 'preset', positions: function(node) { return savedPositions[node.id()]; } }
       : { name: 'cose', animate: false, randomize: false,
           nodeRepulsion: function() { return 9000; },
-          idealEdgeLength: function() { return (window.matchMedia && window.matchMedia('(max-width: 520px)').matches) ? 82 : 120; },
+          idealEdgeLength: function() { return (window.matchMedia && window.matchMedia('(max-width: 520px)').matches) ? 110 : 120; },
           gravity: 0.4, numIter: 1000 };
 
     var cy = cytoscape({
