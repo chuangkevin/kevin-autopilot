@@ -2136,9 +2136,30 @@ function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): stri
   window._cyToElements = toElements;
   window._cyGetStyle = getCyStyle;
 
+  var VIEWPORT_KEY = 'kevin-autopilot-cy-viewport';
+  function readSavedViewport() {
+    try { var raw = localStorage.getItem(VIEWPORT_KEY); return raw ? JSON.parse(raw) : null; } catch (_e) { return null; }
+  }
+  function saveViewport(cy) {
+    try { localStorage.setItem(VIEWPORT_KEY, JSON.stringify({ zoom: cy.zoom(), pan: cy.pan() })); } catch (_e) {}
+  }
+
   function fitCy(cy) {
     if (!cy || cy.destroyed()) return;
     var compact = window.matchMedia && window.matchMedia('(max-width: 520px)').matches;
+    cy.minZoom(compact ? 0.4 : 0.5);
+    cy.maxZoom(3);
+
+    // If user has previously zoomed/panned, respect it — do NOT auto-fit.
+    var saved = readSavedViewport();
+    if (saved && typeof saved.zoom === 'number' && saved.pan) {
+      cy.zoom(saved.zoom);
+      cy.pan(saved.pan);
+      updateFreshChip();
+      return;
+    }
+
+    // First-time view: fit with a minimum visible zoom so bubbles stay readable.
     cy.fit(cy.elements(), compact ? 24 : 56);
     var z = cy.zoom();
     var minVisible = compact ? 1.0 : 1.1;
@@ -2146,9 +2167,6 @@ function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): stri
       cy.zoom({ level: minVisible, renderedPosition: { x: cy.width()/2, y: cy.height()/2 } });
       cy.center();
     }
-    cy.minZoom(compact ? 0.4 : 0.5);
-    cy.maxZoom(3);
-    // Surface a "🆕 N 個新想法" chip in the SELECTED NODE drawer header(s)
     updateFreshChip();
   }
 
@@ -2194,9 +2212,20 @@ function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): stri
     }, 800);
 
     cy.ready(function() { setTimeout(function() { fitCy(cy); }, 50); });
-    cy.on('layoutstop', function() { fitCy(cy); savePositions(); });
+    cy.on('layoutstop', function() {
+      // Only auto-fit on layoutstop if user hasn't saved a viewport yet.
+      if (!readSavedViewport()) fitCy(cy);
+      savePositions();
+    });
     cy.on('dragfree', 'node', savePositions);
-    window.addEventListener('resize', debounce(function() { fitCy(cy); cy.style(getCyStyle()); }, 150));
+    // Persist any user-driven zoom or pan so the viewport survives reloads.
+    var saveVp = debounce(function() { saveViewport(cy); }, 250);
+    cy.on('zoom pan', saveVp);
+    window.addEventListener('resize', debounce(function() {
+      cy.style(getCyStyle());
+      // Don't refit on resize if user has chosen a viewport — only restyle.
+      if (!readSavedViewport()) fitCy(cy);
+    }, 150));
 
     cy.on('tap', 'node', function(event) {
       var nodeId = event.target.id();
