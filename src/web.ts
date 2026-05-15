@@ -757,7 +757,7 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
 .bl-btn:hover { border-color: var(--accent); color: var(--accent); }
 
 /* Neural graph */
-.cy-container { background: #020202; border: 1px solid var(--accent-border); border-radius: 12px; height: calc(100dvh - 200px); min-height: 300px; }
+.cy-container { background: #020202; border: 1px solid var(--accent-border); border-radius: 12px; height: min(54dvh, 520px); min-height: 300px; overflow: hidden; touch-action: none; }
 .node-drawer { background: rgba(0,0,0,0.95); border-top: 1px solid var(--accent-border); padding: 10px 14px; }
 
 /* Idea input */
@@ -933,7 +933,7 @@ summary { cursor: pointer; color: #bfdbfe; font-weight: 700; }
 .cockpit-panel h2 { font-size: 24px; line-height: 1.18; margin-bottom: 8px; }
 .cockpit-panel { border: 1px solid rgba(245,234,215,0.16); border-radius: 24px; padding: 16px; background: rgba(11,9,7,0.72); min-width: 0; width: 100%; max-width: 100%; }
 @media (max-width: 820px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .command-grid, .focus-grid, .agent-board, .thinking-grid, .neural-shell, .backlog-evidence { grid-template-columns: minmax(0, 1fr); } .neural-stage { min-height: 430px; } table { font-size: 13px; } }
-@media (max-width: 520px) { .grid { grid-template-columns: 1fr 1fr; } .value { font-size: 24px; } a.button, button { min-height: 44px; } .cockpit-panel { max-height: 72vh; padding: 12px; } .node-action-bar { margin: 0 0 12px; } }
+@media (max-width: 520px) { .grid { grid-template-columns: 1fr 1fr; } .value { font-size: 24px; } a.button, button { min-height: 44px; } .cockpit-panel { max-height: 72vh; padding: 12px; } .node-action-bar { margin: 0 0 12px; } .tab-panels { padding: 10px; padding-bottom: 74px; } .cy-container { height: min(48dvh, 430px); min-height: 280px; border-radius: 10px; } .node-drawer { max-height: 24dvh; overflow-y: auto; padding: 9px 12px; } }
   </style>
   <script src="https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js"></script>
 </head>
@@ -1744,10 +1744,11 @@ function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): stri
   function toElements(g) {
     var els = [];
     var cid = g.centerNodeId;
+    var compact = window.matchMedia && window.matchMedia('(max-width: 520px)').matches;
     (g.nodes || []).forEach(function(node) {
       els.push({ data: {
         id: node.id,
-        label: truncateLabel(node.title, node.id === cid ? 12 : 8),
+        label: truncateLabel(node.title, node.id === cid ? (compact ? 10 : 12) : (compact ? 6 : 8)),
         interesting: node.interesting ? true : undefined,
         ignored: (node.ignored || node.archived) ? true : undefined,
         isCenter: node.id === cid ? true : undefined,
@@ -1766,20 +1767,21 @@ function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): stri
   }
 
   function getCyStyle() {
+    var compact = window.matchMedia && window.matchMedia('(max-width: 520px)').matches;
     return [
       { selector: 'node', style: {
         'background-color': 'rgba(5,5,5,0.9)', 'border-color': 'rgba(0,255,255,0.5)',
         'border-width': 1.5, 'color': 'rgba(0,255,255,0.8)', 'label': 'data(label)',
-        'font-family': 'Courier New, monospace', 'font-size': 10,
+        'font-family': 'Courier New, monospace', 'font-size': compact ? 7 : 10,
         'text-valign': 'center', 'text-halign': 'center',
-        'width': 40, 'height': 40, 'text-wrap': 'wrap', 'text-max-width': 36, 'shape': 'ellipse',
+        'width': compact ? 30 : 40, 'height': compact ? 30 : 40, 'text-wrap': 'wrap', 'text-max-width': compact ? 26 : 36, 'shape': 'ellipse',
       }},
       { selector: 'node[?interesting]', style: {
         'border-color': 'rgba(255,0,255,0.7)', 'color': 'rgba(255,0,255,0.95)', 'border-width': 2.5,
       }},
       { selector: 'node[?isCenter]', style: {
-        'width': 56, 'height': 56, 'border-color': 'rgba(0,255,255,0.9)',
-        'color': 'rgba(0,255,255,1)', 'font-size': 12, 'font-weight': 'bold', 'border-width': 2.5,
+        'width': compact ? 44 : 56, 'height': compact ? 44 : 56, 'border-color': 'rgba(0,255,255,0.9)',
+        'color': 'rgba(0,255,255,1)', 'font-size': compact ? 9 : 12, 'font-weight': 'bold', 'border-width': 2.5,
       }},
       { selector: 'node[?ignored]', style: {
         'opacity': 0.35, 'border-color': 'rgba(100,100,100,0.4)', 'color': 'rgba(150,150,150,0.6)',
@@ -1804,6 +1806,14 @@ function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): stri
   window._cyToElements = toElements;
   window._cyGetStyle = getCyStyle;
 
+  function fitCy(cy) {
+    if (!cy || cy.destroyed()) return;
+    var compact = window.matchMedia && window.matchMedia('(max-width: 520px)').matches;
+    cy.fit(cy.elements(), compact ? 36 : 56);
+    cy.minZoom(compact ? 0.25 : 0.15);
+  }
+  window._cyFitGraph = fitCy;
+
   function initContainer(container, savedPositions) {
     container.setAttribute('data-cy-init', '1');
     var hasSaved = Object.keys(savedPositions).length > 0 &&
@@ -1811,8 +1821,8 @@ function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): stri
     var layoutConfig = hasSaved
       ? { name: 'preset', positions: function(node) { return savedPositions[node.id()]; } }
       : { name: 'cose', animate: false, randomize: false,
-          nodeRepulsion: function() { return 8000; },
-          idealEdgeLength: function() { return 120; },
+          nodeRepulsion: function() { return 9000; },
+          idealEdgeLength: function() { return (window.matchMedia && window.matchMedia('(max-width: 520px)').matches) ? 82 : 120; },
           gravity: 0.4, numIter: 1000 };
 
     var cy = cytoscape({
@@ -1830,8 +1840,10 @@ function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): stri
       fetch('/api/graph/positions', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ positions: positions }) });
     }, 800);
 
-    cy.on('layoutstop', savePositions);
+    cy.ready(function() { setTimeout(function() { fitCy(cy); }, 50); });
+    cy.on('layoutstop', function() { fitCy(cy); savePositions(); });
     cy.on('dragfree', 'node', savePositions);
+    window.addEventListener('resize', debounce(function() { fitCy(cy); cy.style(getCyStyle()); }, 150));
 
     cy.on('tap', 'node', function(event) {
       var nodeId = event.target.id();
@@ -1876,10 +1888,12 @@ function refreshCyGraph() {
       if (graphDataEl) graphDataEl.textContent = JSON.stringify(graph).replaceAll('<', '\\u003c').replaceAll('&', '\\u0026');
       var toEls = window._cyToElements;
       var getStyle = window._cyGetStyle;
+      var fitGraph = window._cyFitGraph;
       if (!toEls || !getStyle) return;
       (window._cyInstances || []).forEach(function(cy) {
         cy.json({ elements: toEls(graph) });
         cy.style(getStyle());
+        if (fitGraph) fitGraph(cy);
       });
     })
     .catch(function() {});
