@@ -2046,17 +2046,26 @@ function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): stri
     var els = [];
     var cid = g.centerNodeId;
     var compact = window.matchMedia && window.matchMedia('(max-width: 520px)').matches;
+    var now = Date.now();
+    var FRESH_MS = 24 * 60 * 60 * 1000;
+    var freshCount = 0;
     (g.nodes || []).forEach(function(node) {
-      // Hard cap so label wraps into ~2 short Chinese lines and stays inside the bubble.
       var maxChars = node.id === cid ? (compact ? 12 : 12) : (compact ? 10 : 12);
+      var createdTs = node.createdAt ? new Date(node.createdAt).getTime() : 0;
+      var isNew = node.id !== cid && createdTs > 0 && (now - createdTs) < FRESH_MS;
+      if (isNew) freshCount++;
+      var label = truncateLabel(node.title, maxChars);
+      if (isNew) label = '✨ ' + label;
       els.push({ data: {
         id: node.id,
-        label: truncateLabel(node.title, maxChars),
+        label: label,
         interesting: node.interesting ? true : undefined,
         ignored: (node.ignored || node.archived) ? true : undefined,
         isCenter: node.id === cid ? true : undefined,
+        isNew: isNew ? true : undefined,
       }});
     });
+    window._cyFreshCount = freshCount;
     (g.edges || []).forEach(function(edge) {
       els.push({ data: {
         id: edge.from + '--' + edge.to,
@@ -2071,10 +2080,10 @@ function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): stri
 
   function getCyStyle() {
     var compact = window.matchMedia && window.matchMedia('(max-width: 520px)').matches;
-    var nodeW = compact ? 110 : 130;
-    var nodeH = compact ? 80 : 86;
-    var nodeFs = compact ? 11 : 12;
-    var nodePad = 8;
+    var nodeW = compact ? 120 : 150;
+    var nodeH = compact ? 86 : 96;
+    var nodeFs = compact ? 13 : 14;
+    var nodePad = 9;
     return [
       { selector: 'node', style: {
         'background-color': 'rgba(5,5,5,0.9)', 'border-color': 'rgba(0,255,255,0.5)',
@@ -2092,12 +2101,16 @@ function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): stri
       { selector: 'node[?interesting]', style: {
         'border-color': 'rgba(255,0,255,0.7)', 'color': 'rgba(255,0,255,0.95)', 'border-width': 2.5,
       }},
+      { selector: 'node[?isNew]', style: {
+        'border-color': 'rgba(251,191,36,0.95)', 'color': 'rgba(254,243,199,1)', 'border-width': 3,
+        'background-color': 'rgba(18,12,2,0.95)',
+      }},
       { selector: 'node[?isCenter]', style: {
-        'width': compact ? 140 : 170, 'height': compact ? 92 : 100,
+        'width': compact ? 160 : 200, 'height': compact ? 102 : 116,
         'border-color': 'rgba(0,255,255,0.9)', 'color': 'rgba(0,255,255,1)',
-        'font-size': compact ? 13 : 15, 'font-weight': 'bold', 'border-width': 2.5,
+        'font-size': compact ? 15 : 18, 'font-weight': 'bold', 'border-width': 2.5,
         'text-wrap': 'wrap',
-        'text-max-width': compact ? 124 : 154,
+        'text-max-width': compact ? 144 : 184,
         'text-overflow-wrap': 'anywhere',
       }},
       { selector: 'node[?ignored]', style: {
@@ -2126,16 +2139,31 @@ function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): stri
   function fitCy(cy) {
     if (!cy || cy.destroyed()) return;
     var compact = window.matchMedia && window.matchMedia('(max-width: 520px)').matches;
-    // Fit to view but cap the zoom-out: if the natural fit would shrink nodes too small,
-    // keep zoom at ~0.9-1.0 so bubbles stay readable and let user pan.
     cy.fit(cy.elements(), compact ? 24 : 56);
     var z = cy.zoom();
-    var minVisible = compact ? 0.7 : 0.85;
+    var minVisible = compact ? 1.0 : 1.1;
     if (z < minVisible) {
       cy.zoom({ level: minVisible, renderedPosition: { x: cy.width()/2, y: cy.height()/2 } });
       cy.center();
     }
     cy.minZoom(compact ? 0.4 : 0.5);
+    cy.maxZoom(3);
+    // Surface a "🆕 N 個新想法" chip in the SELECTED NODE drawer header(s)
+    updateFreshChip();
+  }
+
+  function updateFreshChip() {
+    var count = window._cyFreshCount || 0;
+    document.querySelectorAll('.graph-tab-drawer .sys-label').forEach(function(el) {
+      var existing = el.querySelector('.fresh-chip');
+      if (count <= 0) { if (existing) existing.remove(); return; }
+      if (existing) { existing.textContent = '🆕 ' + count + ' 個新想法'; return; }
+      var chip = document.createElement('span');
+      chip.className = 'fresh-chip';
+      chip.style.cssText = 'margin-left:10px;padding:2px 10px;border-radius:999px;background:rgba(251,191,36,0.18);border:1px solid rgba(251,191,36,0.55);color:#fde68a;font-size:13px;font-weight:700;letter-spacing:0';
+      chip.textContent = '🆕 ' + count + ' 個新想法';
+      el.appendChild(chip);
+    });
   }
   window._cyFitGraph = fitCy;
 

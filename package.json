@@ -1,6 +1,6 @@
 {
   "name": "kevin-autopilot",
-  "version": "0.17.10",
+  "version": "0.17.12",
   "private": true,
   "type": "module",
   "scripts": {
