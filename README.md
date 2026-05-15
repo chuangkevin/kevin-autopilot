@@ -354,6 +354,24 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
+v0.17.0 makes the 分身 actually sound like Kevin. `kevin-ai-persona/PERSONA.md`
+is mirrored into `persona/PERSONA.md`, copied into the image at build time,
+and prepended as a system-instruction prefix on every reflection / boost /
+deliberation Gemini call. Deliberation switches from dynamic role-picking to
+a fixed four-cast (🔧 工程師 Kevin / 🎨 設計師 Kevin / ⚠️ 風險 Kevin /
+🛋 休假 Kevin), each carrying a distinct lens-slice of PERSONA.md so the
+voices stay separable across runs. A new `mood` label (`excited` / `flow` /
+`tense` / `idle`) is computed at the end of every observation cycle from
+24h signals (backlog activity, archive activity, deliberation seeds,
+graph growth) and persisted to `data/mood-state.json`; it gets injected
+into every prefix and tells deliberation which cast should speak louder.
+A new `preferences` summary derived from archived nodes (`< 10` archived →
+keyword frequency; `>= 10` → Gemini theme abstraction with 24h throttle)
+persists to `data/preference-cache.json` and is also injected into every
+prefix so the double avoids directions Kevin has already frozen.
+`pickRoles` is retained as a fallback when PERSONA.md or cast loading
+fails. All 132 tests pass.
+
 v0.16.0 redesigns the 分身 tab selected-node card and adds three trusted-gated
 per-node actions. On mobile, keywords now sit directly under the title in an
 accent-coloured `.kw-strip` that wraps and never ellipsizes; the full

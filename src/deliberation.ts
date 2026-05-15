@@ -4,9 +4,11 @@ import { GeminiClient, KeyPool } from '@kevinsisi/ai-core'
 import { FileKeyStorageAdapter, hasGeminiKeys } from './keys.js'
 import { createAiIdeaFromSeed } from './ideas.js'
 import { enrichNode } from './boost.js'
+import { buildCastPrefix, listCast } from './persona.js'
 import type {
   AutopilotConfig,
   BacklogItem,
+  CastId,
   DeliberationPersona,
   DeliberationRecord,
   DeliberationSynthesis,
@@ -65,14 +67,24 @@ export async function runDeliberation(
       }
     }
 
-    const personas = await pickRoles(config, report, graph, anchor)
+    // Default path: use the fixed four-cast. Fall back to dynamic pickRoles only if cast loading fails.
+    let castMap: Map<string, CastId> | null = null
+    let personas: DeliberationPersona[]
+    try {
+      const cast = listCast()
+      personas = cast.map((c) => ({ name: c.displayName, perspective: c.faction }))
+      castMap = new Map(cast.map((c) => [c.displayName, c.id]))
+    } catch (error) {
+      console.warn('deliberation: cast load failed, falling back to dynamic pickRoles:', error instanceof Error ? error.message : String(error))
+      personas = await pickRoles(config, report, graph, anchor)
+    }
 
-    const round0 = await runIndependentAnalysis(config, personas, report, graph, backlog, anchor)
+    const round0 = await runIndependentAnalysis(config, personas, report, graph, backlog, anchor, castMap)
     const allRounds: PersonaRound[][] = [round0]
 
     for (let i = 1; i <= DEBATE_ROUNDS; i++) {
       if (round0.length < 2) break
-      const debateRound = await runDebateRound(config, round0, allRounds, i, anchor)
+      const debateRound = await runDebateRound(config, round0, allRounds, i, anchor, castMap)
       allRounds.push(debateRound)
     }
 
@@ -164,10 +176,11 @@ async function runIndependentAnalysis(
   graph: IdeaGraph,
   backlog: BacklogItem[],
   anchor: IdeaGraphNode | null,
+  castMap: Map<string, CastId> | null,
 ): Promise<PersonaRound[]> {
   const snapshot = buildFullSnapshot(report, graph, backlog, anchor)
   const results = await Promise.allSettled(
-    personas.map((persona) => analyzeAsPersona(config, persona, snapshot, [], 0, anchor)),
+    personas.map((persona) => analyzeAsPersona(config, persona, snapshot, [], 0, anchor, castMap?.get(persona.name) ?? null)),
   )
   return results
     .map((r, i) => {
@@ -184,10 +197,11 @@ async function runDebateRound(
   priorRounds: PersonaRound[][],
   roundIndex: number,
   anchor: IdeaGraphNode | null,
+  castMap: Map<string, CastId> | null,
 ): Promise<PersonaRound[]> {
   if (survivors.length < 2) return []
   const results = await Promise.allSettled(
-    survivors.map((pr) => analyzeAsPersona(config, pr.persona, null, priorRounds, roundIndex, anchor)),
+    survivors.map((pr) => analyzeAsPersona(config, pr.persona, null, priorRounds, roundIndex, anchor, castMap?.get(pr.persona.name) ?? null)),
   )
   return results
     .map((r, i) => {
@@ -205,6 +219,7 @@ async function analyzeAsPersona(
   priorRounds: PersonaRound[][],
   round: number,
   anchor: IdeaGraphNode | null,
+  castId: CastId | null,
 ): Promise<PersonaRound> {
   const isDebateRound = round > 0
   const context = isDebateRound
@@ -228,15 +243,24 @@ async function analyzeAsPersona(
     ? `辯論主軸：節點「${anchor.title}」（${anchor.type}）。你的所有洞察都應該圍繞這個主軸。`
     : ''
 
-  const systemInstruction = isDebateRound
-    ? `你是「${persona.name}」。你的分析視角：${persona.perspective}。` +
-      anchorPreamble +
-      `這是第 ${round} 輪辯論，你能看到其他分身的觀點。針對他人的盲點提出具體挑戰，也可以補充支持某些觀點。` +
+  const taskInstruction = isDebateRound
+    ? `這是第 ${round} 輪辯論，你能看到其他分身的觀點。針對他人的盲點提出具體挑戰，也可以補充支持某些觀點。` +
       '只輸出 minified JSON，不要 Markdown，不要說明文字。'
-    : `你是「${persona.name}」。你的分析視角：${persona.perspective}。` +
-      anchorPreamble +
-      '獨立分析目前專案快照，從你的視角找出最重要的洞察和潛在盲點。' +
+    : '獨立分析目前專案快照，從你的視角找出最重要的洞察和潛在盲點。' +
       '只輸出 minified JSON，不要 Markdown，不要說明文字。'
+
+  let castPrefix = ''
+  if (castId) {
+    try {
+      castPrefix = await buildCastPrefix(castId, config)
+    } catch (error) {
+      console.warn(`deliberation: cast prefix failed for ${castId}, using minimal persona:`, error instanceof Error ? error.message : String(error))
+    }
+  }
+  const personaLine = `你是「${persona.name}」。你的分析視角：${persona.perspective}。`
+  const systemInstruction = castPrefix
+    ? `${castPrefix}\n${personaLine}${anchorPreamble}${taskInstruction}`
+    : `${personaLine}${anchorPreamble}${taskInstruction}`
 
   const text = await callGemini(config, systemInstruction, JSON.stringify(payload))
   const parsed = JSON.parse(extractJson(text)) as Record<string, unknown>

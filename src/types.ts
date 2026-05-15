@@ -574,6 +574,43 @@ export interface BoostState {
   updatedAt: string | null
 }
 
+export type MoodLabel = 'excited' | 'flow' | 'tense' | 'idle'
+
+export interface MoodSignals {
+  scoreAvg24h: number
+  backlogActiveCount: number
+  backlogAdded24h: number
+  archiveAdded24h: number
+  seedsInjected24h: number
+  nodesAdded24h: number
+}
+
+export interface MoodState {
+  mood: MoodLabel
+  computedAt: string
+  signals: MoodSignals
+}
+
+export type PreferenceMode = 'keywords' | 'themes'
+
+export interface Preferences {
+  mode: PreferenceMode
+  avoid: string[]
+  summary: string
+  computedAt: string
+  archivedCount: number
+}
+
+export type CastId = 'engineer' | 'designer' | 'risk' | 'vacation'
+
+export interface CastDefinition {
+  id: CastId
+  displayName: string
+  faction: string
+  lensSections: string[]
+  characteristicChallenges: string[]
+}
+
 export interface KeyStatusSummary {
   storedCount: number
   envCount: number

@@ -2,6 +2,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { GeminiClient, KeyPool } from '@kevinsisi/ai-core'
 import { FileKeyStorageAdapter, hasGeminiKeys } from './keys.js'
+import { buildPersonaPrefix } from './persona.js'
 import type {
   AutopilotConfig,
   BacklogItem,
@@ -30,6 +31,15 @@ const VALID_EDGE_TYPES: ReadonlySet<IdeaGraphEdgeType> = new Set([
 ])
 
 const inFlight = new Set<string>()
+
+async function safeBuildPersonaPrefix(config: AutopilotConfig): Promise<string> {
+  try {
+    return await buildPersonaPrefix('boost', config)
+  } catch (error) {
+    console.warn('boost: persona prefix failed, using stub:', error instanceof Error ? error.message : String(error))
+    return '你是 Kevin 的 AI 分身。\n—— 下面是這次任務 ——'
+  }
+}
 
 export function isBoostRunning(nodeId: string): boolean {
   return inFlight.has(nodeId)
@@ -121,11 +131,14 @@ export async function enrichNode(
   backlog: BacklogItem[],
 ): Promise<EnrichmentResult> {
   const snapshot = buildBoostSnapshot(node, neighbours, report, backlog)
+  const personaPrefix = await safeBuildPersonaPrefix(config)
+  const boostInstruction =
+    '你是 Kevin Autopilot 的單點深化引擎。針對一個 idea graph 節點，重寫它的 thinking 並提出最多 3 條到既有節點的新關聯。' +
+    '只輸出 minified JSON，不要 Markdown，不要說明文字。' +
+    '不得提議 deployment、生產環境操作、讀 secrets 或刪資料；僅做觀察、聯想、整理。'
   const text = await callGemini(
     config,
-    '你是 Kevin Autopilot 的單點深化引擎。針對一個 idea graph 節點，重寫它的 thinking 並提出最多 3 條到既有節點的新關聯。' +
-      '只輸出 minified JSON，不要 Markdown，不要說明文字。' +
-      '不得提議 deployment、生產環境操作、讀 secrets 或刪資料；僅做觀察、聯想、整理。',
+    `${personaPrefix}\n${boostInstruction}`,
     JSON.stringify({
       task: 'enrich this graph node',
       node: { id: node.id, title: node.title, type: node.type, summary: node.summary, keywords: node.keywords, currentThinking: node.thinking },

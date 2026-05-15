@@ -10,6 +10,7 @@ import { getIdeaGraph } from './idea-graph.js'
 import { observe, writeReports } from './observer.js'
 import { listBacklog, mergeCandidatesIntoBacklog, openBacklogDatabase } from './backlog.js'
 import { reflect } from './reflection.js'
+import { computeMood, persistMoodState } from './mood.js'
 import { getEffectiveConfig } from './runtime-overrides.js'
 import type {
   AutopilotConfig,
@@ -28,6 +29,7 @@ export class ObservationLoop {
   private state: ObservationLoopState
   private timer: ReturnType<typeof setTimeout> | undefined
   private currentIntervalMs: number
+  private recentScores: number[] = []
   private lastInterestingNodeIds: Set<string> = new Set()
   private lastBacklogSeenCounts: Map<string, number> = new Map()
   private lastReport: ObservationReport | undefined
@@ -156,6 +158,9 @@ export class ObservationLoop {
         lastMarkdownPath: written.markdownPath,
         lastExcitementScore: excitementScore,
       }
+      this.recentScores.push(excitementScore)
+      if (this.recentScores.length > 24) this.recentScores.shift()
+      this.recomputeMoodSafely(effectiveConfig)
       return report
     } catch (error) {
       this.state = {
@@ -171,6 +176,15 @@ export class ObservationLoop {
       await this.scheduleNextRun()
       await this.persistStateSafely()
     }
+  }
+
+  private recomputeMoodSafely(config: AutopilotConfig): void {
+    const scores = [...this.recentScores]
+    void computeMood(config, scores)
+      .then((state) => persistMoodState(config, state))
+      .catch((error) => {
+        console.warn('observation-loop: mood recompute failed:', error instanceof Error ? error.message : String(error))
+      })
   }
 
   private async scheduleNextRun(): Promise<void> {

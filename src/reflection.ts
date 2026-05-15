@@ -1,6 +1,7 @@
 import { GeminiClient, KeyPool } from '@kevinsisi/ai-core'
 import { FileKeyStorageAdapter, hasGeminiKeys } from './keys.js'
 import { stableHash6 } from './idea-graph.js'
+import { buildPersonaPrefix } from './persona.js'
 import type {
   AiConfig,
   AiReflectionConfig,
@@ -22,6 +23,15 @@ const DEFAULT_MAX_OUTPUT_TOKENS = 700
 const DEFAULT_MAX_PENDING_AI_IDEAS = 5
 const DEFAULT_TIMEOUT_MS = 25_000
 const PROMPT_VERSION = 'v1'
+
+async function safeBuildPersonaPrefix(mode: 'reflection' | 'boost', config: AutopilotConfig): Promise<string> {
+  try {
+    return await buildPersonaPrefix(mode, config)
+  } catch (error) {
+    console.warn('reflection: persona prefix failed, using stub:', error instanceof Error ? error.message : String(error))
+    return '你是 Kevin 的 AI 分身。\n—— 下面是這次任務 ——'
+  }
+}
 
 const PROMPT_MAX_NODES = 18
 const PROMPT_MAX_BACKLOG = 6
@@ -267,17 +277,19 @@ export async function reflect(input: ReflectionInput): Promise<ReflectionStateRe
   let usage: ReflectionTokenUsage | undefined
   try {
     const client = new GeminiClient(new KeyPool(new FileKeyStorageAdapter(input.config)), { maxRetries: 2 })
+    const personaPrefix = await safeBuildPersonaPrefix('reflection', input.config)
+    const reflectionInstruction =
+      '你是 Kevin Autopilot 的分身反思引擎。讀取 Kevin Autopilot 的目前圖、backlog 與最近想法，依規格輸出 JSON。' +
+      ' 只輸出 JSON，不要 Markdown，不要前後說明文字。' +
+      ' 不得提議新建 repo、deployment、production、讀 secrets、刪資料、API contract change；遇到這類 idea 必須將 approvalRequired 設 true 並改寫成 read-only 觀察任務。' +
+      ' 不要再次提出與 dismissedAiIdeaTitles 中標題語意相同的 idea。' +
+      ' newIdeaSeeds 上限 2、若 caps.maxNewIdeaSeeds 為 0 則必須回 []；nextExplorationRewrites 上限 1。' +
+      ' newIdeaSeeds 每筆都必須有 evidence 引用 knownNodeIds 或 backlog id，否則整筆會被丟掉。'
     const response = await withTimeout(
       client.generateContent({
         model: aiConfig.model,
         maxOutputTokens,
-        systemInstruction:
-          '你是 Kevin Autopilot 的分身反思引擎。讀取 Kevin Autopilot 的目前圖、backlog 與最近想法，依規格輸出 JSON。' +
-          ' 只輸出 JSON，不要 Markdown，不要前後說明文字。' +
-          ' 不得提議新建 repo、deployment、production、讀 secrets、刪資料、API contract change；遇到這類 idea 必須將 approvalRequired 設 true 並改寫成 read-only 觀察任務。' +
-          ' 不要再次提出與 dismissedAiIdeaTitles 中標題語意相同的 idea。' +
-          ' newIdeaSeeds 上限 2、若 caps.maxNewIdeaSeeds 為 0 則必須回 []；nextExplorationRewrites 上限 1。' +
-          ' newIdeaSeeds 每筆都必須有 evidence 引用 knownNodeIds 或 backlog id，否則整筆會被丟掉。',
+        systemInstruction: `${personaPrefix}\n${reflectionInstruction}`,
         prompt: JSON.stringify(payload),
       }),
       timeoutMs,

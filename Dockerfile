@@ -23,4 +23,5 @@ RUN apt-get update \
 COPY package.json package-lock.json ./
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
+COPY persona/PERSONA.md /app/persona/PERSONA.md
 CMD ["node", "dist/index.js", "observe"]

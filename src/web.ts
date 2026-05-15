@@ -32,6 +32,7 @@ import {
 import { clearStoredGeminiKeys, getKeyStatus, importGeminiKeys } from './keys.js'
 import { isBoostRunning, runBoost } from './boost.js'
 import { isDeliberationRunning, loadLatestDeliberation, runDeliberation } from './deliberation.js'
+import { recomputePreferences } from './preferences.js'
 import { createObservationLoop, readReflectionState, type ObservationLoop } from './observation-loop.js'
 import { isReflectionRewriteFresh } from './reflection.js'
 import { observe } from './observer.js'
@@ -433,6 +434,9 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
         writeText(response, 'Idea node not found', 404)
         return
       }
+      void recomputePreferences(config).catch((err) => {
+        console.warn('preferences: recompute after archive failed:', err instanceof Error ? err.message : String(err))
+      })
       writeJson(response, detail)
     } catch (error) {
       if (error instanceof ArchiveCenterNodeError) {
@@ -458,6 +462,9 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
       writeText(response, 'Idea node not found', 404)
       return
     }
+    void recomputePreferences(config).catch((err) => {
+      console.warn('preferences: recompute after unarchive failed:', err instanceof Error ? err.message : String(err))
+    })
     writeJson(response, detail)
     return
   }
