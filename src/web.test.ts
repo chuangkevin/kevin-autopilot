@@ -115,7 +115,9 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(pageBody.includes('找更多關聯'), true) // still in embedded graph JSON (action labels)
     assert.equal(pageBody.includes('變成 OpenCode 任務'), true) // still in embedded graph JSON (action labels)
     assert.equal(pageBody.includes('標記有趣'), true) // still in embedded graph JSON (action labels)
-    assert.equal(pageBody.includes('先不要想這條'), true) // still in embedded graph JSON (action labels)
+    assert.equal(pageBody.includes('⚡ 多想一點'), true) // new primary action
+    assert.equal(pageBody.includes('🧠 深度辯論'), true) // new primary action
+    assert.equal(pageBody.includes('❄ 先不要想'), true) // new primary action (replaces 先不要想這條)
     assert.equal(pageBody.includes('尚未開放關聯搜尋'), false)
     assert.equal(pageBody.includes('缺 prompt 或證據太弱'), false)
     assert.equal(pageBody.includes('打開分身的大腦'), false) // moved to stub
@@ -139,7 +141,7 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(pageBody.includes('/100'), false) // moved to stub
     assert.equal(pageBody.includes('/api/main-agent/thinking'), false) // moved to stub
     assert.equal(pageBody.includes('分身現在在想'), false) // was in neural cockpit HTML; moved to stub
-    assert.equal(pageBody.includes('我怎麼理解它'), true) // still in JS renderNodeDrawer
+    assert.equal(pageBody.includes('💭 分身怎麼想這個'), true) // still in JS renderNodeDrawer (was: 我怎麼理解它 before v0.16.0)
     assert.equal(pageBody.includes('修正這輪判斷'), false) // moved to stub
     assert.equal(pageBody.includes('除錯/證據/完整清單，不用先看'), false) // moved to stub
     assert.equal(pageBody.includes('Kevin 子人格自問自答'), false) // moved to stub
@@ -216,9 +218,57 @@ test('web server exposes health and idea intake', async () => {
 
     const projectNode = graphBody.nodes.find((node: { id: string; type: string }) => node.type === 'project')
     assert.ok(projectNode)
-    const graphStop = await fetch(`${baseUrl}/api/graph/nodes/${encodeURIComponent(projectNode.id)}/stop-exploring`, { method: 'POST' })
-    assert.equal(graphStop.status, 201)
-    assert.equal((await graphStop.json()).node.ignored, true)
+    const graphArchive = await fetch(`${baseUrl}/api/idea/${encodeURIComponent(projectNode.id)}/archive`, { method: 'POST' })
+    assert.equal(graphArchive.status, 200)
+    const archiveBody = await graphArchive.json()
+    assert.equal(archiveBody.node.archived, true)
+    assert.equal(typeof archiveBody.node.archivedAt, 'string')
+
+    const untrustedArchive = await fetch(`${baseUrl}/api/idea/${encodeURIComponent(projectNode.id)}/archive`, {
+      method: 'POST',
+      headers: { 'x-forwarded-for': '8.8.8.8' },
+    })
+    assert.equal(untrustedArchive.status, 403)
+
+    const archivedList = await fetch(`${baseUrl}/api/idea/archived`)
+    assert.equal(archivedList.status, 200)
+    const archivedListBody = await archivedList.json()
+    assert.equal(Array.isArray(archivedListBody), true)
+    assert.equal(archivedListBody.some((node: { id: string }) => node.id === projectNode.id), true)
+
+    const unarchive = await fetch(`${baseUrl}/api/idea/${encodeURIComponent(projectNode.id)}/unarchive`, { method: 'POST' })
+    assert.equal(unarchive.status, 200)
+    const unarchiveBody = await unarchive.json()
+    assert.equal(unarchiveBody.node.archived ?? false, false)
+
+    const boostStatus = await fetch(`${baseUrl}/api/idea/${encodeURIComponent(projectNode.id)}/boost-status`)
+    assert.equal(boostStatus.status, 200)
+    const boostStatusBody = await boostStatus.json()
+    assert.equal(boostStatusBody.status, 'idle')
+    assert.equal(typeof boostStatusBody.updatedAt, 'string')
+
+    const deleted = await fetch(`${baseUrl}/api/idea/${encodeURIComponent(projectNode.id)}`, { method: 'DELETE' })
+    assert.equal(deleted.status, 200)
+    assert.equal((await deleted.json()).deleted, true)
+
+    const deletedAgain = await fetch(`${baseUrl}/api/idea/${encodeURIComponent(projectNode.id)}`, { method: 'DELETE' })
+    assert.equal(deletedAgain.status, 404)
+
+    const centerArchive = await fetch(`${baseUrl}/api/idea/${encodeURIComponent(graphBody.centerNodeId)}/archive`, { method: 'POST' })
+    assert.equal(centerArchive.status, 400)
+    const centerDelete = await fetch(`${baseUrl}/api/idea/${encodeURIComponent(graphBody.centerNodeId)}`, { method: 'DELETE' })
+    assert.equal(centerDelete.status, 400)
+
+    const unknownBoost = await fetch(`${baseUrl}/api/idea/this-id-does-not-exist/boost`, { method: 'POST' })
+    assert.equal(unknownBoost.status, 404)
+
+    const anchoredDeliberateUnknown = await fetch(`${baseUrl}/api/deliberation`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ anchorNodeId: 'no-such-anchor' }),
+    })
+    assert.equal(anchoredDeliberateUnknown.status, 400)
+    assert.match((await anchoredDeliberateUnknown.json()).error, /unknown anchor/)
 
     const backlog = await fetch(`${baseUrl}/api/backlog?status=active`)
     assert.equal(backlog.status, 200)
@@ -487,10 +537,12 @@ test('graph action POST routes only mutate graph metadata', async () => {
     assert.ok(ideaNode)
 
     const before = await snapshotFiles(dataDir)
-    for (const action of ['mark-interesting', 'find-relationships', 'stop-exploring']) {
+    for (const action of ['mark-interesting', 'find-relationships']) {
       const response = await fetch(`${baseUrl}/api/graph/nodes/${encodeURIComponent(ideaNode.id)}/${action}`, { method: 'POST' })
       assert.equal(response.status, 201)
     }
+    const archiveResponse = await fetch(`${baseUrl}/api/idea/${encodeURIComponent(ideaNode.id)}/archive`, { method: 'POST' })
+    assert.equal(archiveResponse.status, 200)
     const after = await snapshotFiles(dataDir)
 
     assert.deepEqual(changedFiles(before, after), ['idea-graph.json'])

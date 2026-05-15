@@ -62,6 +62,10 @@ export async function getIdeaGraphNodeDetail(config: AutopilotConfig, report: Ob
 
 export async function extendIdeaGraphNode(config: AutopilotConfig, report: ObservationReport, ideas: IdeaRecord[], nodeId: string): Promise<IdeaGraphNodeDetail | undefined> {
   const stored = await loadStoredGraph(config)
+  const archivedParent = stored.nodes.find((node) => node.id === nodeId && node.archived === true)
+  if (archivedParent) {
+    throw new Error('node is archived; unarchive first')
+  }
   const backlogLookup = loadBacklogLookup(config)
   const graph = mergeGraph(stored, createProjectedGraph(config, report, ideas, backlogLookup))
   const selected = graph.nodes.find((node) => node.id === nodeId)
@@ -228,30 +232,103 @@ export async function findIdeaGraphNodeRelationships(config: AutopilotConfig, re
   return selectGraphNode({ ...toFocusedGraph(nextGraph, report), nodes: nextGraph.nodes, edges: nextGraph.edges }, nodeId)
 }
 
-export async function stopExploringIdeaGraphNode(config: AutopilotConfig, report: ObservationReport, ideas: IdeaRecord[], nodeId: string): Promise<IdeaGraphNodeDetail | undefined> {
+export async function archiveIdeaGraphNode(config: AutopilotConfig, report: ObservationReport, ideas: IdeaRecord[], nodeId: string): Promise<IdeaGraphNodeDetail | undefined> {
   const stored = await loadStoredGraph(config)
   const backlogLookup = loadBacklogLookup(config)
   const graph = mergeGraph(stored, createProjectedGraph(config, report, ideas, backlogLookup))
   const selected = graph.nodes.find((node) => node.id === nodeId)
-  if (!selected || selected.type === 'double') return undefined
-  const suppressedKeywords = selected.type === 'keyword' ? new Set(selected.keywords.map((keyword) => keyword.toLowerCase())) : new Set<string>()
+  if (!selected) return undefined
+  if (selected.type === 'double' || selected.id === CENTER_NODE_ID) {
+    throw new ArchiveCenterNodeError()
+  }
   const now = new Date().toISOString()
-  let hidden: IdeaGraphNode | undefined
+  let archivedNode: IdeaGraphNode | undefined
   const nextGraph: StoredIdeaGraph = {
     nodes: graph.nodes.map((node) => {
-      const shouldHideRelatedKeywordNode = suppressedKeywords.size > 0
-        && (node.type === 'keyword' || node.type === 'research')
-        && (node.keywords.some((keyword) => isSuppressedKeyword(keyword, suppressedKeywords)) || hasSuppressedKeyword(node.title, suppressedKeywords))
-      if (node.id !== nodeId && !shouldHideRelatedKeywordNode) return node
-      const ignored = normalizeNodeActions({ ...node, ignored: true, updatedAt: now })
-      if (node.id === nodeId) hidden = ignored
-      return ignored
+      if (node.id !== nodeId) return node
+      const archived = normalizeNodeActions({ ...node, archived: true, archivedAt: now, updatedAt: now })
+      archivedNode = archived
+      return archived
     }),
     edges: graph.edges,
   }
-  if (!hidden) return undefined
+  if (!archivedNode) return undefined
   await saveStoredGraph(config, nextGraph)
-  return selectGraphNode({ ...toFocusedGraph(nextGraph, report), nodes: nextGraph.nodes, edges: nextGraph.edges }, nodeId)
+  return selectArchivedNode(nextGraph, nodeId)
+}
+
+export async function unarchiveIdeaGraphNode(config: AutopilotConfig, report: ObservationReport, ideas: IdeaRecord[], nodeId: string): Promise<IdeaGraphNodeDetail | undefined> {
+  const stored = await loadStoredGraph(config)
+  const node = stored.nodes.find((item) => item.id === nodeId)
+  if (!node) return undefined
+  const now = new Date().toISOString()
+  const nextGraph: StoredIdeaGraph = {
+    nodes: stored.nodes.map((item) => item.id === nodeId
+      ? normalizeNodeActions({ ...item, archived: false, archivedAt: null, updatedAt: now })
+      : item),
+    edges: stored.edges,
+  }
+  await saveStoredGraph(config, nextGraph)
+  // After unarchive the node should appear in the focused graph again.
+  const backlogLookup = loadBacklogLookup(config)
+  const merged = mergeGraph(nextGraph, createProjectedGraph(config, report, ideas, backlogLookup))
+  return selectGraphNode({ ...toFocusedGraph(merged, report), nodes: merged.nodes, edges: merged.edges }, nodeId)
+}
+
+export async function deleteIdeaGraphNode(config: AutopilotConfig, nodeId: string): Promise<boolean> {
+  const stored = await loadStoredGraph(config)
+  const node = stored.nodes.find((item) => item.id === nodeId)
+  if (!node) return false
+  if (node.type === 'double' || node.id === CENTER_NODE_ID) {
+    throw new DeleteCenterNodeError()
+  }
+  const nextGraph: StoredIdeaGraph = {
+    nodes: stored.nodes.filter((item) => item.id !== nodeId),
+    edges: stored.edges.filter((edge) => edge.from !== nodeId && edge.to !== nodeId),
+  }
+  await saveStoredGraph(config, nextGraph)
+  return true
+}
+
+export function getActiveNodes(graph: IdeaGraph | StoredIdeaGraph): IdeaGraphNode[] {
+  return graph.nodes.filter((node) => node.archived !== true)
+}
+
+export async function listArchivedNodes(config: AutopilotConfig): Promise<IdeaGraphNode[]> {
+  const stored = await loadStoredGraph(config)
+  return stored.nodes
+    .filter((node) => node.archived === true)
+    .map((node) => normalizeNodeActions(node))
+    .sort((a, b) => (b.archivedAt ?? b.updatedAt).localeCompare(a.archivedAt ?? a.updatedAt))
+}
+
+export class ArchiveCenterNodeError extends Error {
+  constructor() {
+    super('cannot archive center node')
+    this.name = 'ArchiveCenterNodeError'
+  }
+}
+
+export class DeleteCenterNodeError extends Error {
+  constructor() {
+    super('cannot delete center node')
+    this.name = 'DeleteCenterNodeError'
+  }
+}
+
+function selectArchivedNode(stored: StoredIdeaGraph, nodeId: string): IdeaGraphNodeDetail | undefined {
+  const node = stored.nodes.find((item) => item.id === nodeId)
+  if (!node) return undefined
+  const normalizedNode = normalizeNodeActions(node)
+  const edges = stored.edges.filter((edge) => edge.from === nodeId || edge.to === nodeId)
+  const connectedIds = new Set<string>()
+  for (const edge of edges) {
+    connectedIds.add(edge.from === nodeId ? edge.to : edge.from)
+  }
+  const connectedNodes = stored.nodes
+    .filter((item) => connectedIds.has(item.id))
+    .map((item) => normalizeNodeActions(item))
+  return { node: normalizedNode, connectedNodes, edges }
 }
 
 export function selectGraphNode(graph: IdeaGraph, nodeId: string): IdeaGraphNodeDetail | undefined {
@@ -713,12 +790,15 @@ function shortTitle(value: string): string {
 }
 
 function makeActions(type: IdeaGraphNodeType, hasPrompt: boolean, confidence: IdeaGraphConfidence, interesting = false): IdeaGraphAction[] {
+  const isCenter = type === 'double'
   return [
+    { id: 'boost', label: '⚡ 多想一點', description: '叫分身針對這個節點做一次單點 Gemini 深化。', enabled: !isCenter },
+    { id: 'deliberate', label: '🧠 深度辯論', description: '以這個節點為討論主軸，叫多 persona 辯論並產出 seeds。', enabled: !isCenter },
+    { id: 'archive', label: '❄ 先不要想', description: '把這個節點冷凍起來，從預設腦圖隱藏；之後可從冷凍庫解凍。', enabled: !isCenter },
     { id: 'extend', label: '延伸這個節點', description: '從這個節點長出 research / prototype / integration 方向。', enabled: type !== 'task' },
     { id: 'find-relationships', label: '找更多關聯', description: '從關鍵字、專案、訊號再找相似節點。', enabled: type !== 'task' },
     { id: 'copy-opencode-prompt', label: '變成 OpenCode 任務', description: '只複製 bounded prompt，不自動執行。', enabled: hasPrompt },
     { id: 'mark-interesting', label: interesting ? '已標記有趣' : '標記有趣', description: '保留這條線，之後讓分身繼續想。', enabled: !interesting },
-    { id: 'stop-exploring', label: '先不要想這條', description: '隱藏這個節點，之後不再放進可見腦圖。', enabled: type !== 'double' },
   ]
 }
 

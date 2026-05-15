@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { GeminiClient, KeyPool } from '@kevinsisi/ai-core'
 import { FileKeyStorageAdapter, hasGeminiKeys } from './keys.js'
 import { createAiIdeaFromSeed } from './ideas.js'
+import { enrichNode } from './boost.js'
 import type {
   AutopilotConfig,
   BacklogItem,
@@ -10,6 +11,7 @@ import type {
   DeliberationRecord,
   DeliberationSynthesis,
   IdeaGraph,
+  IdeaGraphNode,
   ObservationReport,
   PersonaRound,
   ReflectionIdeaSeed,
@@ -40,24 +42,41 @@ export async function runDeliberation(
   report: ObservationReport,
   graph: IdeaGraph,
   backlog: BacklogItem[],
+  options?: { anchorNodeId?: string | null },
 ): Promise<DeliberationRecord> {
   deliberationInFlight = true
   const startedAt = new Date().toISOString()
   const id = startedAt.slice(0, 19).replace(/:/g, '-').replace('T', '-')
 
   try {
-    const personas = await pickRoles(config, report, graph)
+    let anchor: IdeaGraphNode | null = null
+    const requestedAnchorId = options?.anchorNodeId ?? null
+    if (requestedAnchorId) {
+      const candidate = graph.nodes.find((node) => node.id === requestedAnchorId)
+      if (!candidate) {
+        console.warn(`deliberation: unknown anchor ${requestedAnchorId}; running whole-graph deliberation`)
+      } else if (candidate.archived === true) {
+        throw new Error(`deliberation: anchor ${requestedAnchorId} is archived`)
+      } else {
+        // Step 0: enrich the anchor so personas debate fresh thinking.
+        const neighbours = graph.nodes.filter((n) => n.id !== candidate.id && n.archived !== true).slice(0, 8)
+        const enrichment = await enrichNode(config, candidate, neighbours, report, backlog)
+        anchor = { ...candidate, thinking: enrichment.thinking }
+      }
+    }
 
-    const round0 = await runIndependentAnalysis(config, personas, report, graph, backlog)
+    const personas = await pickRoles(config, report, graph, anchor)
+
+    const round0 = await runIndependentAnalysis(config, personas, report, graph, backlog, anchor)
     const allRounds: PersonaRound[][] = [round0]
 
     for (let i = 1; i <= DEBATE_ROUNDS; i++) {
       if (round0.length < 2) break
-      const debateRound = await runDebateRound(config, round0, allRounds, i)
+      const debateRound = await runDebateRound(config, round0, allRounds, i, anchor)
       allRounds.push(debateRound)
     }
 
-    const synthesis = await runSynthesis(config, allRounds)
+    const synthesis = await runSynthesis(config, allRounds, anchor)
 
     const model = config.ai?.model ?? 'unknown'
     let seedsInjected = 0
@@ -80,6 +99,7 @@ export async function runDeliberation(
       synthesis: { ...synthesis, seedsInjected },
       model,
       tokenUsage: { input: 0, output: 0 },
+      anchorNodeId: anchor?.id ?? null,
     }
 
     await persistDeliberation(config, record)
@@ -93,19 +113,26 @@ async function pickRoles(
   config: AutopilotConfig,
   report: ObservationReport,
   graph: IdeaGraph,
+  anchor: IdeaGraphNode | null,
 ): Promise<DeliberationPersona[]> {
   const snapshot = buildProjectSnapshot(report, graph)
   const payload = {
     task: 'Pick 2-4 distinct analytical personas for a multi-agent deliberation about this project.',
+    ...(anchor ? { centralTopic: describeAnchor(anchor) } : {}),
     projectSnapshot: snapshot,
     outputSchema: {
       personas: [{ name: 'string ≤ 30 chars', perspective: 'string ≤ 120 chars, unique analytical lens' }],
     },
   }
 
+  const anchorPreamble = anchor
+    ? `辯論主軸：節點「${anchor.title}」（${anchor.type}）。所有 persona 都必須圍繞這個主軸選擇視角。`
+    : ''
+
   const text = await callGemini(
     config,
     '你是辯論協調員。根據目前專案狀態，選出 2-4 個各具獨特分析視角的分身角色。' +
+      anchorPreamble +
       '每個角色必須有不同的觀察角度（例如：技術債審計師、使用者體驗觀察者、執行風險評估師、策略機會探索者）。' +
       '只輸出 minified JSON，不要 Markdown，不要說明文字。',
     JSON.stringify(payload),
@@ -136,10 +163,11 @@ async function runIndependentAnalysis(
   report: ObservationReport,
   graph: IdeaGraph,
   backlog: BacklogItem[],
+  anchor: IdeaGraphNode | null,
 ): Promise<PersonaRound[]> {
-  const snapshot = buildFullSnapshot(report, graph, backlog)
+  const snapshot = buildFullSnapshot(report, graph, backlog, anchor)
   const results = await Promise.allSettled(
-    personas.map((persona) => analyzeAsPersona(config, persona, snapshot, [], 0)),
+    personas.map((persona) => analyzeAsPersona(config, persona, snapshot, [], 0, anchor)),
   )
   return results
     .map((r, i) => {
@@ -155,10 +183,11 @@ async function runDebateRound(
   survivors: PersonaRound[],
   priorRounds: PersonaRound[][],
   roundIndex: number,
+  anchor: IdeaGraphNode | null,
 ): Promise<PersonaRound[]> {
   if (survivors.length < 2) return []
   const results = await Promise.allSettled(
-    survivors.map((pr) => analyzeAsPersona(config, pr.persona, null, priorRounds, roundIndex)),
+    survivors.map((pr) => analyzeAsPersona(config, pr.persona, null, priorRounds, roundIndex, anchor)),
   )
   return results
     .map((r, i) => {
@@ -175,6 +204,7 @@ async function analyzeAsPersona(
   snapshot: string | null,
   priorRounds: PersonaRound[][],
   round: number,
+  anchor: IdeaGraphNode | null,
 ): Promise<PersonaRound> {
   const isDebateRound = round > 0
   const context = isDebateRound
@@ -185,6 +215,7 @@ async function analyzeAsPersona(
     persona: persona.name,
     perspective: persona.perspective,
     round,
+    ...(anchor ? { centralTopic: describeAnchor(anchor) } : {}),
     context,
     outputSchema: {
       analysis: 'string ≤ 300 chars',
@@ -193,11 +224,17 @@ async function analyzeAsPersona(
     },
   }
 
+  const anchorPreamble = anchor
+    ? `辯論主軸：節點「${anchor.title}」（${anchor.type}）。你的所有洞察都應該圍繞這個主軸。`
+    : ''
+
   const systemInstruction = isDebateRound
     ? `你是「${persona.name}」。你的分析視角：${persona.perspective}。` +
+      anchorPreamble +
       `這是第 ${round} 輪辯論，你能看到其他分身的觀點。針對他人的盲點提出具體挑戰，也可以補充支持某些觀點。` +
       '只輸出 minified JSON，不要 Markdown，不要說明文字。'
     : `你是「${persona.name}」。你的分析視角：${persona.perspective}。` +
+      anchorPreamble +
       '獨立分析目前專案快照，從你的視角找出最重要的洞察和潛在盲點。' +
       '只輸出 minified JSON，不要 Markdown，不要說明文字。'
 
@@ -213,9 +250,10 @@ async function analyzeAsPersona(
   }
 }
 
-async function runSynthesis(config: AutopilotConfig, allRounds: PersonaRound[][]): Promise<DeliberationSynthesis> {
+async function runSynthesis(config: AutopilotConfig, allRounds: PersonaRound[][], anchor: IdeaGraphNode | null): Promise<DeliberationSynthesis> {
   const payload = {
     task: '合成所有分身的辯論輸出，找出共識、盲點，並產出最多 3 個高品質 idea seed。',
+    ...(anchor ? { centralTopic: describeAnchor(anchor) } : {}),
     allRounds: JSON.stringify(allRounds),
     outputSchema: {
       summary: 'string ≤ 300 chars',
@@ -324,11 +362,30 @@ function buildProjectSnapshot(report: ObservationReport, graph: IdeaGraph): stri
   })
 }
 
-function buildFullSnapshot(report: ObservationReport, graph: IdeaGraph, backlog: BacklogItem[]): string {
+function buildFullSnapshot(report: ObservationReport, graph: IdeaGraph, backlog: BacklogItem[], anchor: IdeaGraphNode | null): string {
   return JSON.stringify({
     ...JSON.parse(buildProjectSnapshot(report, graph)),
     backlog: backlog.filter((b) => b.status === 'active').slice(0, 6).map((b) => ({ title: b.title, kind: b.kind, seenCount: b.seenCount })),
+    ...(anchor ? { anchor: describeAnchor(anchor) } : {}),
   })
+}
+
+function describeAnchor(anchor: IdeaGraphNode): {
+  id: string
+  title: string
+  type: string
+  summary: string
+  keywords: string[]
+  thinking: IdeaGraphNode['thinking']
+} {
+  return {
+    id: anchor.id,
+    title: anchor.title,
+    type: anchor.type,
+    summary: anchor.summary,
+    keywords: anchor.keywords,
+    thinking: anchor.thinking,
+  }
 }
 
 function parseStringArray(value: unknown, maxLen: number, maxCount: number): string[] {

@@ -17,14 +17,20 @@ import {
   listIdeas,
 } from './ideas.js'
 import {
+  archiveIdeaGraphNode,
+  ArchiveCenterNodeError,
+  deleteIdeaGraphNode,
+  DeleteCenterNodeError,
   extendIdeaGraphNode,
   findIdeaGraphNodeRelationships,
   getIdeaGraph,
   getIdeaGraphNodeDetail,
+  listArchivedNodes,
   markIdeaGraphNodeInteresting,
-  stopExploringIdeaGraphNode,
+  unarchiveIdeaGraphNode,
 } from './idea-graph.js'
 import { clearStoredGeminiKeys, getKeyStatus, importGeminiKeys } from './keys.js'
+import { isBoostRunning, runBoost } from './boost.js'
 import { isDeliberationRunning, loadLatestDeliberation, runDeliberation } from './deliberation.js'
 import { createObservationLoop, readReflectionState, type ObservationLoop } from './observation-loop.js'
 import { isReflectionRewriteFresh } from './reflection.js'
@@ -126,13 +132,36 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
       writeJson(response, { status: 'already_running' }, 409)
       return
     }
+    let anchorNodeId: string | null = null
+    try {
+      const rawBody = await readBody(request)
+      if (rawBody.trim()) {
+        const body = JSON.parse(rawBody) as { anchorNodeId?: unknown }
+        if (typeof body.anchorNodeId === 'string' && body.anchorNodeId.trim()) {
+          anchorNodeId = body.anchorNodeId.trim()
+        }
+      }
+    } catch {
+      // malformed body is treated as no anchor
+    }
     const report = await getVisibleReport(config, observationLoop)
     const ideas = await listIdeas(config, 40)
     const graph = await getIdeaGraph(config, report, ideas)
+    if (anchorNodeId) {
+      const anchor = graph.nodes.find((item) => item.id === anchorNodeId)
+      if (!anchor) {
+        writeJson(response, { error: 'unknown anchor node' }, 400)
+        return
+      }
+      if (anchor.archived === true) {
+        writeJson(response, { error: 'anchor is archived' }, 400)
+        return
+      }
+    }
     const db = openBacklogDatabase(config)
     let backlog: BacklogItem[]
     try { backlog = listBacklog(db, 'all', new Date()) } finally { db.close() }
-    void runDeliberation(config, report, graph, backlog).catch((error) => {
+    void runDeliberation(config, report, graph, backlog, { anchorNodeId }).catch((error) => {
       console.error('deliberation failed:', error instanceof Error ? error.message : String(error))
     })
     writeJson(response, { status: 'started' }, 202)
@@ -321,7 +350,7 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
     return
   }
 
-  const graphActionMatch = url.pathname.match(/^\/api\/graph\/nodes\/([^/]+)\/(extend|find-relationships|mark-interesting|stop-exploring)$/)
+  const graphActionMatch = url.pathname.match(/^\/api\/graph\/nodes\/([^/]+)\/(extend|find-relationships|mark-interesting)$/)
   if (graphActionMatch && request.method === 'POST') {
     if (!isTrustedSettingsRequest(request)) {
       writeText(response, 'Graph actions require loopback, private LAN, Docker, or Tailscale access', 403)
@@ -335,14 +364,125 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
       ? await extendIdeaGraphNode(config, report, ideas, id)
       : action === 'find-relationships'
         ? await findIdeaGraphNodeRelationships(config, report, ideas, id)
-        : action === 'mark-interesting'
-          ? await markIdeaGraphNodeInteresting(config, report, ideas, id)
-          : await stopExploringIdeaGraphNode(config, report, ideas, id)
+        : await markIdeaGraphNodeInteresting(config, report, ideas, id)
     if (!detail) {
       writeText(response, 'Graph node not found', 404)
       return
     }
     writeJson(response, detail, 201)
+    return
+  }
+
+  if (url.pathname === '/api/idea/archived' && request.method === 'GET') {
+    writeJson(response, await listArchivedNodes(config))
+    return
+  }
+
+  const boostMatch = url.pathname.match(/^\/api\/idea\/([^/]+)\/boost$/)
+  if (boostMatch && request.method === 'POST') {
+    if (!isTrustedSettingsRequest(request)) {
+      writeText(response, 'Boost requires loopback, private LAN, Docker, or Tailscale access', 403)
+      return
+    }
+    const id = decodeURIComponent(boostMatch[1] ?? '')
+    const report = await getVisibleReport(config, observationLoop)
+    const ideas = await listIdeas(config, 40)
+    const graph = await getIdeaGraph(config, report, ideas)
+    const node = graph.nodes.find((item) => item.id === id)
+    if (!node) {
+      writeText(response, 'Idea node not found', 404)
+      return
+    }
+    if (isBoostRunning(id)) {
+      writeJson(response, { status: 'already_running' }, 409)
+      return
+    }
+    const db = openBacklogDatabase(config)
+    let backlog: BacklogItem[]
+    try { backlog = listBacklog(db, 'all', new Date()) } finally { db.close() }
+    void runBoost(config, id, report, ideas, backlog).catch((error) => {
+      console.error('boost failed for', id, ':', error instanceof Error ? error.message : String(error))
+    })
+    writeJson(response, { status: 'started' }, 202)
+    return
+  }
+
+  const boostStatusMatch = url.pathname.match(/^\/api\/idea\/([^/]+)\/boost-status$/)
+  if (boostStatusMatch && request.method === 'GET') {
+    const id = decodeURIComponent(boostStatusMatch[1] ?? '')
+    const report = await getVisibleReport(config, observationLoop)
+    const ideas = await listIdeas(config, 40)
+    const graph = await getIdeaGraph(config, report, ideas)
+    const node = graph.nodes.find((item) => item.id === id)
+    writeJson(response, { status: isBoostRunning(id) ? 'running' : 'idle', updatedAt: node?.updatedAt ?? null })
+    return
+  }
+
+  const archiveMatch = url.pathname.match(/^\/api\/idea\/([^/]+)\/archive$/)
+  if (archiveMatch && request.method === 'POST') {
+    if (!isTrustedSettingsRequest(request)) {
+      writeText(response, 'Archive requires loopback, private LAN, Docker, or Tailscale access', 403)
+      return
+    }
+    const id = decodeURIComponent(archiveMatch[1] ?? '')
+    const report = await getVisibleReport(config, observationLoop)
+    const ideas = await listIdeas(config, 40)
+    try {
+      const detail = await archiveIdeaGraphNode(config, report, ideas, id)
+      if (!detail) {
+        writeText(response, 'Idea node not found', 404)
+        return
+      }
+      writeJson(response, detail)
+    } catch (error) {
+      if (error instanceof ArchiveCenterNodeError) {
+        writeJson(response, { error: 'cannot archive center node' }, 400)
+        return
+      }
+      writeText(response, error instanceof Error ? error.message : String(error), 500)
+    }
+    return
+  }
+
+  const unarchiveMatch = url.pathname.match(/^\/api\/idea\/([^/]+)\/unarchive$/)
+  if (unarchiveMatch && request.method === 'POST') {
+    if (!isTrustedSettingsRequest(request)) {
+      writeText(response, 'Unarchive requires loopback, private LAN, Docker, or Tailscale access', 403)
+      return
+    }
+    const id = decodeURIComponent(unarchiveMatch[1] ?? '')
+    const report = await getVisibleReport(config, observationLoop)
+    const ideas = await listIdeas(config, 40)
+    const detail = await unarchiveIdeaGraphNode(config, report, ideas, id)
+    if (!detail) {
+      writeText(response, 'Idea node not found', 404)
+      return
+    }
+    writeJson(response, detail)
+    return
+  }
+
+  const deleteMatch = url.pathname.match(/^\/api\/idea\/([^/]+)$/)
+  if (deleteMatch && request.method === 'DELETE') {
+    if (!isTrustedSettingsRequest(request)) {
+      writeText(response, 'Delete requires loopback, private LAN, Docker, or Tailscale access', 403)
+      return
+    }
+    const id = decodeURIComponent(deleteMatch[1] ?? '')
+    try {
+      const deleted = await deleteIdeaGraphNode(config, id)
+      if (!deleted) {
+        writeText(response, 'Idea node not found', 404)
+        return
+      }
+      writeJson(response, { id, deleted: true })
+    } catch (error) {
+      if (error instanceof DeleteCenterNodeError) {
+        writeJson(response, { error: 'cannot delete center node' }, 400)
+        return
+      }
+      writeText(response, error instanceof Error ? error.message : String(error), 500)
+    }
     return
   }
 
@@ -623,6 +763,7 @@ function renderPage(
   --amber: #f59e0b;
   --muted: rgba(255,255,255,0.25);
   --muted2: rgba(255,255,255,0.08);
+  --cy-h: 48dvh;
   color-scheme: dark;
   font-family: 'Courier New', monospace;
   background: var(--bg);
@@ -788,6 +929,23 @@ button, a.button { cursor: pointer; }
 
 /* Legacy classes kept for existing render helpers */
 .cockpit-panel { max-height: clamp(520px, 62vh, 720px); overflow-y: auto; overflow-x: hidden; touch-action: pan-y; }
+.node-action-bar.primary { position: sticky; top: 0; z-index: 2; background: rgba(11,9,7,0.92); backdrop-filter: blur(6px); margin: 0 -16px 12px; padding: 8px 16px; display: flex; flex-wrap: wrap; gap: 8px; border-bottom: 1px solid rgba(245,234,215,0.08); }
+.kw-strip { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 14px; }
+.kw-strip .pill { white-space: normal; overflow-wrap: anywhere; text-overflow: clip; max-width: 100%; font-size: 14px; padding: 5px 11px; background: rgba(34,211,238,0.16); border: 1px solid rgba(34,211,238,0.42); color: #cffafe; font-weight: 600; }
+@media (min-width: 768px) { .kw-strip .pill { font-size: 13px; } }
+.node-drawer .thought-line, .node-drawer .trace-note > div, .node-drawer .radar-signals li, .node-drawer .recommendation > div { overflow-wrap: anywhere; word-break: break-word; -webkit-line-clamp: unset; text-overflow: clip; white-space: normal; }
+.vault-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; margin-left: 8px; border-radius: 999px; background: rgba(165,243,252,0.16); color: #cffafe; border: 1px solid rgba(165,243,252,0.42); font-size: 12px; font-weight: 700; cursor: pointer; }
+.vault-chip:hover { background: rgba(165,243,252,0.26); }
+.vault-row { padding: 12px; margin-bottom: 8px; border: 1px solid rgba(245,234,215,0.16); border-radius: 14px; background: rgba(15,23,42,0.42); }
+.vault-row strong { display: block; margin-bottom: 4px; }
+.vault-actions { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
+.vault-back { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; margin-bottom: 12px; border-radius: 999px; background: rgba(148,163,184,0.18); color: #e5eefc; border: 1px solid rgba(148,163,184,0.28); cursor: pointer; font-weight: 600; }
+.detail-collapse { margin-top: 12px; }
+.detail-collapse > summary { cursor: pointer; padding: 6px 0; color: var(--muted); font-size: 13px; font-weight: 600; list-style: none; }
+.detail-collapse > summary::before { content: '🔬 詳情 ▾'; }
+.detail-collapse[open] > summary::before { content: '🔬 詳情 ▴'; }
+.detail-meta { font-size: 12px; color: var(--muted); margin: 6px 0 10px; }
+.detail-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
 .neural-map { position: absolute; inset: 0; width: 100%; height: 100%; }
 .neural-edge { stroke: rgba(245,234,215,0.22); stroke-width: 1.4; }
 .neural-edge.strong { stroke: rgba(45,212,191,0.55); stroke-width: 2.2; }
@@ -933,7 +1091,7 @@ summary { cursor: pointer; color: #bfdbfe; font-weight: 700; }
 .cockpit-panel h2 { font-size: 24px; line-height: 1.18; margin-bottom: 8px; }
 .cockpit-panel { border: 1px solid rgba(245,234,215,0.16); border-radius: 24px; padding: 16px; background: rgba(11,9,7,0.72); min-width: 0; width: 100%; max-width: 100%; }
 @media (max-width: 820px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .command-grid, .focus-grid, .agent-board, .thinking-grid, .neural-shell, .backlog-evidence { grid-template-columns: minmax(0, 1fr); } .neural-stage { min-height: 430px; } table { font-size: 13px; } }
-@media (max-width: 520px) { .grid { grid-template-columns: 1fr 1fr; } .value { font-size: 24px; } a.button, button { min-height: 44px; } .cockpit-panel { max-height: 72vh; padding: 12px; } .node-action-bar { margin: 0 0 12px; } .tab-panels { padding: 10px; padding-bottom: 74px; } .cy-container { height: min(48dvh, 430px); min-height: 280px; border-radius: 10px; } .node-drawer { max-height: 24dvh; overflow-y: auto; padding: 9px 12px; } }
+@media (max-width: 520px) { .grid { grid-template-columns: 1fr 1fr; } .value { font-size: 24px; } a.button, button { min-height: 44px; } .cockpit-panel { height: calc(100dvh - var(--cy-h, 48dvh) - 160px); max-height: none; overflow-y: auto; padding: 12px; } .node-action-bar { margin: 0 0 12px; } .tab-panels { padding: 10px; padding-bottom: 74px; } .cy-container { height: min(48dvh, 430px); min-height: 280px; border-radius: 10px; } .node-drawer { padding: 9px 12px; } }
   </style>
   <script src="https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js"></script>
 </head>
@@ -1153,7 +1311,7 @@ function switchTab(name) {
     if (actionButton) {
       const action = actionButton.getAttribute('data-action');
       const nodeId = actionButton.getAttribute('data-node-id');
-      if (['extend', 'find-relationships', 'mark-interesting', 'stop-exploring'].includes(action) && nodeId) {
+      if (['extend', 'find-relationships', 'mark-interesting'].includes(action) && nodeId) {
         actionButton.textContent = graphActionProgressText(action);
         const response = await fetch('/api/graph/nodes/' + encodeURIComponent(nodeId) + '/' + action, { method: 'POST' });
         if (!response.ok) {
@@ -1165,6 +1323,52 @@ function switchTab(name) {
         focusedNodeId = detail.node.id;
         await refreshGraphInPlace(focusedNodeId);
         refreshCyGraph();
+        return;
+      }
+      if (action === 'archive' && nodeId) {
+        actionButton.textContent = graphActionProgressText(action);
+        const response = await fetch('/api/idea/' + encodeURIComponent(nodeId) + '/archive', { method: 'POST' });
+        if (!response.ok) {
+          actionButton.textContent = await response.text();
+          return;
+        }
+        location.reload();
+        return;
+      }
+      if (action === 'boost' && nodeId) {
+        actionButton.disabled = true;
+        actionButton.textContent = graphActionProgressText(action);
+        const post = await fetch('/api/idea/' + encodeURIComponent(nodeId) + '/boost', { method: 'POST' });
+        if (post.status === 409) {
+          actionButton.textContent = '已經在想了…';
+          return;
+        }
+        if (!post.ok) {
+          actionButton.textContent = await post.text();
+          actionButton.disabled = false;
+          return;
+        }
+        pollBoost(nodeId, actionButton);
+        return;
+      }
+      if (action === 'deliberate' && nodeId) {
+        actionButton.disabled = true;
+        actionButton.textContent = graphActionProgressText(action);
+        const post = await fetch('/api/deliberation', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ anchorNodeId: nodeId }),
+        });
+        if (post.status === 409) {
+          actionButton.textContent = '已經在想了…';
+          return;
+        }
+        if (!post.ok) {
+          actionButton.textContent = await post.text();
+          actionButton.disabled = false;
+          return;
+        }
+        // Existing deliberation polling will refresh page on completion.
         return;
       }
       if (action === 'copy-opencode-prompt') {
@@ -1304,19 +1508,23 @@ function switchTab(name) {
   }
 
   function nodeActionDisabledReason(actionId) {
+    if (actionId === 'boost') return '中心節點不可深化';
+    if (actionId === 'deliberate') return '中心節點不能當辯論主軸';
+    if (actionId === 'archive') return '中心節點不可冷凍';
     if (actionId === 'extend') return '任務節點已經是 handoff prompt';
     if (actionId === 'copy-opencode-prompt') return '這個節點沒有 prompt';
     if (actionId === 'find-relationships') return '任務節點不再展開關聯';
     if (actionId === 'mark-interesting') return '已保留給分身';
-    if (actionId === 'stop-exploring') return '中心節點不可隱藏';
     return '這個動作目前不可用';
   }
 
   function graphActionProgressText(actionId) {
+    if (actionId === 'boost') return '深化中...';
+    if (actionId === 'deliberate') return '辯論進行中...';
+    if (actionId === 'archive') return '冷凍中...';
     if (actionId === 'extend') return '延伸中...';
     if (actionId === 'find-relationships') return '找關聯中...';
     if (actionId === 'mark-interesting') return '標記中...';
-    if (actionId === 'stop-exploring') return '隱藏中...';
     return '處理中...';
   }
 
@@ -1339,16 +1547,39 @@ function switchTab(name) {
         hint.textContent = '';
       }
     }
+    const primaryIds = ['boost', 'deliberate', 'archive'];
+    const secondaryIds = ['extend', 'find-relationships', 'mark-interesting', 'copy-opencode-prompt'];
+    const primaryActionsHtml = (node.actions || []).filter((a) => primaryIds.indexOf(a.id) >= 0).map((action) => renderBrowserNodeAction(node.id, action)).join('');
+    const secondaryActionsHtml = (node.actions || []).filter((a) => secondaryIds.indexOf(a.id) >= 0).map((action) => renderBrowserNodeAction(node.id, action)).join('');
     const keywordHtml = node.keywords.length === 0 ? '<span class="muted">尚未抽到關鍵字</span>' : node.keywords.map((keyword) => '<span class="pill">' + htmlEscape(keyword) + '</span>').join('');
-    const connectedHtml = detail.connectedNodes.length === 0 ? '<p class="muted">目前沒有相連節點。</p>' : '<div class="workbench-meta">' + detail.connectedNodes.slice(0, 6).map((item) => '<span class="pill">' + htmlEscape(item.title) + '</span>').join('') + '</div>';
-    renderNodeActionBar(node);
+    const connectedHtml = detail.connectedNodes.length === 0 ? '<p class="muted">目前沒有相連節點。</p>' : '<div class="kw-strip">' + detail.connectedNodes.slice(0, 6).map((item) => '<span class="pill">' + htmlEscape(item.title) + '</span>').join('') + '</div>';
     const promptHtml = node.prompt ? '<details><summary>OpenCode prompt</summary><button type="button" class="secondary copy-prompt">複製 Prompt</button><span class="copy-status" aria-live="polite"></span><pre>' + htmlEscape(node.prompt) + '</pre></details>' : '';
     const evidenceHtml = node.thinking.evidence.length === 0 ? '<p class="muted">目前沒有證據。</p>' : '<ul class="radar-signals">' + node.thinking.evidence.slice(0, 4).map((item) => '<li>' + htmlEscape(item) + '</li>').join('') + '</ul>';
     const missingHtml = node.thinking.missingEvidence.length === 0 ? '<p class="muted">目前沒有明確缺口。</p>' : '<ul class="radar-signals">' + node.thinking.missingEvidence.slice(0, 4).map((item) => '<li>' + htmlEscape(item) + '</li>').join('') + '</ul>';
     const questionList = Array.isArray(node.thinking.questions) && node.thinking.questions.length ? node.thinking.questions : ['這個想法真正想解決的問題是什麼？'];
-    const questionHtml = '<div class="recommendation"><strong>分身正在問</strong><ul class="radar-signals">' + questionList.slice(0, 3).map((item) => '<li>' + htmlEscape(item) + '</li>').join('') + '</ul></div>';
+    const questionHtml = '<div class="recommendation"><strong>❓ 分身正在問</strong><ul class="radar-signals">' + questionList.slice(0, 3).map((item) => '<li>' + htmlEscape(item) + '</li>').join('') + '</ul></div>';
     const nextExplorationTag = node.thinking.nextExplorationAi ? '<span class="ai-tag">AI 改寫</span>' : '';
-    drawer.innerHTML = '<div class="recommendation"><strong>' + htmlEscape(node.title) + '</strong><div>' + htmlEscape(node.summary) + '</div><div class="muted">' + htmlEscape(node.type) + ' · ' + htmlEscape(node.confidence) + ' · ' + htmlEscape(node.source) + '</div></div>' + questionHtml + '<div class="trace-note"><strong>我怎麼理解它</strong><div>' + htmlEscape(node.thinking.understanding) + '</div><div class="muted">為什麼有關：' + htmlEscape(node.thinking.whyItMatters) + '</div><div class="muted">下一步：' + htmlEscape(node.thinking.nextExploration) + nextExplorationTag + '</div></div><div><strong>關鍵字</strong><div class="workbench-meta">' + keywordHtml + '</div></div><div><strong>相連節點</strong>' + connectedHtml + '</div><div><strong>證據</strong>' + evidenceHtml + '</div><div><strong>缺的證據</strong>' + missingHtml + '</div>' + promptHtml;
+    const detailMeta = htmlEscape(node.type) + ' · ' + htmlEscape(node.confidence) + ' · ' + htmlEscape(node.source) +
+      '<br>建立：' + htmlEscape(formatBrowserTime(node.createdAt)) + '　最近：' + htmlEscape(formatBrowserTime(node.updatedAt)) +
+      (typeof node.seenCount === 'number' ? '　觀察 ' + node.seenCount + ' 次' : '');
+    drawer.innerHTML =
+      '<div class="node-action-bar primary">' + primaryActionsHtml + '</div>' +
+      '<div class="recommendation"><strong>' + htmlEscape(node.title) + '</strong><div>' + htmlEscape(node.summary) + '</div><div class="kw-strip">' + keywordHtml + '</div></div>' +
+      '<div class="trace-note"><strong>💭 分身怎麼想這個</strong><div>' + htmlEscape(node.thinking.understanding) + '</div><div class="muted">為什麼有關：' + htmlEscape(node.thinking.whyItMatters) + '</div><div class="muted">下一步：' + htmlEscape(node.thinking.nextExploration) + nextExplorationTag + '</div></div>' +
+      questionHtml +
+      '<div><strong>🔗 相連節點</strong>' + connectedHtml + '</div>' +
+      '<div><strong>📎 證據</strong>' + evidenceHtml + '</div>' +
+      '<div><strong>🕳 缺的證據</strong>' + missingHtml + '</div>' +
+      '<details class="detail-collapse"><summary></summary><div class="detail-meta">' + detailMeta + '</div><div class="detail-actions">' + secondaryActionsHtml + '</div>' + promptHtml + '</details>';
+  }
+
+  function formatBrowserTime(iso) {
+    if (!iso) return '';
+    try {
+      return new Date(iso).toLocaleString('zh-Hant-TW', { timeZone: 'Asia/Taipei', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+    } catch (_e) {
+      return String(iso).slice(0, 16).replace('T', ' ');
+    }
   }
 
   async function refreshGraphInPlace(targetFocus) {
@@ -1579,12 +1810,29 @@ export function renderBrainTab(loopState: ObservationLoopState, graph?: IdeaGrap
 ${renderBrainFocus(graph)}
 ${renderBrainSignals(loopState)}
 ${deliberationState ? renderDeliberationCard(deliberationState) : ''}
+${renderFrozenVaultPanel()}
 ${deliberationState ? `<script>
 function triggerDeliberation(){var btn=document.getElementById('deliberation-btn'),status=document.getElementById('deliberation-status');if(!btn||btn.disabled)return;btn.disabled=true;btn.textContent='⏳ 辯論進行中…';if(status)status.textContent='辯論進行中，每 3 秒更新…';fetch('/api/deliberation',{method:'POST'}).then(function(r){if(r.status===409){if(status)status.textContent='已有辯論在進行中，請稍候';pollDeliberation();}else if(r.status===202){pollDeliberation();}else{if(status)status.textContent='啟動失敗：'+r.status;btn.disabled=false;btn.textContent='⚡ 強制思考';}}).catch(function(e){if(status)status.textContent='啟動失敗：'+String(e);btn.disabled=false;btn.textContent='⚡ 強制思考';});}
 function pollDeliberation(){setTimeout(function(){fetch('/api/deliberation/latest',{cache:'no-store'}).then(function(r){return r.json();}).then(function(d){updateDeliberationUI(d);}).catch(function(){pollDeliberation();});},3000);}
+function pollBoost(nodeId, button){setTimeout(function(){fetch('/api/idea/'+encodeURIComponent(nodeId)+'/boost-status',{cache:'no-store'}).then(function(r){return r.json();}).then(function(d){if(d.status==='running'){pollBoost(nodeId,button);}else{location.reload();}}).catch(function(){pollBoost(nodeId,button);});},3000);}
 function updateDeliberationUI(d){var btn=document.getElementById('deliberation-btn'),status=document.getElementById('deliberation-status');if(d.status==='running'){if(btn){btn.disabled=true;btn.textContent='⏳ 辯論進行中…';}if(status)status.textContent='辯論進行中，每 3 秒更新…';pollDeliberation();}else{if(btn){btn.disabled=false;btn.textContent='⚡ 強制思考';}if(status)status.textContent='';location.reload();}}
+function loadFrozenVault(){var panel=document.getElementById('frozen-vault-list');if(!panel)return;panel.textContent='讀取中…';fetch('/api/idea/archived',{cache:'no-store'}).then(function(r){return r.json();}).then(function(rows){var chip=document.getElementById('frozen-vault-chip-count');if(chip)chip.textContent=String(rows.length);if(rows.length===0){panel.innerHTML='<p class="muted">沒有冷凍的想法。</p>';return;}var html='';for(var i=0;i<rows.length;i++){var n=rows[i];var keywords=Array.isArray(n.keywords)?n.keywords.map(function(k){return '<span class="pill">'+k.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</span>';}).join(''):'';var when=n.archivedAt?new Date(n.archivedAt).toLocaleString('zh-Hant-TW',{timeZone:'Asia/Taipei',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'';var seen=typeof n.seenCount==='number'?'　觀察 '+n.seenCount+' 次':'';html+='<div class="vault-row" data-id="'+encodeURIComponent(n.id)+'"><strong>🧊 '+String(n.title).replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</strong><div class="kw-strip">'+keywords+'</div><div class="muted">冷凍於 '+when+seen+'</div><div class="vault-actions"><button type="button" class="secondary vault-unarchive" data-id="'+encodeURIComponent(n.id)+'">🔥 解凍</button><button type="button" class="secondary vault-delete" data-id="'+encodeURIComponent(n.id)+'">🗑 永久刪除</button></div></div>';}panel.innerHTML=html;}).catch(function(){panel.textContent='讀取失敗。';});}
+function toggleFrozenVault(){var panel=document.getElementById('frozen-vault-panel');if(!panel)return;var hidden=panel.hidden;panel.hidden=!hidden;if(hidden)loadFrozenVault();}
+document.addEventListener('click',function(ev){var t=ev.target;if(!(t instanceof HTMLElement))return;if(t.closest('#frozen-vault-chip')){ev.preventDefault();toggleFrozenVault();return;}var un=t.closest('.vault-unarchive');if(un){ev.preventDefault();var id=un.getAttribute('data-id');un.disabled=true;un.textContent='解凍中…';fetch('/api/idea/'+id+'/unarchive',{method:'POST'}).then(function(r){if(r.ok){var row=un.closest('.vault-row');if(row)row.remove();location.reload();}else{un.textContent='解凍失敗';}});return;}var del=t.closest('.vault-delete');if(del){ev.preventDefault();var did=del.getAttribute('data-id');if(!confirm('永久刪除這個想法？不會再回到冷凍庫。'))return;del.disabled=true;del.textContent='刪除中…';fetch('/api/idea/'+did,{method:'DELETE'}).then(function(r){if(r.ok){var row=del.closest('.vault-row');if(row)row.remove();loadFrozenVault();}else{del.textContent='刪除失敗';}});return;}});
+loadFrozenVault();
 ${deliberationState.status === 'running' ? 'pollDeliberation();' : ''}
 </script>` : ''}`
+}
+
+function renderFrozenVaultPanel(): string {
+  return `
+<div class="cp-card">
+  <div class="sys-label">/// Frozen Vault</div>
+  <button type="button" id="frozen-vault-chip" class="vault-chip">❄ 冷凍庫 (<span id="frozen-vault-chip-count">0</span>)</button>
+  <section id="frozen-vault-panel" hidden style="margin-top:12px">
+    <div id="frozen-vault-list"><p class="muted">讀取中…</p></div>
+  </section>
+</div>`
 }
 
 function renderDeliberationCard(state: DeliberationState): string {
@@ -2084,38 +2332,49 @@ function renderSelectedNode(node: IdeaGraphNode, graph: IdeaGraph): string {
     .slice(0, 5)
     .map((edge) => graph.nodes.find((item) => item.id === (edge.from === node.id ? edge.to : edge.from)))
     .filter((item): item is IdeaGraphNode => Boolean(item))
-  return `<div class="recommendation">
-    <strong>${escapeHtml(node.title)}</strong>
-    <div>${escapeHtml(node.summary)}</div>
-    <div class="muted">${escapeHtml(node.type)} · ${escapeHtml(node.confidence)} · ${escapeHtml(node.source)}</div>
+  const primaryActions = node.actions.filter((action) => action.id === 'boost' || action.id === 'deliberate' || action.id === 'archive')
+  const secondaryActions = node.actions.filter((action) => action.id === 'extend' || action.id === 'find-relationships' || action.id === 'mark-interesting' || action.id === 'copy-opencode-prompt')
+  return `<div class="node-action-bar primary">
+    ${primaryActions.map((action) => renderNodeAction(node.id, action)).join('')}
   </div>
   <div class="recommendation">
-    <strong>分身正在問</strong>
-    <ul class="radar-signals">${(node.thinking.questions?.length ? node.thinking.questions : ['這個想法真正想解決的問題是什麼？']).slice(0, 3).map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+    <strong>${escapeHtml(node.title)}</strong>
+    <div>${escapeHtml(node.summary)}</div>
+    <div class="kw-strip">${node.keywords.length === 0 ? '<span class="muted">尚未抽到關鍵字</span>' : node.keywords.map((keyword) => `<span class="pill">${escapeHtml(keyword)}</span>`).join('')}</div>
   </div>
   <div class="trace-note">
-    <strong>我怎麼理解它</strong>
+    <strong>💭 分身怎麼想這個</strong>
     <div>${escapeHtml(node.thinking.understanding)}</div>
     <div class="muted">為什麼有關：${escapeHtml(node.thinking.whyItMatters)}</div>
     <div class="muted">下一步：${escapeHtml(node.thinking.nextExploration)}</div>
   </div>
-  <div>
-    <strong>關鍵字</strong>
-    <div class="workbench-meta">${node.keywords.length === 0 ? '<span class="muted">尚未抽到關鍵字</span>' : node.keywords.map((keyword) => `<span class="pill">${escapeHtml(keyword)}</span>`).join('')}</div>
+  <div class="recommendation">
+    <strong>❓ 分身正在問</strong>
+    <ul class="radar-signals">${(node.thinking.questions?.length ? node.thinking.questions : ['這個想法真正想解決的問題是什麼？']).slice(0, 3).map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
   </div>
   <div>
-    <strong>相連節點</strong>
-    ${connected.length === 0 ? '<p class="muted">目前沒有相連節點。</p>' : `<div class="workbench-meta">${connected.map((item) => `<span class="pill">${escapeHtml(item.title)}</span>`).join('')}</div>`}
+    <strong>🔗 相連節點</strong>
+    ${connected.length === 0 ? '<p class="muted">目前沒有相連節點。</p>' : `<div class="kw-strip">${connected.map((item) => `<span class="pill">${escapeHtml(item.title)}</span>`).join('')}</div>`}
   </div>
   <div>
-    <strong>證據</strong>
+    <strong>📎 證據</strong>
     ${node.thinking.evidence.length === 0 ? '<p class="muted">目前沒有證據。</p>' : `<ul class="radar-signals">${node.thinking.evidence.slice(0, 4).map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`}
   </div>
   <div>
-    <strong>缺的證據</strong>
+    <strong>🕳 缺的證據</strong>
     ${node.thinking.missingEvidence.length === 0 ? '<p class="muted">目前沒有明確缺口。</p>' : `<ul class="radar-signals">${node.thinking.missingEvidence.slice(0, 4).map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`}
   </div>
-  ${node.prompt ? `<details><summary>OpenCode prompt</summary><button type="button" class="secondary copy-prompt">複製 Prompt</button><span class="copy-status" aria-live="polite"></span><pre>${escapeHtml(node.prompt)}</pre></details>` : ''}`
+  <details class="detail-collapse">
+    <summary></summary>
+    <div class="detail-meta">
+      ${escapeHtml(node.type)} · ${escapeHtml(node.confidence)} · ${escapeHtml(node.source)}<br>
+      建立：${escapeHtml(formatTaipeiTime(node.createdAt))}　最近：${escapeHtml(formatTaipeiTime(node.updatedAt))}${typeof node.seenCount === 'number' ? `　觀察 ${node.seenCount} 次` : ''}
+    </div>
+    <div class="detail-actions">
+      ${secondaryActions.map((action) => renderNodeAction(node.id, action)).join('')}
+    </div>
+    ${node.prompt ? `<details><summary>OpenCode prompt</summary><button type="button" class="secondary copy-prompt">複製 Prompt</button><span class="copy-status" aria-live="polite"></span><pre>${escapeHtml(node.prompt)}</pre></details>` : ''}
+  </details>`
 }
 
 function renderNodeAction(nodeId: string, action: IdeaGraphNode['actions'][number]): string {
@@ -2126,11 +2385,13 @@ function renderNodeAction(nodeId: string, action: IdeaGraphNode['actions'][numbe
 }
 
 function nodeActionDisabledReason(actionId: IdeaGraphNode['actions'][number]['id']): string {
+  if (actionId === 'boost') return '中心節點不可深化'
+  if (actionId === 'deliberate') return '中心節點不能當辯論主軸'
+  if (actionId === 'archive') return '中心節點不可冷凍'
   if (actionId === 'extend') return '任務節點已經是 handoff prompt'
   if (actionId === 'copy-opencode-prompt') return '這個節點沒有 prompt'
   if (actionId === 'find-relationships') return '任務節點不再展開關聯'
   if (actionId === 'mark-interesting') return '已保留給分身'
-  if (actionId === 'stop-exploring') return '中心節點不可隱藏'
   return '這個動作目前不可用'
 }
 

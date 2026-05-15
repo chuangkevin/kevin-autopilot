@@ -11,14 +11,20 @@ import {
 } from './backlog.js'
 import { createIdea } from './ideas.js'
 import {
+  ArchiveCenterNodeError,
+  archiveIdeaGraphNode,
+  DeleteCenterNodeError,
+  deleteIdeaGraphNode,
   extendIdeaGraphNode,
   extractIdeaKeywords,
   findIdeaGraphNodeRelationships,
+  getActiveNodes,
   getIdeaGraph,
   getIdeaGraphNodeDetail,
+  listArchivedNodes,
   markIdeaGraphNodeInteresting,
   migrateExtensionDuplicates,
-  stopExploringIdeaGraphNode,
+  unarchiveIdeaGraphNode,
 } from './idea-graph.js'
 import { observe } from './observer.js'
 import type { AutopilotConfig } from './types.js'
@@ -220,10 +226,65 @@ test('graph node actions can mark interesting, find relationships, create prompt
     assert.ok((related?.connectedNodes.length ?? 0) > 0)
     assert.equal(related?.edges.some((edge) => edge.source === `relationship:${ideaNode.id}`), true)
 
-    const hidden = await stopExploringIdeaGraphNode(config, report, [ideaA, ideaB], ideaNode.id)
-    assert.equal(hidden?.node.ignored, true)
+    const archived = await archiveIdeaGraphNode(config, report, [ideaA, ideaB], ideaNode.id)
+    assert.equal(archived?.node.archived, true)
+    assert.equal(typeof archived?.node.archivedAt, 'string')
     const refreshed = await getIdeaGraph(config, report, [ideaA, ideaB])
     assert.equal(refreshed.nodes.some((node) => node.id === ideaNode.id), false)
+    const restored = await unarchiveIdeaGraphNode(config, report, [ideaA, ideaB], ideaNode.id)
+    assert.equal(restored?.node.archived ?? false, false)
+    assert.equal(restored?.node.archivedAt ?? null, null)
+    const reappeared = await getIdeaGraph(config, report, [ideaA, ideaB])
+    assert.equal(reappeared.nodes.some((node) => node.id === ideaNode.id), true)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('archive refuses center node, getActiveNodes filters archived, delete removes incident edges', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-graph-archive-'))
+  const config: AutopilotConfig = {
+    environment: 'test',
+    dataDir,
+    ruleSources: [],
+    repositories: [{ name: 'kevin-autopilot', path: join(dataDir, 'missing-autopilot') }],
+    services: [],
+  }
+  try {
+    const idea = await createIdea(config, 'archive test idea agent cockpit prompt')
+    const report = await observe(config)
+    const graph = await getIdeaGraph(config, report, [idea])
+    const center = graph.nodes.find((node) => node.id === graph.centerNodeId)
+    assert.ok(center)
+    await assert.rejects(
+      () => archiveIdeaGraphNode(config, report, [idea], center.id),
+      ArchiveCenterNodeError,
+    )
+    await assert.rejects(
+      () => deleteIdeaGraphNode(config, center.id),
+      DeleteCenterNodeError,
+    )
+
+    const target = graph.nodes.find((node) => node.id !== graph.centerNodeId)
+    assert.ok(target)
+    await archiveIdeaGraphNode(config, report, [idea], target.id)
+    const active = getActiveNodes(await getIdeaGraph(config, report, [idea]))
+    assert.equal(active.some((node) => node.id === target.id), false)
+    const archivedList = await listArchivedNodes(config)
+    assert.equal(archivedList.some((node) => node.id === target.id), true)
+
+    // delete-then-delete is idempotent and returns false on the second call.
+    // Note: delete only removes from storage; the projection layer (createProjectedGraph)
+    // may regenerate the node from underlying ideas / candidates / repositories on next
+    // getIdeaGraph call. The vault contract is: after delete, the node is no longer
+    // archived (so it's not in the vault). Permanent removal of an underlying source
+    // is out of scope for this operation.
+    const deleted = await deleteIdeaGraphNode(config, target.id)
+    assert.equal(deleted, true)
+    const deletedAgain = await deleteIdeaGraphNode(config, target.id)
+    assert.equal(deletedAgain, false)
+    const archivedAfterDelete = await listArchivedNodes(config)
+    assert.equal(archivedAfterDelete.some((node) => node.id === target.id), false)
   } finally {
     await rm(dataDir, { recursive: true, force: true })
   }
@@ -381,7 +442,7 @@ test('graph node actions only mutate Autopilot-owned graph metadata', async () =
     const before = await snapshotFiles(dataDir)
     await markIdeaGraphNodeInteresting(config, report, [idea], ideaNode.id)
     await findIdeaGraphNodeRelationships(config, report, [idea], ideaNode.id)
-    await stopExploringIdeaGraphNode(config, report, [idea], ideaNode.id)
+    await archiveIdeaGraphNode(config, report, [idea], ideaNode.id)
     const after = await snapshotFiles(dataDir)
 
     assert.deepEqual(changedFiles(before, after), ['idea-graph.json'])

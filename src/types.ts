@@ -409,7 +409,7 @@ export interface IdeaGraphThinkingSummary {
 }
 
 export interface IdeaGraphAction {
-  id: 'extend' | 'find-relationships' | 'copy-opencode-prompt' | 'mark-interesting' | 'stop-exploring'
+  id: 'extend' | 'find-relationships' | 'copy-opencode-prompt' | 'mark-interesting' | 'boost' | 'deliberate' | 'archive'
   label: string
   description: string
   enabled: boolean
@@ -432,6 +432,7 @@ export interface IdeaGraphNode {
   interesting?: boolean
   interestingAt?: string
   archived?: boolean
+  archivedAt?: string | null
   ignored?: boolean
   prompt?: string
   seenCount?: number
@@ -559,12 +560,18 @@ export interface DeliberationRecord {
   synthesis: DeliberationSynthesis
   model: string
   tokenUsage: { input: number; output: number }
+  anchorNodeId?: string | null
 }
 
 export interface DeliberationState {
   status: 'idle' | 'running' | 'done' | 'error'
   record: DeliberationRecord | null
   error?: string
+}
+
+export interface BoostState {
+  status: 'idle' | 'running'
+  updatedAt: string | null
 }
 
 export interface KeyStatusSummary {

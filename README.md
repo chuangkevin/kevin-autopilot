@@ -354,6 +354,23 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
+v0.16.0 redesigns the 分身 tab selected-node card and adds three trusted-gated
+per-node actions. On mobile, keywords now sit directly under the title in an
+accent-coloured `.kw-strip` that wraps and never ellipsizes; the full
+discussion (`thinking.*`) renders without truncation because the broken
+`.node-drawer { max-height: 24dvh }` cap has been removed and `.cockpit-panel`
+now fills `calc(100dvh - var(--cy-h, 48dvh) - 160px)` below the graph with
+internal scroll. The card opens with a sticky action bar carrying ⚡ 多想一點
+(`POST /api/idea/:id/boost` — single-node Gemini enrichment via a per-node
+concurrency lock), 🧠 深度辯論 (`POST /api/deliberation { anchorNodeId }` —
+focused multi-persona debate whose step 0 re-runs the same boost path so the
+anchor is always enriched first), and ❄ 先不要想 (`POST /api/idea/:id/archive` —
+hidden from the default graph and from observation/deliberation candidate
+pools). Type/confidence/source meta and the legacy extend/find-relationships/
+mark-interesting/copy-prompt actions collapse into `🔬 詳情 ▾`. A new Frozen
+Vault card lists archived nodes and offers 🔥 解凍 (`POST .../unarchive`) and
+🗑 永久刪除 (`DELETE /api/idea/:id`, with `confirm()`). All 132 tests pass.
+
 v0.15.0 adds the multi-agent deliberation engine (分身辯論) and force-think trigger:
 Tap ⚡ 強制思考 in the 分身 tab to instantly start one deliberation cycle without
 waiting for the background timer. The engine dynamically picks 2–4 AI personas,
