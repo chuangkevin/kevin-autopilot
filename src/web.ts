@@ -1259,12 +1259,12 @@ function switchTab(name) {
       const loop = await response.json();
       if (status) {
         status.textContent = loop.running
-          ? '分身正在背景觀察，完成後會自動刷新腦圖。'
-          : '頁面每分鐘會檢查分身腦圖是否長出新節點；有新圖會自動刷新。';
+          ? '分身正在背景觀察中…'
+          : (loop.lastGraphAt && loop.lastGraphAt !== initialLoopData.lastGraphAt)
+            ? '腦圖已有新節點，重新整理頁面可載入'
+            : '背景觀察待命中';
       }
-      if (loop.lastGraphAt && loop.lastGraphAt !== initialLoopData.lastGraphAt) {
-        location.reload();
-      }
+      // No more auto-reload — refreshes destroy user interaction state.
     } catch {
       if (status) status.textContent = '暫時讀不到背景狀態；下一分鐘會再試。';
     }
@@ -1541,7 +1541,38 @@ function switchTab(name) {
     return '處理中...';
   }
 
+  function renderFullSelectedNodeCard(detail) {
+    if (!detail || !detail.node) return '';
+    const node = detail.node;
+    const primaryIds = ['boost', 'deliberate', 'archive'];
+    const secondaryIds = ['extend', 'find-relationships', 'mark-interesting', 'copy-opencode-prompt'];
+    const primaryActionsHtml = (node.actions || []).filter((a) => primaryIds.indexOf(a.id) >= 0).map((action) => renderBrowserNodeAction(node.id, action)).join('');
+    const secondaryActionsHtml = (node.actions || []).filter((a) => secondaryIds.indexOf(a.id) >= 0).map((action) => renderBrowserNodeAction(node.id, action)).join('');
+    const keywordHtml = (node.keywords || []).length === 0 ? '<span class="muted">尚未抽到關鍵字</span>' : node.keywords.map((keyword) => '<span class="pill">' + htmlEscape(keyword) + '</span>').join('');
+    const connectedHtml = (detail.connectedNodes || []).length === 0 ? '<p class="muted">目前沒有相連節點。</p>' : '<div class="kw-strip">' + detail.connectedNodes.slice(0, 6).map((item) => '<span class="pill">' + htmlEscape(item.title) + '</span>').join('') + '</div>';
+    const promptHtml = node.prompt ? '<details><summary>OpenCode prompt</summary><button type="button" class="secondary copy-prompt">複製 Prompt</button><span class="copy-status" aria-live="polite"></span><pre>' + htmlEscape(node.prompt) + '</pre></details>' : '';
+    const evidenceHtml = (node.thinking.evidence || []).length === 0 ? '<p class="muted">目前沒有證據。</p>' : '<ul class="radar-signals">' + node.thinking.evidence.slice(0, 4).map((item) => '<li>' + htmlEscape(item) + '</li>').join('') + '</ul>';
+    const missingHtml = (node.thinking.missingEvidence || []).length === 0 ? '<p class="muted">目前沒有明確缺口。</p>' : '<ul class="radar-signals">' + node.thinking.missingEvidence.slice(0, 4).map((item) => '<li>' + htmlEscape(item) + '</li>').join('') + '</ul>';
+    const questionList = Array.isArray(node.thinking.questions) && node.thinking.questions.length ? node.thinking.questions : ['這個想法真正想解決的問題是什麼？'];
+    const questionHtml = '<div class="recommendation"><strong>❓ 分身正在問</strong><ul class="radar-signals">' + questionList.slice(0, 3).map((item) => '<li>' + htmlEscape(item) + '</li>').join('') + '</ul></div>';
+    const nextExplorationTag = node.thinking.nextExplorationAi ? '<span class="ai-tag">AI 改寫</span>' : '';
+    const detailMeta = htmlEscape(node.type) + ' · ' + htmlEscape(node.confidence) + ' · ' + htmlEscape(node.source) +
+      '<br>建立：' + htmlEscape(formatBrowserTime(node.createdAt)) + '　最近：' + htmlEscape(formatBrowserTime(node.updatedAt)) +
+      (typeof node.seenCount === 'number' ? '　觀察 ' + node.seenCount + ' 次' : '');
+    return (
+      '<div class="node-action-bar primary">' + primaryActionsHtml + '</div>' +
+      '<div class="recommendation"><strong>' + htmlEscape(node.title) + '</strong><div>' + htmlEscape(node.summary) + '</div><div class="kw-strip">' + keywordHtml + '</div></div>' +
+      '<div class="trace-note"><strong>💭 分身怎麼想這個</strong><div>' + htmlEscape(node.thinking.understanding) + '</div><div class="muted">為什麼有關：' + htmlEscape(node.thinking.whyItMatters) + '</div><div class="muted">下一步：' + htmlEscape(node.thinking.nextExploration) + nextExplorationTag + '</div></div>' +
+      questionHtml +
+      '<div><strong>🔗 相連節點</strong>' + connectedHtml + '</div>' +
+      '<div><strong>📎 證據</strong>' + evidenceHtml + '</div>' +
+      '<div><strong>🕳 缺的證據</strong>' + missingHtml + '</div>' +
+      '<details class="detail-collapse"><summary></summary><div class="detail-meta">' + detailMeta + '</div><div class="detail-actions">' + secondaryActionsHtml + '</div>' + promptHtml + '</details>'
+    );
+  }
+
   function renderNodeDrawer(detail) {
+    // Fallback path for legacy cyberpunk cockpit (which had #node-drawer).
     const drawer = document.getElementById('node-drawer');
     const thought = document.getElementById('node-understanding');
     const title = document.getElementById('node-current-title');
@@ -1827,8 +1858,9 @@ ${renderFrozenVaultPanel()}
 ${deliberationState ? `<script>
 function triggerDeliberation(){var btn=document.getElementById('deliberation-btn'),status=document.getElementById('deliberation-status');if(!btn||btn.disabled)return;btn.disabled=true;btn.textContent='⏳ 辯論進行中…';if(status)status.textContent='辯論進行中，每 3 秒更新…';fetch('/api/deliberation',{method:'POST'}).then(function(r){if(r.status===409){if(status)status.textContent='已有辯論在進行中，請稍候';pollDeliberation();}else if(r.status===202){pollDeliberation();}else{if(status)status.textContent='啟動失敗：'+r.status;btn.disabled=false;btn.textContent='⚡ 強制思考';}}).catch(function(e){if(status)status.textContent='啟動失敗：'+String(e);btn.disabled=false;btn.textContent='⚡ 強制思考';});}
 function pollDeliberation(){setTimeout(function(){fetch('/api/deliberation/latest',{cache:'no-store'}).then(function(r){return r.json();}).then(function(d){updateDeliberationUI(d);}).catch(function(){pollDeliberation();});},3000);}
-function pollBoost(nodeId, button){setTimeout(function(){fetch('/api/idea/'+encodeURIComponent(nodeId)+'/boost-status',{cache:'no-store'}).then(function(r){return r.json();}).then(function(d){if(d.status==='running'){pollBoost(nodeId,button);}else{location.reload();}}).catch(function(){pollBoost(nodeId,button);});},3000);}
-function updateDeliberationUI(d){var btn=document.getElementById('deliberation-btn'),status=document.getElementById('deliberation-status');if(d.status==='running'){if(btn){btn.disabled=true;btn.textContent='⏳ 辯論進行中…';}if(status)status.textContent='辯論進行中，每 3 秒更新…';pollDeliberation();}else{if(btn){btn.disabled=false;btn.textContent='⚡ 強制思考';}if(status)status.textContent='';location.reload();}}
+function pollBoost(nodeId, button){setTimeout(function(){fetch('/api/idea/'+encodeURIComponent(nodeId)+'/boost-status',{cache:'no-store'}).then(function(r){return r.json();}).then(function(d){if(d.status==='running'){pollBoost(nodeId,button);}else{boostDone(nodeId,button);}}).catch(function(){pollBoost(nodeId,button);});},3000);}
+function boostDone(nodeId,button){if(button){button.disabled=false;button.textContent='⚡ 多想一點';}fetch('/api/graph/nodes/'+encodeURIComponent(nodeId)).then(function(r){return r.json();}).then(function(data){if(!data||!data.node)return;if(typeof renderFullSelectedNodeCard==='function'){var html=renderFullSelectedNodeCard(data);document.querySelectorAll('.graph-tab-drawer-content').forEach(function(d){d.innerHTML=html;});}if(typeof renderNodeDrawer==='function'){try{renderNodeDrawer(data);}catch(e){console.error('boostDone legacy render failed:',e);}}}).catch(function(e){console.error('boostDone fetch failed:',e);});}
+function updateDeliberationUI(d){var btn=document.getElementById('deliberation-btn'),status=document.getElementById('deliberation-status');if(d.status==='running'){if(btn){btn.disabled=true;btn.textContent='⏳ 辯論進行中…';}if(status)status.textContent='辯論進行中，每 3 秒更新…';pollDeliberation();}else{if(btn){btn.disabled=false;btn.textContent='⚡ 強制思考';}if(status)status.innerHTML='辯論完成 — <a href="javascript:location.reload()" style="color:var(--accent)">點此查看結果</a>';}}
 function loadFrozenVault(){var panel=document.getElementById('frozen-vault-list');if(!panel)return;panel.textContent='讀取中…';fetch('/api/idea/archived',{cache:'no-store'}).then(function(r){return r.json();}).then(function(rows){var chip=document.getElementById('frozen-vault-chip-count');if(chip)chip.textContent=String(rows.length);if(rows.length===0){panel.innerHTML='<p class="muted">沒有冷凍的想法。</p>';return;}var html='';for(var i=0;i<rows.length;i++){var n=rows[i];var keywords=Array.isArray(n.keywords)?n.keywords.map(function(k){return '<span class="pill">'+k.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</span>';}).join(''):'';var when=n.archivedAt?new Date(n.archivedAt).toLocaleString('zh-Hant-TW',{timeZone:'Asia/Taipei',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'';var seen=typeof n.seenCount==='number'?'　觀察 '+n.seenCount+' 次':'';html+='<div class="vault-row" data-id="'+encodeURIComponent(n.id)+'"><strong>🧊 '+String(n.title).replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</strong><div class="kw-strip">'+keywords+'</div><div class="muted">冷凍於 '+when+seen+'</div><div class="vault-actions"><button type="button" class="secondary vault-unarchive" data-id="'+encodeURIComponent(n.id)+'">🔥 解凍</button><button type="button" class="secondary vault-delete" data-id="'+encodeURIComponent(n.id)+'">🗑 永久刪除</button></div></div>';}panel.innerHTML=html;}).catch(function(){panel.textContent='讀取失敗。';});}
 function toggleFrozenVault(){var panel=document.getElementById('frozen-vault-panel');if(!panel)return;var hidden=panel.hidden;panel.hidden=!hidden;if(hidden)loadFrozenVault();}
 document.addEventListener('click',function(ev){var t=ev.target;if(!(t instanceof HTMLElement))return;if(t.closest('#frozen-vault-chip')){ev.preventDefault();toggleFrozenVault();return;}var un=t.closest('.vault-unarchive');if(un){ev.preventDefault();var id=un.getAttribute('data-id');un.disabled=true;un.textContent='解凍中…';fetch('/api/idea/'+id+'/unarchive',{method:'POST'}).then(function(r){if(r.ok){var row=un.closest('.vault-row');if(row)row.remove();location.reload();}else{un.textContent='解凍失敗';}});return;}var del=t.closest('.vault-delete');if(del){ev.preventDefault();var did=del.getAttribute('data-id');if(!confirm('永久刪除這個想法？不會再回到冷凍庫。'))return;del.disabled=true;del.textContent='刪除中…';fetch('/api/idea/'+did,{method:'DELETE'}).then(function(r){if(r.ok){var row=del.closest('.vault-row');if(row)row.remove();loadFrozenVault();}else{del.textContent='刪除失敗';}});return;}});
@@ -1978,9 +2010,9 @@ function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): stri
   const firstNode = graph.nodes.find((node) => node.id === graph.centerNodeId) ?? graph.nodes[0]
   return `
 <div class="cy-container" data-center-node="${escapeHtml(graph.centerNodeId ?? '')}"></div>
-<div class="node-drawer" id="node-drawer" style="display:${firstNode ? 'block' : 'none'}">
+<div class="node-drawer graph-tab-drawer" style="display:${firstNode ? 'block' : 'none'}">
   <div class="sys-label">/// SELECTED NODE</div>
-  <div id="node-drawer-content">
+  <div class="graph-tab-drawer-content">
     ${firstNode ? `<div style="color:var(--accent);font-weight:bold;margin-bottom:4px">${escapeHtml(firstNode.title)}</div><div class="muted" style="font-size:10px">${graph.edges.filter((e) => e.from === firstNode.id || e.to === firstNode.id).length} 個關聯</div>` : ''}
   </div>
 </div>
@@ -2007,11 +2039,11 @@ function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): stri
     var cid = g.centerNodeId;
     var compact = window.matchMedia && window.matchMedia('(max-width: 520px)').matches;
     (g.nodes || []).forEach(function(node) {
+      // Hard cap so label wraps into ~2 short Chinese lines and stays inside the bubble.
+      var maxChars = node.id === cid ? (compact ? 12 : 12) : (compact ? 10 : 12);
       els.push({ data: {
         id: node.id,
-        // Send full title; Cytoscape text-wrap:'ellipsis' handles fit-to-width on peripherals.
-        // Center node uses text-wrap:'wrap' so we hard-cap its title length so it stays inside.
-        label: node.id === cid ? truncateLabel(node.title, compact ? 18 : 14) : node.title,
+        label: truncateLabel(node.title, maxChars),
         interesting: node.interesting ? true : undefined,
         ignored: (node.ignored || node.archived) ? true : undefined,
         isCenter: node.id === cid ? true : undefined,
@@ -2031,10 +2063,10 @@ function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): stri
 
   function getCyStyle() {
     var compact = window.matchMedia && window.matchMedia('(max-width: 520px)').matches;
-    var nodeW = compact ? 96 : 110;
-    var nodeH = compact ? 56 : 60;
+    var nodeW = compact ? 92 : 100;
+    var nodeH = compact ? 54 : 56;
     var nodeFs = compact ? 9 : 10;
-    var nodePad = 6;
+    var nodePad = 5;
     return [
       { selector: 'node', style: {
         'background-color': 'rgba(5,5,5,0.9)', 'border-color': 'rgba(0,255,255,0.5)',
@@ -2042,7 +2074,7 @@ function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): stri
         'font-family': 'Courier New, monospace', 'font-size': nodeFs,
         'text-valign': 'center', 'text-halign': 'center',
         'width': nodeW, 'height': nodeH,
-        'text-wrap': 'ellipsis',
+        'text-wrap': 'wrap',
         'text-max-width': nodeW - nodePad * 2,
         'shape': 'round-rectangle',
       }},
@@ -2050,11 +2082,11 @@ function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): stri
         'border-color': 'rgba(255,0,255,0.7)', 'color': 'rgba(255,0,255,0.95)', 'border-width': 2.5,
       }},
       { selector: 'node[?isCenter]', style: {
-        'width': compact ? 130 : 150, 'height': compact ? 78 : 84,
+        'width': compact ? 110 : 124, 'height': compact ? 62 : 66,
         'border-color': 'rgba(0,255,255,0.9)', 'color': 'rgba(0,255,255,1)',
-        'font-size': compact ? 12 : 13, 'font-weight': 'bold', 'border-width': 2.5,
+        'font-size': compact ? 11 : 12, 'font-weight': 'bold', 'border-width': 2.5,
         'text-wrap': 'wrap',
-        'text-max-width': compact ? 118 : 138,
+        'text-max-width': compact ? 100 : 114,
       }},
       { selector: 'node[?ignored]', style: {
         'opacity': 0.35, 'border-color': 'rgba(100,100,100,0.4)', 'color': 'rgba(150,150,150,0.6)',
@@ -2122,21 +2154,41 @@ function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): stri
       var nodeId = event.target.id();
       window._cyInstances.forEach(function(inst) { inst.nodes().removeClass('cy-selected'); });
       event.target.addClass('cy-selected');
-      var drawer = document.getElementById('node-drawer');
-      var drawerContent = document.getElementById('node-drawer-content');
-      if (drawer) drawer.style.display = 'block';
-      if (drawerContent) drawerContent.textContent = '載入中…';
+      var graphDrawers = document.querySelectorAll('.graph-tab-drawer');
+      var graphDrawerContents = document.querySelectorAll('.graph-tab-drawer-content');
+      graphDrawers.forEach(function(d) { d.style.display = 'block'; });
+      graphDrawerContents.forEach(function(d) { d.textContent = '載入中…'; });
       fetch('/api/graph/nodes/' + encodeURIComponent(nodeId))
-        .then(function(r) { return r.json(); })
-        .then(function(data) { renderNodeDrawer(data); })
-        .catch(function() { if (drawerContent) drawerContent.textContent = '載入失敗'; });
+        .then(function(r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        })
+        .then(function(data) {
+          if (!data || !data.node) return;
+          // Replace EVERY graph-tab drawer (mobile-panels + desktop-layout both render one).
+          if (typeof renderFullSelectedNodeCard === 'function') {
+            var html = renderFullSelectedNodeCard(data);
+            graphDrawerContents.forEach(function(d) { d.innerHTML = html; });
+          } else {
+            // Fallback: simple summary
+            graphDrawerContents.forEach(function(d) {
+              d.innerHTML =
+                '<div style="color:var(--accent);font-weight:bold;margin-bottom:4px">' +
+                (data.node.title || '').replace(/[&<>]/g, function(c) { return c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;'; }) +
+                '</div><div class="muted" style="font-size:10px">' + ((data.edges && data.edges.length) || 0) + ' 個關聯</div>';
+            });
+          }
+        })
+        .catch(function(err) {
+          console.error('fetch node detail failed:', err);
+          graphDrawerContents.forEach(function(d) { d.textContent = '載入失敗：' + (err && err.message ? err.message : String(err)); });
+        });
     });
 
     cy.on('tap', function(event) {
       if (event.target === cy) {
         window._cyInstances.forEach(function(inst) { inst.nodes().removeClass('cy-selected'); });
-        var drawer = document.getElementById('node-drawer');
-        if (drawer) drawer.style.display = 'none';
+        document.querySelectorAll('.graph-tab-drawer').forEach(function(d) { d.style.display = 'none'; });
       }
     });
   }
