@@ -805,6 +805,8 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
   z-index: 50;
 }
 .cp-title { font-size: 13px; font-weight: bold; color: var(--accent); text-shadow: 0 0 8px rgba(0,255,255,0.5); letter-spacing: 0.1em; text-transform: uppercase; margin: 0; }
+.cp-title-group { display: inline-flex; align-items: baseline; gap: 8px; }
+.cp-version { font-size: 11px; color: rgba(0,255,255,0.55); font-weight: 600; letter-spacing: 0.04em; font-family: ui-monospace, "Cascadia Code", monospace; }
 .cp-settings-link { font-size: 10px; color: rgba(0,255,255,0.5); border: 1px solid var(--accent-border); padding: 3px 8px; border-radius: 4px; text-decoration: none; letter-spacing: 0.05em; }
 .cp-settings-link:hover { color: var(--accent); border-color: var(--accent); }
 
@@ -1105,7 +1107,10 @@ summary { cursor: pointer; color: #bfdbfe; font-weight: 700; }
 <body>
 <main>
   <header class="cp-header">
-    <h1 class="cp-title">Kevin Autopilot</h1>
+    <div class="cp-title-group">
+      <h1 class="cp-title">Kevin Autopilot</h1>
+      <span class="cp-version" title="App version">v${escapeHtml(APP_VERSION)}</span>
+    </div>
     <a class="cp-settings-link" href="/settings">SYS ⚙</a>
   </header>
 
