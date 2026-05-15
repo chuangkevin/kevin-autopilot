@@ -938,11 +938,19 @@ button, a.button { cursor: pointer; }
 
 /* Legacy classes kept for existing render helpers */
 .cockpit-panel { max-height: clamp(520px, 62vh, 720px); overflow-y: auto; overflow-x: hidden; touch-action: pan-y; }
-.node-action-bar.primary { position: sticky; top: 0; z-index: 2; background: rgba(11,9,7,0.92); backdrop-filter: blur(6px); margin: 0 -16px 12px; padding: 8px 16px; display: flex; flex-wrap: wrap; gap: 8px; border-bottom: 1px solid rgba(245,234,215,0.08); }
-.kw-strip { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 14px; }
-.kw-strip .pill { white-space: normal; overflow-wrap: anywhere; text-overflow: clip; max-width: 100%; font-size: 14px; padding: 5px 11px; background: rgba(34,211,238,0.16); border: 1px solid rgba(34,211,238,0.42); color: #cffafe; font-weight: 600; }
-@media (min-width: 768px) { .kw-strip .pill { font-size: 13px; } }
-.node-drawer .thought-line, .node-drawer .trace-note > div, .node-drawer .radar-signals li, .node-drawer .recommendation > div { overflow-wrap: anywhere; word-break: break-word; -webkit-line-clamp: unset; text-overflow: clip; white-space: normal; }
+.node-action-bar.primary { position: sticky; top: 0; z-index: 2; background: rgba(11,9,7,0.92); backdrop-filter: blur(6px); margin: 0 -16px 14px; padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 10px; border-bottom: 1px solid rgba(245,234,215,0.08); }
+.node-action-bar.primary .node-action { font-size: 15px; padding: 10px 18px; font-weight: 700; min-height: 44px; border-radius: 999px; }
+.kw-strip { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 16px; }
+.kw-strip .pill { white-space: normal; overflow-wrap: anywhere; text-overflow: clip; max-width: 100%; font-size: 15px; padding: 6px 14px; background: rgba(34,211,238,0.16); border: 1px solid rgba(34,211,238,0.42); color: #cffafe; font-weight: 600; }
+@media (min-width: 768px) { .kw-strip .pill { font-size: 14px; } }
+.graph-tab-drawer-content .recommendation { font-size: 15px; line-height: 1.5; padding: 14px 16px; margin: 10px 0; }
+.graph-tab-drawer-content .recommendation strong { font-size: 18px; }
+.graph-tab-drawer-content .trace-note { font-size: 15px; line-height: 1.55; padding: 14px 16px; margin: 10px 0; }
+.graph-tab-drawer-content .trace-note strong { font-size: 16px; }
+.graph-tab-drawer-content > div { font-size: 15px; margin: 10px 0; }
+.graph-tab-drawer-content > div > strong { display: inline-block; font-size: 16px; margin-bottom: 6px; }
+.graph-tab-drawer-content .radar-signals li { font-size: 14px; line-height: 1.5; padding: 4px 0; }
+.node-drawer .thought-line, .node-drawer .trace-note > div, .node-drawer .radar-signals li, .node-drawer .recommendation > div, .graph-tab-drawer-content .thought-line, .graph-tab-drawer-content .trace-note > div, .graph-tab-drawer-content .recommendation > div { overflow-wrap: anywhere; word-break: break-word; -webkit-line-clamp: unset; text-overflow: clip; white-space: normal; }
 .vault-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; margin-left: 8px; border-radius: 999px; background: rgba(165,243,252,0.16); color: #cffafe; border: 1px solid rgba(165,243,252,0.42); font-size: 12px; font-weight: 700; cursor: pointer; }
 .vault-chip:hover { background: rgba(165,243,252,0.26); }
 .vault-row { padding: 12px; margin-bottom: 8px; border: 1px solid rgba(245,234,215,0.16); border-radius: 14px; background: rgba(15,23,42,0.42); }
@@ -2063,30 +2071,34 @@ function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): stri
 
   function getCyStyle() {
     var compact = window.matchMedia && window.matchMedia('(max-width: 520px)').matches;
-    var nodeW = compact ? 92 : 100;
-    var nodeH = compact ? 54 : 56;
-    var nodeFs = compact ? 9 : 10;
-    var nodePad = 5;
+    var nodeW = compact ? 110 : 130;
+    var nodeH = compact ? 80 : 86;
+    var nodeFs = compact ? 11 : 12;
+    var nodePad = 8;
     return [
       { selector: 'node', style: {
         'background-color': 'rgba(5,5,5,0.9)', 'border-color': 'rgba(0,255,255,0.5)',
-        'border-width': 1.5, 'color': 'rgba(0,255,255,0.8)', 'label': 'data(label)',
+        'border-width': 1.5, 'color': 'rgba(0,255,255,0.95)', 'label': 'data(label)',
         'font-family': 'Courier New, monospace', 'font-size': nodeFs,
         'text-valign': 'center', 'text-halign': 'center',
         'width': nodeW, 'height': nodeH,
         'text-wrap': 'wrap',
         'text-max-width': nodeW - nodePad * 2,
+        'text-overflow-wrap': 'anywhere',
+        'line-height': 1.25,
+        'padding': nodePad,
         'shape': 'round-rectangle',
       }},
       { selector: 'node[?interesting]', style: {
         'border-color': 'rgba(255,0,255,0.7)', 'color': 'rgba(255,0,255,0.95)', 'border-width': 2.5,
       }},
       { selector: 'node[?isCenter]', style: {
-        'width': compact ? 110 : 124, 'height': compact ? 62 : 66,
+        'width': compact ? 140 : 170, 'height': compact ? 92 : 100,
         'border-color': 'rgba(0,255,255,0.9)', 'color': 'rgba(0,255,255,1)',
-        'font-size': compact ? 11 : 12, 'font-weight': 'bold', 'border-width': 2.5,
+        'font-size': compact ? 13 : 15, 'font-weight': 'bold', 'border-width': 2.5,
         'text-wrap': 'wrap',
-        'text-max-width': compact ? 100 : 114,
+        'text-max-width': compact ? 124 : 154,
+        'text-overflow-wrap': 'anywhere',
       }},
       { selector: 'node[?ignored]', style: {
         'opacity': 0.35, 'border-color': 'rgba(100,100,100,0.4)', 'color': 'rgba(150,150,150,0.6)',
@@ -2114,8 +2126,16 @@ function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): stri
   function fitCy(cy) {
     if (!cy || cy.destroyed()) return;
     var compact = window.matchMedia && window.matchMedia('(max-width: 520px)').matches;
+    // Fit to view but cap the zoom-out: if the natural fit would shrink nodes too small,
+    // keep zoom at ~0.9-1.0 so bubbles stay readable and let user pan.
     cy.fit(cy.elements(), compact ? 24 : 56);
-    cy.minZoom(compact ? 0.25 : 0.15);
+    var z = cy.zoom();
+    var minVisible = compact ? 0.7 : 0.85;
+    if (z < minVisible) {
+      cy.zoom({ level: minVisible, renderedPosition: { x: cy.width()/2, y: cy.height()/2 } });
+      cy.center();
+    }
+    cy.minZoom(compact ? 0.4 : 0.5);
   }
   window._cyFitGraph = fitCy;
 
@@ -2126,9 +2146,9 @@ function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): stri
     var layoutConfig = hasSaved
       ? { name: 'preset', positions: function(node) { return savedPositions[node.id()]; } }
       : { name: 'cose', animate: false, randomize: false,
-          nodeRepulsion: function() { return 14000; },
-          idealEdgeLength: function() { return (window.matchMedia && window.matchMedia('(max-width: 520px)').matches) ? 150 : 170; },
-          gravity: 0.35, numIter: 1200 };
+          nodeRepulsion: function() { return 20000; },
+          idealEdgeLength: function() { return (window.matchMedia && window.matchMedia('(max-width: 520px)').matches) ? 180 : 210; },
+          gravity: 0.3, numIter: 1400 };
 
     var cy = cytoscape({
       container: container,
