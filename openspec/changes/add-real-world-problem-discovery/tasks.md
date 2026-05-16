@@ -59,10 +59,10 @@
 - [x] 9.1 Run `npm run build` and record success.
 - [x] 9.2 Run `npm test` and record success.
 - [x] 9.3 Verify the dashboard loads and shows either a daily pick or a truthful empty state.
-- [ ] 9.4 Verify live deploy after version bump through GitHub Actions and `https://kevin.sisihome.org/health`.
+- [x] 9.4 Verify live deploy after version bump through GitHub Actions and `https://kevin.sisihome.org/health`.
 
 ## 10. Release / Archive
 
 - [x] 10.1 Bump version after implementation scope is finalized.
-- [ ] 10.2 Commit and push implementation.
+- [x] 10.2 Commit and push implementation.
 - [ ] 10.3 Archive this OpenSpec change only after live verification and dashboard review.
