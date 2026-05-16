@@ -1074,10 +1074,10 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
 .idea-deck-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 12px 0 6px; }
 .idea-deck-actions { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 15px; }
 .idea-nav-btn { width: 34px; height: 30px; border-radius: 999px; border: 1px solid rgba(0,255,255,0.28); background: rgba(8,13,25,0.72); color: var(--accent); font-family: 'Courier New', monospace; }
-.idea-card-rail { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(236px, 86%); gap: 10px; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scroll-padding: 2px; padding: 2px 2px 12px; touch-action: pan-x pan-y; scrollbar-width: thin; }
+.idea-card-rail { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(236px, 86%); gap: 10px; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scroll-padding: 2px; padding: 2px 2px 12px; touch-action: pan-x; scrollbar-width: thin; max-height: 236px; }
 .idea-card-rail::-webkit-scrollbar { height: 6px; }
 .idea-card-rail::-webkit-scrollbar-thumb { background: rgba(0,255,255,0.28); border-radius: 999px; }
-.idea-card { scroll-snap-align: start; border: 1px solid rgba(0,255,255,0.2); border-radius: 16px; min-height: 184px; padding: 12px; background: radial-gradient(circle at top right, rgba(255,0,255,0.12), transparent 42%), linear-gradient(180deg, rgba(15,23,42,0.82), rgba(2,6,23,0.62)); display: flex; flex-direction: column; gap: 8px; }
+.idea-card { scroll-snap-align: start; border: 1px solid rgba(0,255,255,0.2); border-radius: 16px; height: 206px; padding: 12px; background: radial-gradient(circle at top right, rgba(255,0,255,0.12), transparent 42%), linear-gradient(180deg, rgba(15,23,42,0.82), rgba(2,6,23,0.62)); display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
 .idea-card h4 { margin: 0; color: #e0f2fe; font-size: 17px; line-height: 1.25; }
 .idea-card-meta { display: flex; flex-wrap: wrap; gap: 6px; color: #93c5fd; font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; }
 .idea-chip { display: inline-flex; align-items: center; border: 1px solid rgba(148,163,184,0.18); border-radius: 999px; padding: 2px 7px; background: rgba(15,23,42,0.6); color: #bae6fd; }
@@ -2640,11 +2640,11 @@ function refreshCyGraph() {
 function renderIdeaTab(ideas: IdeaRecord[]): string {
   const recent = ideas.slice(0, 24)
   return `
-<div>
+<div class="idea-deck">
   <div class="sys-label" style="margin-bottom:8px">/// Input to Neural</div>
-  <textarea class="idea-textarea" id="idea-input" placeholder="輸入想法，分身會整理…" rows="5"></textarea>
-  <button class="transmit-btn" id="idea-submit">[ TRANSMIT ]</button>
-  <div id="idea-result" class="muted" style="margin-top:6px;font-size:11px"></div>
+  <textarea class="idea-textarea" data-idea-input placeholder="輸入想法，分身會整理…" rows="5"></textarea>
+  <button class="transmit-btn" data-idea-submit>[ TRANSMIT ]</button>
+  <div data-idea-result class="muted" style="margin-top:6px;font-size:11px"></div>
 
   <div class="idea-deck-head">
     <div class="sys-label" style="margin:0">/// Idea Cards</div>
@@ -2654,42 +2654,48 @@ function renderIdeaTab(ideas: IdeaRecord[]): string {
       <button type="button" class="idea-nav-btn" data-idea-dir="1" aria-label="下一張想法">›</button>
     </div>
   </div>
-  <div class="idea-card-rail" id="idea-card-rail" aria-label="左右滑動瀏覽想法卡片">
+  <div class="idea-card-rail" data-idea-rail aria-label="左右滑動瀏覽想法卡片">
     ${recent.length === 0 ? renderEmptyIdeaCard() : recent.map(renderCpIdeaCard).join('')}
   </div>
 </div>
 
 <script>
 (function() {
-  var btn = document.getElementById('idea-submit');
-  if (!btn) return;
-  btn.addEventListener('click', function() {
-    var text = document.getElementById('idea-input').value.trim();
-    if (!text) return;
-    btn.disabled = true;
-    btn.textContent = '[ TRANSMITTING... ]';
-    fetch('/api/ideas', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ rawText: text }) })
-      .then(function(r) { return r.json(); })
-      .then(function() {
-        document.getElementById('idea-result').textContent = '✓ 已送出';
-        document.getElementById('idea-input').value = '';
-        btn.textContent = '[ TRANSMIT ]';
-        btn.disabled = false;
-        setTimeout(function() { location.reload(); }, 550);
-      })
-      .catch(function() {
-        document.getElementById('idea-result').textContent = '✗ 送出失敗';
-        btn.textContent = '[ TRANSMIT ]';
-        btn.disabled = false;
-      });
-  });
+  Array.prototype.forEach.call(document.querySelectorAll('.idea-deck'), function(deck) {
+    if (deck.dataset.ideaBound === '1') return;
+    deck.dataset.ideaBound = '1';
+    var btn = deck.querySelector('[data-idea-submit]');
+    var input = deck.querySelector('[data-idea-input]');
+    var result = deck.querySelector('[data-idea-result]');
+    var rail = deck.querySelector('[data-idea-rail]');
+    if (!btn || !input) return;
+    btn.addEventListener('click', function() {
+      var text = input.value.trim();
+      if (!text) return;
+      btn.disabled = true;
+      btn.textContent = '[ TRANSMITTING... ]';
+      fetch('/api/ideas', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ rawText: text }) })
+        .then(function(r) { return r.json(); })
+        .then(function() {
+          if (result) result.textContent = '✓ 已送出';
+          input.value = '';
+          btn.textContent = '[ TRANSMIT ]';
+          btn.disabled = false;
+          setTimeout(function() { location.reload(); }, 550);
+        })
+        .catch(function() {
+          if (result) result.textContent = '✗ 送出失敗';
+          btn.textContent = '[ TRANSMIT ]';
+          btn.disabled = false;
+        });
+    });
 
-  var rail = document.getElementById('idea-card-rail');
-  Array.prototype.forEach.call(document.querySelectorAll('[data-idea-dir]'), function(nav) {
-    nav.addEventListener('click', function() {
-      if (!rail) return;
-      var dir = Number(nav.getAttribute('data-idea-dir')) || 1;
-      rail.scrollBy({ left: dir * Math.max(220, Math.round(rail.clientWidth * 0.82)), behavior: 'smooth' });
+    Array.prototype.forEach.call(deck.querySelectorAll('[data-idea-dir]'), function(nav) {
+      nav.addEventListener('click', function() {
+        if (!rail) return;
+        var dir = Number(nav.getAttribute('data-idea-dir')) || 1;
+        rail.scrollBy({ left: dir * Math.max(220, Math.round(rail.clientWidth * 0.82)), behavior: 'smooth' });
+      });
     });
   });
 })();
