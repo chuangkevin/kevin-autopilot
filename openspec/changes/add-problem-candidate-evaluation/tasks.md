@@ -46,6 +46,6 @@
 - [x] 7.2 Run `npm test`.
 - [x] 7.3 Run `git diff --check`.
 - [x] 7.4 Bump app/package/deploy expected version.
-- [ ] 7.5 Commit and push implementation.
-- [ ] 7.6 Track CI, image build, and Kevinhome deploy to success.
-- [ ] 7.7 Verify live health version, candidate tier UI, public API safety, and trusted-gated feedback behavior.
+- [x] 7.5 Commit and push implementation.
+- [x] 7.6 Track CI, image build, and Kevinhome deploy to success.
+- [x] 7.7 Verify live health version, candidate tier UI, public API safety, and trusted-gated feedback behavior.
