@@ -64,7 +64,10 @@ repo/spec/test/CI/deploy planning snippets are rejected unless they also show a
 real PM/design/user workflow, stale same-day picks are regenerated when their
 brief is retired, the home dashboard shows a sanitized candidate problem pool,
 and the public daily endpoint adds limited candidate summaries without exposing
-the full `briefs` array.
+the full `briefs` array. Kevin approved v0.18.2 to add a narrow calm PKM /
+screenless knowledge-management problem pattern for existing digital-overwhelm,
+bionic-persona, and fragmented personal-knowledge signals so the candidate pool
+can show another real non-engineering workflow pain.
 
 Keep these versions read-only: they may observe, classify, report, and store
 Autopilot-owned reports/idea records/supplements, but they must not modify target

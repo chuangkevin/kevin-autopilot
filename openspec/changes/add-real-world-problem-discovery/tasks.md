@@ -48,6 +48,7 @@
 - [x] 7.4 Move graph to a secondary `探索圖` or debug tab.
 - [x] 7.5 Add empty-state copy for "今天還沒有足夠真實問題證據" rather than filling the page with speculative bubbles.
 - [x] 7.6 Show a sanitized candidate problem pool so the first screen is not limited to one daily pick.
+- [x] 7.7 Add a calm PKM / screenless knowledge-management pattern for existing digital-overwhelm signals.
 
 ## 8. Observation Loop Integration
 

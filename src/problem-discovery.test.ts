@@ -90,6 +90,20 @@ test('problem extraction accepts Excel LINE screenshot manual workaround', () =>
   assert.equal(briefs[0]?.kevinFit.relatedProjects.includes('sheet-to-car'), true)
 })
 
+test('problem extraction accepts calm PKM digital overwhelm workflow', () => {
+  const signal = createProblemSignal({
+    sourceType: 'kevin-input',
+    sourceName: 'calm-pkm',
+    title: '仿生人格作為減輕螢幕焦慮的助手',
+    snippet: '探索仿生人格如何以 calm computing 裝置的形式存在，成為無螢幕、減少數位干擾的個人知識管理或生活助手，整合筆記軟體、檔案系統與專案管理工具。',
+    fetchedAt: '2026-05-15T00:00:00.000Z',
+  })
+  const briefs = buildProblemBriefs([signal])
+  assert.equal(briefs.length, 1)
+  assert.equal(briefs[0]?.dedupKey, 'calm-personal-knowledge')
+  assert.equal(briefs[0]?.kevinFit.relatedProjects.includes('mind-diary'), true)
+})
+
 test('daily pick candidates ignore boring internal engineering signals', () => {
   const internal = createProblemSignal({
     sourceType: 'kevin-input',

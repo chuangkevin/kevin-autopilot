@@ -295,6 +295,7 @@ function extractProblemPattern(signal: ProblemSignal): ProblemPattern | undefine
   if (category === 'media') return mediaPattern(signal, matchedWorkarounds)
   if (category === 'bureaucracy') return bureaucracyPattern(signal, matchedWorkarounds)
   if (category === 'pm-prototype') return pmPrototypePattern(signal, matchedWorkarounds)
+  if (category === 'calm-pkm') return calmPkmPattern(signal, matchedWorkarounds)
   if (category === 'memory') return memoryPattern(signal, matchedWorkarounds)
   if (category === 'cad') return cadPattern(signal, matchedWorkarounds)
   if (category === 'living-world') return livingWorldPattern(signal, matchedWorkarounds)
@@ -349,6 +350,7 @@ function detectCategory(lower: string): ProblemPattern['key'] | undefined {
   if (/(短影音|影片|剪輯|字幕|素材|reels|shorts|content|media)/i.test(lower)) return 'media'
   if (/(課程|考試|問卷|elearn|公部門|官僚|訓練|平台限制)/i.test(lower)) return 'bureaucracy'
   if (hasPmPrototypeContext(lower)) return 'pm-prototype'
+  if (/(calm computing|screenless|digital overwhelm|bionic persona|pkm|個人知識|知識管理|數位干擾|螢幕焦慮|仿生人格|筆記軟體)/i.test(lower)) return 'calm-pkm'
   if (/(日記|情緒|記憶|回想|心理|memory|diary)/i.test(lower)) return 'memory'
   if (/(cad|onshape|3d|照片建模|量測|工程圖|零件)/i.test(lower)) return 'cad'
   if (/(遊戲|世界|規則|npc|任務|living world|greed island)/i.test(lower)) return 'living-world'
@@ -478,6 +480,24 @@ function memoryPattern(signal: ProblemSignal, workarounds: string[]): ProblemPat
     killCriteria: ['使用者不願持續輸入', '整理結果沒有降低回想或理解成本'],
     kevinFitRationale: '延續 Kevin 把記憶與情緒混亂變成可搜尋、可追問系統的方向。',
     severityRationale: '資料分散且情緒成本高，問題不只耗時，也會影響決策與自我理解。',
+  }
+}
+
+function calmPkmPattern(signal: ProblemSignal, workarounds: string[]): ProblemPattern {
+  return {
+    key: 'calm-personal-knowledge',
+    title: '個人知識與生活資訊被螢幕和工具碎片化拖累',
+    people: '想減少數位干擾、又需要管理知識與生活脈絡的人',
+    workflow: '把筆記、檔案、專案資訊與生活提醒整理成低干擾、可回想、可行動的個人知識流程',
+    pain: signal.snippet,
+    workaround: workaroundText(workarounds, '筆記軟體、檔案系統、專案管理工具、生活助理與手動整理脈絡'),
+    existingSolutionsGap: '一般 PKM 或專案工具需要大量螢幕操作與整理紀律；calm device 又常只做提醒，沒有真正承接知識脈絡。',
+    relatedProjects: ['mind-diary', 'digital-photo-frame'],
+    mvp: '做一個低干擾 inbox：每天只收少量文字/提醒/截圖，輸出一張可回想的生活與知識摘要卡。',
+    validationPlan: '用一週真實輸入測試是否能減少開螢幕查找、整理與回想的次數，同時保留可行動事項。',
+    killCriteria: ['使用者仍需要完整 PKM 介面才覺得有用', '一週測試沒有降低查找或整理負擔', '低干擾硬體形式比手機/桌面 widget 更麻煩'],
+    kevinFitRationale: '貼近 Kevin 對個人記憶、生活脈絡、低干擾裝置與可跑 artifact 的長期興趣。',
+    severityRationale: '數位干擾與知識碎片化會反覆消耗注意力，問題不只是一個工具功能，而是日常 workflow 負擔。',
   }
 }
 

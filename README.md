@@ -358,13 +358,18 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
+v0.18.2 adds a narrow calm PKM / screenless knowledge-management problem pattern
+so existing Kevin-owned signals about digital overwhelm, bionic persona devices,
+and fragmented personal knowledge workflows can appear as a second real candidate
+instead of being dropped as vague exploration. All 143 tests pass.
+
 v0.18.1 tightens the real-world problem discovery UX. The selector now rejects
 internal repo/spec/test/CI/deploy planning snippets unless they also contain a
 real PM/design/user workflow, and same-day stale picks are regenerated when a
 retired brief disappears. The `今日真實問題` screen now shows a sanitized `候選問題池`
 so Kevin can see multiple candidate pains instead of only one daily pick.
 `GET /api/problem-discovery/daily` still avoids exposing the full `briefs` array;
-it only adds limited candidate summaries without evidence quotes. All 141 tests
+it only adds limited candidate summaries without evidence quotes. All 142 tests
 pass.
 
 v0.18.0 adds the first real-world problem discovery slice. Kevin-owned ideas,
