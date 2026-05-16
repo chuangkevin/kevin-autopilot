@@ -509,9 +509,11 @@ test('web server exposes health and idea intake', async () => {
 
     const pageAfterIdea = await fetch(`${baseUrl}/`)
     const pageAfterIdeaBody = await pageAfterIdea.text()
-    // idea tab is now a stub; idea cards are no longer rendered inline in the page body
+    // Idea tab now renders a compact swipeable card deck instead of a long list.
     assert.equal(pageAfterIdeaBody.includes('想法桌面：每個想法都是可進入的卡片'), false)
-    assert.equal(pageAfterIdeaBody.includes(`href="/ideas/${ideaBody.id}"`), false)
+    assert.equal(pageAfterIdeaBody.includes('idea-card-rail'), true)
+    assert.equal(pageAfterIdeaBody.includes('data-idea-card'), true)
+    assert.equal(pageAfterIdeaBody.includes(`href="/ideas/${ideaBody.id}"`), true)
     assert.equal(pageAfterIdeaBody.includes('分身狀態：'), false)
     assert.equal(pageAfterIdeaBody.includes('目前沒有明顯相似的既有專案'), true) // still in embedded graph JSON (idea node thinking.whyItMatters)
 
@@ -799,6 +801,10 @@ test('idea tab renders textarea and transmit button', async () => {
   assert.ok(html.includes('id="tab-idea"'), 'missing idea panel')
   assert.ok(html.includes('class="idea-textarea"'), 'missing textarea')
   assert.ok(html.includes('TRANSMIT'), 'missing transmit button text')
+  assert.ok(html.includes('idea-card-rail'), 'missing swipeable idea rail')
+  assert.ok(html.includes('data-idea-dir="-1"'), 'missing previous idea button')
+  assert.ok(html.includes('data-idea-dir="1"'), 'missing next idea button')
+  assert.ok(html.includes('左右滑動瀏覽想法卡片'), 'missing swipe label')
 })
 
 test('GET /api/deliberation/latest returns idle with null when no record exists', async () => {

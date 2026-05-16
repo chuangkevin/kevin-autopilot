@@ -635,7 +635,7 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
 
   if (url.pathname === '/') {
     const report = await getVisibleReport(config, observationLoop)
-    const ideas = await listIdeas(config, 12)
+    const ideas = await listIdeas(config, 32)
     const graph = await getIdeaGraph(config, report, ideas)
     const backlog = loadBacklogResponse(config, 'active')
     const dailyProblem = await getDailyProblemDiscovery(config, { report })
@@ -1071,9 +1071,21 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
 .idea-textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 10px rgba(0,255,255,0.1); }
 .transmit-btn { width: 100%; padding: 11px; background: transparent; border: 1px solid rgba(0,255,255,0.5); border-radius: 8px; color: var(--accent); font-weight: bold; font-size: 15px; font-family: 'Courier New', monospace; letter-spacing: 0.1em; text-shadow: 0 0 8px rgba(0,255,255,0.4); box-shadow: 0 0 15px rgba(0,255,255,0.08); cursor: pointer; }
 .transmit-btn:hover { background: var(--accent-dim); }
-.idea-item { background: var(--bg-card2); border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; padding: 7px 9px; margin-bottom: 5px; display: flex; justify-content: space-between; align-items: center; }
-.idea-name { font-size: 16px; color: #94a3b8; }
-.idea-status { font-size: 16px; color: rgba(0,255,255,0.4); }
+.idea-deck-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 12px 0 6px; }
+.idea-deck-actions { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 15px; }
+.idea-nav-btn { width: 34px; height: 30px; border-radius: 999px; border: 1px solid rgba(0,255,255,0.28); background: rgba(8,13,25,0.72); color: var(--accent); font-family: 'Courier New', monospace; }
+.idea-card-rail { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(236px, 86%); gap: 10px; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scroll-padding: 2px; padding: 2px 2px 12px; touch-action: pan-x pan-y; scrollbar-width: thin; }
+.idea-card-rail::-webkit-scrollbar { height: 6px; }
+.idea-card-rail::-webkit-scrollbar-thumb { background: rgba(0,255,255,0.28); border-radius: 999px; }
+.idea-card { scroll-snap-align: start; border: 1px solid rgba(0,255,255,0.2); border-radius: 16px; min-height: 184px; padding: 12px; background: radial-gradient(circle at top right, rgba(255,0,255,0.12), transparent 42%), linear-gradient(180deg, rgba(15,23,42,0.82), rgba(2,6,23,0.62)); display: flex; flex-direction: column; gap: 8px; }
+.idea-card h4 { margin: 0; color: #e0f2fe; font-size: 17px; line-height: 1.25; }
+.idea-card-meta { display: flex; flex-wrap: wrap; gap: 6px; color: #93c5fd; font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; }
+.idea-chip { display: inline-flex; align-items: center; border: 1px solid rgba(148,163,184,0.18); border-radius: 999px; padding: 2px 7px; background: rgba(15,23,42,0.6); color: #bae6fd; }
+.idea-card-text { color: #94a3b8; font-size: 15px; line-height: 1.42; margin: 0; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.idea-card-footer { margin-top: auto; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.idea-card-link { border: 1px solid rgba(0,255,255,0.28); border-radius: 999px; padding: 5px 9px; text-decoration: none; font-size: 14px; }
+.idea-empty-card { color: var(--muted); justify-content: center; }
+@media (min-width: 768px) { .idea-card-rail { grid-auto-columns: minmax(240px, 32%); } }
 
 /* Desktop sidebar layout */
 .desktop-layout { display: grid; grid-template-columns: 300px 1fr 300px; gap: 16px; align-items: start; }
@@ -2626,7 +2638,7 @@ function refreshCyGraph() {
 }
 
 function renderIdeaTab(ideas: IdeaRecord[]): string {
-  const recent = ideas.slice(0, 8)
+  const recent = ideas.slice(0, 24)
   return `
 <div>
   <div class="sys-label" style="margin-bottom:8px">/// Input to Neural</div>
@@ -2634,8 +2646,17 @@ function renderIdeaTab(ideas: IdeaRecord[]): string {
   <button class="transmit-btn" id="idea-submit">[ TRANSMIT ]</button>
   <div id="idea-result" class="muted" style="margin-top:6px;font-size:11px"></div>
 
-  <div class="sys-label" style="margin:12px 0 6px">/// Recent Ideas</div>
-  ${recent.length === 0 ? '<div class="muted" style="font-size:11px">尚無想法</div>' : recent.map(renderCpIdeaItem).join('')}
+  <div class="idea-deck-head">
+    <div class="sys-label" style="margin:0">/// Idea Cards</div>
+    <div class="idea-deck-actions">
+      <button type="button" class="idea-nav-btn" data-idea-dir="-1" aria-label="上一張想法">‹</button>
+      <span>${recent.length}/${ideas.length} ideas</span>
+      <button type="button" class="idea-nav-btn" data-idea-dir="1" aria-label="下一張想法">›</button>
+    </div>
+  </div>
+  <div class="idea-card-rail" id="idea-card-rail" aria-label="左右滑動瀏覽想法卡片">
+    ${recent.length === 0 ? renderEmptyIdeaCard() : recent.map(renderCpIdeaCard).join('')}
+  </div>
 </div>
 
 <script>
@@ -2654,6 +2675,7 @@ function renderIdeaTab(ideas: IdeaRecord[]): string {
         document.getElementById('idea-input').value = '';
         btn.textContent = '[ TRANSMIT ]';
         btn.disabled = false;
+        setTimeout(function() { location.reload(); }, 550);
       })
       .catch(function() {
         document.getElementById('idea-result').textContent = '✗ 送出失敗';
@@ -2661,16 +2683,45 @@ function renderIdeaTab(ideas: IdeaRecord[]): string {
         btn.disabled = false;
       });
   });
+
+  var rail = document.getElementById('idea-card-rail');
+  Array.prototype.forEach.call(document.querySelectorAll('[data-idea-dir]'), function(nav) {
+    nav.addEventListener('click', function() {
+      if (!rail) return;
+      var dir = Number(nav.getAttribute('data-idea-dir')) || 1;
+      rail.scrollBy({ left: dir * Math.max(220, Math.round(rail.clientWidth * 0.82)), behavior: 'smooth' });
+    });
+  });
 })();
 </script>`
 }
 
-function renderCpIdeaItem(idea: IdeaRecord): string {
+function renderCpIdeaCard(idea: IdeaRecord): string {
+  const title = idea.title || idea.rawText.slice(0, 48)
+  const nextStep = idea.suggestedNextSteps[0] ?? idea.reasons[0] ?? ideaStatus(idea)
+  const project = idea.existingProjectAnalysis.recommendation === 'extend-existing'
+    ? idea.existingProjectAnalysis.matches[0]?.projectName ?? 'existing project'
+    : idea.existingProjectAnalysis.recommendation
   return `
-<div class="idea-item">
-  <span class="idea-name">${escapeHtml(idea.title ?? idea.rawText.slice(0, 40))}</span>
-  <span class="idea-status">${escapeHtml(idea.classification)}</span>
-</div>`
+<article class="idea-card" data-idea-card="${escapeHtmlAttr(idea.id)}">
+  <div class="idea-card-meta">
+    <span class="idea-chip">${escapeHtml(idea.classification)}</span>
+    <span class="idea-chip">${idea.approvalRequired ? 'needs gate' : 'read-only'}</span>
+  </div>
+  <h4>${escapeHtml(title)}</h4>
+  <p class="idea-card-text">${escapeHtml(nextStep)}</p>
+  <div class="idea-card-footer">
+    <span class="muted" style="font-size:13px">${escapeHtml(project)}</span>
+    <a class="idea-card-link" href="/ideas/${encodeURIComponent(idea.id)}">打開</a>
+  </div>
+</article>`
+}
+
+function renderEmptyIdeaCard(): string {
+  return `<article class="idea-card idea-empty-card">
+    <h4>還沒有想法卡</h4>
+    <p class="idea-card-text">先丟一段想法進來；送出後會變成可左右滑的卡片。</p>
+  </article>`
 }
 
 function renderDurableBacklogPanel(backlog: BacklogPanelData): string {
