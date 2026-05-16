@@ -1074,10 +1074,10 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
 .idea-deck-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 12px 0 6px; }
 .idea-deck-actions { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 15px; }
 .idea-nav-btn { width: 34px; height: 30px; border-radius: 999px; border: 1px solid rgba(0,255,255,0.28); background: rgba(8,13,25,0.72); color: var(--accent); font-family: 'Courier New', monospace; }
-.idea-card-rail { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(236px, 86%); gap: 10px; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scroll-padding: 2px; padding: 2px 2px 12px; touch-action: pan-x; scrollbar-width: thin; max-height: 236px; }
-.idea-card-rail::-webkit-scrollbar { height: 6px; }
-.idea-card-rail::-webkit-scrollbar-thumb { background: rgba(0,255,255,0.28); border-radius: 999px; }
-.idea-card { scroll-snap-align: start; border: 1px solid rgba(0,255,255,0.2); border-radius: 16px; height: 206px; padding: 12px; background: radial-gradient(circle at top right, rgba(255,0,255,0.12), transparent 42%), linear-gradient(180deg, rgba(15,23,42,0.82), rgba(2,6,23,0.62)); display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
+.idea-card-rail { position: relative; overflow: hidden; overscroll-behavior-x: contain; padding: 2px 2px 12px; touch-action: pan-y; max-height: 236px; cursor: grab; }
+.idea-card-rail.dragging { cursor: grabbing; }
+.idea-card-track { display: flex; gap: 10px; transition: transform 180ms ease; will-change: transform; }
+.idea-card { flex: 0 0 86%; border: 1px solid rgba(0,255,255,0.2); border-radius: 16px; height: 206px; padding: 12px; background: radial-gradient(circle at top right, rgba(255,0,255,0.12), transparent 42%), linear-gradient(180deg, rgba(15,23,42,0.82), rgba(2,6,23,0.62)); display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
 .idea-card h4 { margin: 0; color: #e0f2fe; font-size: 17px; line-height: 1.25; }
 .idea-card-meta { display: flex; flex-wrap: wrap; gap: 6px; color: #93c5fd; font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; }
 .idea-chip { display: inline-flex; align-items: center; border: 1px solid rgba(148,163,184,0.18); border-radius: 999px; padding: 2px 7px; background: rgba(15,23,42,0.6); color: #bae6fd; }
@@ -1085,7 +1085,7 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
 .idea-card-footer { margin-top: auto; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .idea-card-link { border: 1px solid rgba(0,255,255,0.28); border-radius: 999px; padding: 5px 9px; text-decoration: none; font-size: 14px; }
 .idea-empty-card { color: var(--muted); justify-content: center; }
-@media (min-width: 768px) { .idea-card-rail { grid-auto-columns: minmax(240px, 32%); } }
+@media (min-width: 768px) { .idea-card { flex-basis: 32%; } }
 
 /* Desktop sidebar layout */
 .desktop-layout { display: grid; grid-template-columns: 300px 1fr 300px; gap: 16px; align-items: start; }
@@ -2650,12 +2650,14 @@ function renderIdeaTab(ideas: IdeaRecord[]): string {
     <div class="sys-label" style="margin:0">/// Idea Cards</div>
     <div class="idea-deck-actions">
       <button type="button" class="idea-nav-btn" data-idea-dir="-1" aria-label="上一張想法">‹</button>
-      <span>${recent.length}/${ideas.length} ideas</span>
+      <span data-idea-position>${recent.length === 0 ? '0' : '1'}/${recent.length} cards</span>
       <button type="button" class="idea-nav-btn" data-idea-dir="1" aria-label="下一張想法">›</button>
     </div>
   </div>
   <div class="idea-card-rail" data-idea-rail aria-label="左右滑動瀏覽想法卡片">
-    ${recent.length === 0 ? renderEmptyIdeaCard() : recent.map(renderCpIdeaCard).join('')}
+    <div class="idea-card-track" data-idea-track>
+      ${recent.length === 0 ? renderEmptyIdeaCard() : recent.map(renderCpIdeaCard).join('')}
+    </div>
   </div>
 </div>
 
@@ -2668,6 +2670,16 @@ function renderIdeaTab(ideas: IdeaRecord[]): string {
     var input = deck.querySelector('[data-idea-input]');
     var result = deck.querySelector('[data-idea-result]');
     var rail = deck.querySelector('[data-idea-rail]');
+    var track = deck.querySelector('[data-idea-track]');
+    var cards = track ? Array.prototype.slice.call(track.querySelectorAll('[data-idea-card]')) : [];
+    var position = deck.querySelector('[data-idea-position]');
+    var index = 0;
+    function setIdeaIndex(next) {
+      if (!track || cards.length === 0) return;
+      index = Math.max(0, Math.min(cards.length - 1, next));
+      track.style.transform = 'translateX(' + (-cards[index].offsetLeft) + 'px)';
+      if (position) position.textContent = (index + 1) + '/' + cards.length + ' cards';
+    }
     if (!btn || !input) return;
     btn.addEventListener('click', function() {
       var text = input.value.trim();
@@ -2692,11 +2704,52 @@ function renderIdeaTab(ideas: IdeaRecord[]): string {
 
     Array.prototype.forEach.call(deck.querySelectorAll('[data-idea-dir]'), function(nav) {
       nav.addEventListener('click', function() {
-        if (!rail) return;
+        if (!rail || !track) return;
         var dir = Number(nav.getAttribute('data-idea-dir')) || 1;
-        rail.scrollBy({ left: dir * Math.max(220, Math.round(rail.clientWidth * 0.82)), behavior: 'smooth' });
+        setIdeaIndex(index + dir);
       });
     });
+
+    if (rail && track) {
+      var startX = 0;
+      var startY = 0;
+      var dragging = false;
+      function startDrag(x, y) {
+        startX = x;
+        startY = y;
+        dragging = true;
+        rail.classList.add('dragging');
+      }
+      function endDrag(x, y) {
+        if (!dragging) return;
+        dragging = false;
+        rail.classList.remove('dragging');
+        var dx = x - startX;
+        var dy = y - startY;
+        if (Math.abs(dx) > 36 && Math.abs(dx) > Math.abs(dy) * 1.15) {
+          setIdeaIndex(index + (dx < 0 ? 1 : -1));
+        }
+      }
+      if ('PointerEvent' in window) {
+        rail.addEventListener('pointerdown', function(event) {
+          if (event.target && event.target.closest && event.target.closest('a,button,textarea')) return;
+          startDrag(event.clientX, event.clientY);
+        });
+        rail.addEventListener('pointerup', function(event) { endDrag(event.clientX, event.clientY); });
+        rail.addEventListener('pointercancel', function() { dragging = false; rail.classList.remove('dragging'); });
+      } else {
+        rail.addEventListener('touchstart', function(event) {
+          if (!event.touches || event.touches.length === 0) return;
+          startDrag(event.touches[0].clientX, event.touches[0].clientY);
+        }, { passive: true });
+        rail.addEventListener('touchend', function(event) {
+          if (!event.changedTouches || event.changedTouches.length === 0) return;
+          endDrag(event.changedTouches[0].clientX, event.changedTouches[0].clientY);
+        }, { passive: true });
+      }
+      window.addEventListener('resize', function() { setIdeaIndex(index); });
+      setIdeaIndex(0);
+    }
   });
 })();
 </script>`
