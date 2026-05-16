@@ -34,10 +34,13 @@ test('ObservationLoop runs read-only observation and persists loop state', async
     assert.ok(state.nextRunAt)
     assert.ok(state.lastReportPath?.endsWith('.json'))
     assert.ok(state.lastGraphAt)
+    assert.ok(state.lastProblemDiscoveryAt)
+    assert.equal(typeof state.lastProblemDiscoveryBriefCount, 'number')
 
     const persisted = JSON.parse(await readFile(join(dataDir, 'observation-loop-state.json'), 'utf8'))
     assert.equal(persisted.runCount, 1)
     assert.equal(persisted.lastSuccess, true)
+    assert.equal(typeof persisted.lastProblemDiscoveryBriefCount, 'number')
     const graph = JSON.parse(await readFile(join(dataDir, 'idea-graph.json'), 'utf8'))
     assert.equal(graph.nodes.some((node: { type: string }) => node.type === 'double'), true)
     assert.ok(state.lastBacklogAt)

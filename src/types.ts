@@ -158,6 +158,78 @@ export interface UserSupplement {
   appliesTo: 'next_observation'
 }
 
+export type ProblemSignalSourceType = 'web-search' | 'news' | 'forum' | 'review' | 'github-issue' | 'kevin-input' | 'homeproject'
+
+export interface ProblemSignal {
+  id: string
+  sourceType: ProblemSignalSourceType
+  sourceName: string
+  title: string
+  snippet: string
+  fetchedAt: string
+  language?: string
+  url?: string
+  query?: string
+  dedupKey: string
+}
+
+export interface ProblemEvidence {
+  signalId: string
+  quote: string
+  sourceName: string
+  fetchedAt: string
+  url?: string
+}
+
+export interface ProblemScore {
+  score: number
+  rationale: string
+}
+
+export type ProblemBriefConfidence = 'needs_evidence' | 'candidate' | 'strong'
+
+export interface ProblemBrief {
+  id: string
+  dedupKey: string
+  title: string
+  people: string
+  workflow: string
+  pain: string
+  workaround: string
+  evidence: ProblemEvidence[]
+  existingSolutionsGap: string
+  severity: ProblemScore
+  kevinFit: ProblemScore & { relatedProjects: string[] }
+  mvp: string
+  validationPlan: string
+  killCriteria: string[]
+  missingEvidence: string[]
+  confidence: ProblemBriefConfidence
+  score: number
+  createdAt: string
+  updatedAt: string
+  sourceSignalIds: string[]
+}
+
+export interface DailyProblemPick {
+  date: string
+  status: 'picked' | 'insufficient-evidence'
+  generatedAt: string
+  briefId?: string
+  whyThis: string
+  whyNotOthers: string[]
+  missingEvidence: string[]
+}
+
+export interface DailyProblemDiscovery {
+  date: string
+  generatedAt: string
+  pick: DailyProblemPick
+  brief: ProblemBrief | null
+  briefs: ProblemBrief[]
+  signalCount: number
+}
+
 export interface MainAgentBrief {
   mode: 'kevin-double-deterministic'
   persona: 'Kevin 子人格主 agent'
@@ -354,6 +426,9 @@ export interface ObservationLoopState {
   lastGraphAt?: string
   lastBacklogAt?: string
   lastReflectionAt?: string
+  lastProblemDiscoveryAt?: string
+  lastProblemDiscoveryBriefCount?: number
+  lastProblemDiscoveryError?: string
   lastReportPath?: string
   lastMarkdownPath?: string
 }

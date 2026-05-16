@@ -33,6 +33,7 @@ import { clearStoredGeminiKeys, getKeyStatus, importGeminiKeys } from './keys.js
 import { isBoostRunning, runBoost } from './boost.js'
 import { isDeliberationRunning, loadLatestDeliberation, runDeliberation } from './deliberation.js'
 import { recomputePreferences } from './preferences.js'
+import { createProblemBriefPrompt, getDailyProblemDiscovery } from './problem-discovery.js'
 import { createObservationLoop, readReflectionState, type ObservationLoop } from './observation-loop.js'
 import { isReflectionRewriteFresh } from './reflection.js'
 import { observe } from './observer.js'
@@ -51,6 +52,7 @@ import type {
   BacklogStatusFilter,
   DeliberationRecord,
   DeliberationState,
+  DailyProblemDiscovery,
   IdeaGraph,
   IdeaGraphNode,
   IdeaRecord,
@@ -274,6 +276,22 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
   if (url.pathname === '/api/report') {
     const report = await getVisibleReport(config, observationLoop)
     writeJson(response, report)
+    return
+  }
+
+  if (url.pathname === '/api/problem-discovery/daily' && request.method === 'GET') {
+    const report = await getVisibleReport(config, observationLoop)
+    writeJson(response, toPublicDailyProblemDiscovery(await getDailyProblemDiscovery(config, { report })))
+    return
+  }
+
+  if (url.pathname === '/api/problem-discovery/run' && request.method === 'POST') {
+    if (!isTrustedSettingsRequest(request)) {
+      writeText(response, 'Problem discovery run requires loopback, private LAN, Docker, or Tailscale access', 403)
+      return
+    }
+    const report = await getVisibleReport(config, observationLoop)
+    writeJson(response, await getDailyProblemDiscovery(config, { report, force: true }), 201)
     return
   }
 
@@ -585,13 +603,14 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
     const ideas = await listIdeas(config, 12)
     const graph = await getIdeaGraph(config, report, ideas)
     const backlog = loadBacklogResponse(config, 'active')
+    const dailyProblem = await getDailyProblemDiscovery(config, { report })
     const latestDeliberation = await loadLatestDeliberation(config)
     const deliberationState: DeliberationState = {
       status: isDeliberationRunning() ? 'running' : 'idle',
       record: latestDeliberation,
     }
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', ...NO_STORE_HEADERS })
-    response.end(renderPage(report, ideas, Boolean(config.ai?.enabled), observationLoop ? await observationLoop.getEffectiveState() : createManualLoopState(), graph, backlog, deliberationState))
+    response.end(renderPage(report, ideas, Boolean(config.ai?.enabled), observationLoop ? await observationLoop.getEffectiveState() : createManualLoopState(), graph, backlog, deliberationState, dailyProblem))
     return
   }
 
@@ -640,6 +659,17 @@ function writeJson(response: ServerResponse, body: unknown, statusCode = 200): v
 function writeText(response: ServerResponse, body: string, statusCode = 200): void {
   response.writeHead(statusCode, { 'content-type': 'text/plain; charset=utf-8', ...NO_STORE_HEADERS })
   response.end(`${body}\n`)
+}
+
+function toPublicDailyProblemDiscovery(discovery: DailyProblemDiscovery): Omit<DailyProblemDiscovery, 'briefs'> & { briefCount: number } {
+  return {
+    date: discovery.date,
+    generatedAt: discovery.generatedAt,
+    pick: discovery.pick,
+    brief: discovery.brief,
+    signalCount: discovery.signalCount,
+    briefCount: discovery.briefs.length,
+  }
 }
 
 async function getVisibleReport(config: AutopilotConfig, observationLoop?: ObservationLoop): Promise<ObservationReport> {
@@ -745,6 +775,7 @@ function renderPage(
   graph: IdeaGraph,
   backlog: BacklogPanelData,
   deliberationState: DeliberationState,
+  dailyProblem: DailyProblemDiscovery,
 ): string {
   const dirtyRepos = report.repositories.filter((repo) => repo.dirty).length
   const bugCandidates = report.candidates.filter((candidate) => candidate.category === 'bug_watch' || candidate.category === 'bug_fix_candidate').length
@@ -817,7 +848,7 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
 /* Bottom tab bar */
 .tab-bar {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1fr;
+  grid-template-columns: repeat(5, 1fr);
   border-top: 1px solid var(--accent-border);
   background: rgba(0,0,0,0.95);
   position: fixed;
@@ -855,6 +886,16 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
 }
 .cp-card.pink { border-color: var(--pink-border); }
 .cp-card.dim { border-color: rgba(255,255,255,0.08); }
+.problem-hero { border-color: rgba(34,197,94,0.42); background: radial-gradient(circle at top left, rgba(34,197,94,0.18), transparent 36%), linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.035)); }
+.problem-title { margin: 0 0 8px; color: #f8fafc; font-size: clamp(24px, 6vw, 42px); line-height: 1.05; letter-spacing: -0.04em; }
+.problem-lede { color: #bbf7d0; font-size: 17px; line-height: 1.45; margin: 8px 0 12px; }
+.problem-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-top: 12px; }
+.problem-box { border: 1px solid rgba(148,163,184,0.16); border-radius: 12px; padding: 10px; background: rgba(8,13,25,0.48); min-width: 0; }
+.problem-box strong { display: block; color: #e2e8f0; margin-bottom: 4px; }
+.problem-score { display: inline-flex; gap: 8px; align-items: center; color: #bbf7d0; border: 1px solid rgba(34,197,94,0.35); border-radius: 999px; padding: 4px 10px; background: rgba(20,83,45,0.18); }
+.problem-empty { border-color: rgba(245,158,11,0.38); background: radial-gradient(circle at top left, rgba(245,158,11,0.16), transparent 34%), rgba(15,23,42,0.48); }
+.problem-prompt { margin-top: 12px; }
+.problem-prompt pre { max-height: 280px; overflow: auto; }
 
 /* Labels */
 .sys-label { font-size: 16px; color: rgba(0,255,255,0.4); letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 6px; }
@@ -1123,9 +1164,10 @@ summary { cursor: pointer; color: #bfdbfe; font-weight: 700; }
     <a class="cp-settings-link" href="/settings">SYS ⚙</a>
   </header>
 
-  <!-- Mobile: individual tab panels; default tab = graph (神經圖) -->
+  <!-- Mobile: individual tab panels; default tab = today's real problem -->
   <div id="mobile-panels" class="tab-panels">
-    <div class="tab-panel" id="tab-graph">${renderGraphTab(graph, loopState)}</div>
+    <div class="tab-panel" id="tab-problem">${renderProblemTab(dailyProblem)}</div>
+    <div class="tab-panel" id="tab-graph" hidden>${renderGraphTab(graph, loopState)}</div>
     <div class="tab-panel" id="tab-brain" hidden>${renderBrainTab(loopState, graph, deliberationState)}</div>
     <div class="tab-panel" id="tab-backlog" hidden>${renderBacklogTab(backlog)}</div>
     <div class="tab-panel" id="tab-idea" hidden>${renderIdeaTab(ideas)}</div>
@@ -1133,7 +1175,7 @@ summary { cursor: pointer; color: #bfdbfe; font-weight: 700; }
   <!-- Desktop: always-visible three-column layout -->
   <div id="desktop-panels" class="desktop-layout" style="display:none">
     <div>${renderBrainTab(loopState, graph, deliberationState)}</div>
-    <div>${renderGraphTab(graph, loopState)}</div>
+    <div>${renderProblemTab(dailyProblem)}<div style="margin-top:10px">${renderGraphTab(graph, loopState)}</div></div>
     <div>
       ${renderBacklogTab(backlog)}
       <div style="margin-top:10px">${renderIdeaTab(ideas)}</div>
@@ -1141,8 +1183,11 @@ summary { cursor: pointer; color: #bfdbfe; font-weight: 700; }
   </div>
 
   <nav class="tab-bar">
-    <button class="tab-btn active" data-tab="graph" onclick="switchTab('graph')">
-      <span class="tab-icon">🕸</span>圖
+    <button class="tab-btn active" data-tab="problem" onclick="switchTab('problem')">
+      <span class="tab-icon">◎</span>問題
+    </button>
+    <button class="tab-btn" data-tab="graph" onclick="switchTab('graph')">
+      <span class="tab-icon">🕸</span>探索
     </button>
     <button class="tab-btn" data-tab="brain" onclick="switchTab('brain')">
       <span class="tab-icon">🧠</span>分身
@@ -1167,7 +1212,7 @@ function switchTab(name) {
 }
 (function() {
   var hash = location.hash.slice(1);
-  if (['brain','backlog','graph','idea'].indexOf(hash) !== -1) switchTab(hash);
+  if (['problem','brain','backlog','graph','idea'].indexOf(hash) !== -1) switchTab(hash);
 })();
   const supplementForm = document.getElementById('supplement-form');
   if (supplementForm) supplementForm.addEventListener('submit', async (event) => {
@@ -1821,6 +1866,64 @@ function switchTab(name) {
 </script>
 </body>
 </html>`
+}
+
+function renderProblemTab(discovery: DailyProblemDiscovery): string {
+  const { pick, brief } = discovery
+  if (!brief || pick.status !== 'picked') {
+    const missing = pick.missingEvidence.length > 0 ? pick.missingEvidence : ['需要更多可稽核的真實工作流片段。']
+    const whyNot = pick.whyNotOthers.length > 0
+      ? `<div class="problem-grid">${pick.whyNotOthers.map((item) => `<div class="problem-box">${escapeHtml(item)}</div>`).join('')}</div>`
+      : ''
+    return `
+<section class="cp-card problem-empty">
+  <div class="sys-label">/// 今日真實問題 · ${escapeHtml(pick.date)}</div>
+  <h2 class="problem-title">今天還沒有足夠真實問題證據</h2>
+  <p class="problem-lede">第一個問題不是「有什麼新技術」，而是：今天哪群人的哪個流程正在被爛工具、人工繞路、資訊混亂、平台限制拖累？</p>
+  <div class="problem-grid">
+    ${missing.map((item) => `<div class="problem-box"><strong>缺的證據</strong>${escapeHtml(item)}</div>`).join('')}
+  </div>
+  ${whyNot}
+  <form method="post" action="/api/problem-discovery/run" onsubmit="event.preventDefault();fetch('/api/problem-discovery/run',{method:'POST'}).then(function(){location.reload();});">
+    <button type="submit" class="secondary">重新整理 Kevin-owned signals</button>
+  </form>
+</section>`
+  }
+
+  const prompt = createProblemBriefPrompt(brief)
+  const evidenceHtml = brief.evidence.length === 0
+    ? '<p class="muted">沒有證據片段。</p>'
+    : `<ul class="radar-signals">${brief.evidence.slice(0, 5).map((entry) => `<li>${escapeHtml(entry.sourceName)}: ${escapeHtml(entry.quote)}</li>`).join('')}</ul>`
+  const whyNot = pick.whyNotOthers.length > 0
+    ? `<div class="problem-grid">${pick.whyNotOthers.map((item) => `<div class="problem-box"><strong>今天沒選</strong>${escapeHtml(item)}</div>`).join('')}</div>`
+    : ''
+  return `
+<section class="cp-card problem-hero">
+  <div class="sys-label">/// 今日真實問題 · ${escapeHtml(pick.date)}</div>
+  <h2 class="problem-title">${escapeHtml(brief.title)}</h2>
+  <div class="problem-score">score ${brief.score}/100 · ${escapeHtml(brief.confidence)} · ${brief.evidence.length} evidence</div>
+  <p class="muted">今天哪群人的哪個流程正在被爛工具、人工繞路、資訊混亂、平台限制拖累？</p>
+  <p class="problem-lede">${escapeHtml(brief.people)}正在處理「${escapeHtml(brief.workflow)}」，但被人工繞路、資訊混亂或平台限制拖慢。</p>
+  <div class="problem-grid">
+    <div class="problem-box"><strong>誰痛</strong>${escapeHtml(brief.people)}</div>
+    <div class="problem-box"><strong>什麼流程</strong>${escapeHtml(brief.workflow)}</div>
+    <div class="problem-box"><strong>痛在哪</strong>${escapeHtml(brief.pain)}</div>
+    <div class="problem-box"><strong>現在怎麼硬撐</strong>${escapeHtml(brief.workaround)}</div>
+    <div class="problem-box"><strong>現有方案缺口</strong>${escapeHtml(brief.existingSolutionsGap)}</div>
+    <div class="problem-box"><strong>Kevin fit</strong>${escapeHtml(brief.kevinFit.rationale)}</div>
+    <div class="problem-box"><strong>一週內 MVP</strong>${escapeHtml(brief.mvp)}</div>
+    <div class="problem-box"><strong>驗證方式</strong>${escapeHtml(brief.validationPlan)}</div>
+  </div>
+  <div class="problem-box" style="margin-top:12px"><strong>為什麼今天選它</strong>${escapeHtml(pick.whyThis)}</div>
+  <div class="problem-box" style="margin-top:12px"><strong>證據片段</strong>${evidenceHtml}</div>
+  <div class="problem-box" style="margin-top:12px"><strong>Kill criteria</strong><ul class="radar-signals">${brief.killCriteria.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul></div>
+  ${whyNot}
+  <details class="problem-prompt prompt-block">
+    <summary>OpenCode read-only research/spec prompt</summary>
+    <button type="button" class="secondary copy-prompt">複製 Prompt</button><span class="copy-status" aria-live="polite"></span>
+    <pre>${escapeHtml(prompt)}</pre>
+  </details>
+</section>`
 }
 
 export function renderBrainTab(loopState: ObservationLoopState, graph?: IdeaGraph, deliberationState?: DeliberationState): string {

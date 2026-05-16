@@ -11,6 +11,7 @@ import { observe, writeReports } from './observer.js'
 import { listBacklog, mergeCandidatesIntoBacklog, openBacklogDatabase } from './backlog.js'
 import { reflect } from './reflection.js'
 import { computeMood, persistMoodState } from './mood.js'
+import { getDailyProblemDiscovery } from './problem-discovery.js'
 import { getEffectiveConfig } from './runtime-overrides.js'
 import type {
   AutopilotConfig,
@@ -131,6 +132,7 @@ export class ObservationLoop {
       const ideas = await listIdeas(effectiveConfig, 40)
       const graph = await getIdeaGraph(effectiveConfig, report, ideas)
       const reflectionResult = await this.runReflectionSafely(effectiveConfig, graph)
+      const problemDiscoveryResult = await this.runProblemDiscoverySafely(effectiveConfig, report)
       const backlogSnapshot = listBacklogSnapshot(effectiveConfig)
       const excitementScore = this.computeExcitementScore(
         graph,
@@ -154,6 +156,9 @@ export class ObservationLoop {
         lastGraphAt: new Date().toISOString(),
         lastBacklogAt: backlogAt,
         lastReflectionAt: reflectionResult?.at ?? this.state.lastReflectionAt,
+        lastProblemDiscoveryAt: problemDiscoveryResult?.at ?? this.state.lastProblemDiscoveryAt,
+        lastProblemDiscoveryBriefCount: problemDiscoveryResult?.briefCount ?? this.state.lastProblemDiscoveryBriefCount,
+        lastProblemDiscoveryError: problemDiscoveryResult?.error,
         lastReportPath: written.jsonPath,
         lastMarkdownPath: written.markdownPath,
         lastExcitementScore: excitementScore,
@@ -281,6 +286,17 @@ export class ObservationLoop {
         await writeReflectionState(config, skipped)
       } catch {}
       return { at: skipped.generatedAt, newSeedCount: 0 }
+    }
+  }
+
+  private async runProblemDiscoverySafely(config: AutopilotConfig, report: ObservationReport): Promise<{ at: string; briefCount: number; error?: string } | undefined> {
+    try {
+      const discovery = await getDailyProblemDiscovery(config, { report })
+      return { at: discovery.generatedAt, briefCount: discovery.briefs.length }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.warn('observation-loop: problem discovery failed:', message)
+      return { at: new Date().toISOString(), briefCount: 0, error: message }
     }
   }
 

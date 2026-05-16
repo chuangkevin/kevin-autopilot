@@ -95,6 +95,10 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(page.status, 200)
     assert.equal(page.headers.get('cache-control'), 'no-store, max-age=0')
     const pageBody = await page.text()
+    assert.equal(pageBody.includes('今日真實問題'), true)
+    assert.equal(pageBody.includes('今天哪群人的哪個流程正在被爛工具、人工繞路、資訊混亂、平台限制拖累？'), true)
+    assert.equal(pageBody.includes('id="tab-problem"'), true)
+    assert.equal(pageBody.includes('id="tab-graph" hidden'), true)
     // Cyberpunk tab-based dashboard — content that moved to stub tab panels is no longer rendered inline
     assert.equal(pageBody.includes('設定 Gemini Keys'), false) // moved to /settings; header now shows 'SYS ⚙'
     assert.equal(pageBody.includes('分身現在能做什麼'), false) // capability brief moved to brain tab stub
@@ -138,7 +142,7 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(pageBody.includes('這不是模型私有 chain-of-thought'), false) // moved to stub
     assert.equal(pageBody.includes('像 Kevin 嗎？'), false) // moved to stub
     assert.equal(pageBody.includes('差在哪'), false) // moved to stub
-    assert.equal(pageBody.includes('/100'), false) // moved to stub
+    assert.equal(pageBody.includes('/100'), true) // daily problem score is now first-screen content
     assert.equal(pageBody.includes('/api/main-agent/thinking'), false) // moved to stub
     assert.equal(pageBody.includes('分身現在在想'), false) // was in neural cockpit HTML; moved to stub
     assert.equal(pageBody.includes('💭 分身怎麼想這個'), true) // still in JS renderNodeDrawer (was: 我怎麼理解它 before v0.16.0)
@@ -192,6 +196,24 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(graphNodeBody.node.safety, 'read-only')
     assert.equal(graphNodeBody.node.actions.find((action: { id: string; enabled: boolean }) => action.id === 'copy-opencode-prompt')?.enabled, true)
     assert.match(graphNodeBody.node.prompt, /do not edit target repositories/i)
+
+    const dailyProblem = await fetch(`${baseUrl}/api/problem-discovery/daily`)
+    assert.equal(dailyProblem.status, 200)
+    const dailyProblemBody = await dailyProblem.json()
+    assert.equal(typeof dailyProblemBody.pick.status, 'string')
+    assert.equal(typeof dailyProblemBody.briefCount, 'number')
+    assert.equal('briefs' in dailyProblemBody, false)
+
+    const problemRun = await fetch(`${baseUrl}/api/problem-discovery/run`, { method: 'POST' })
+    assert.equal(problemRun.status, 201)
+    const problemRunBody = await problemRun.json()
+    assert.equal(Array.isArray(problemRunBody.briefs), true)
+
+    const problemRunUntrusted = await fetch(`${baseUrl}/api/problem-discovery/run`, {
+      method: 'POST',
+      headers: { 'x-forwarded-for': '8.8.8.8' },
+    })
+    assert.equal(problemRunUntrusted.status, 403)
 
     const graphExtend = await fetch(`${baseUrl}/api/graph/nodes/${encodeURIComponent(graphBody.centerNodeId)}/extend`, { method: 'POST' })
     assert.equal(graphExtend.status, 201)
@@ -638,8 +660,10 @@ test('dashboard HTML uses cyberpunk CSS variables', async () => {
   assert.ok(html.includes("font-family: 'Courier New'"), 'missing monospace font')
 })
 
-test('dashboard HTML includes tab bar with four tabs', async () => {
+test('dashboard HTML includes problem-first tab bar', async () => {
   const html = await getDashboardHtml()
+  assert.ok(html.includes('data-tab="problem"'), 'missing problem tab button')
+  assert.ok(html.includes('id="tab-problem"'), 'missing problem panel')
   assert.ok(html.includes('data-tab="brain"'), 'missing brain tab button')
   assert.ok(html.includes('data-tab="backlog"'), 'missing backlog tab button')
   assert.ok(html.includes('data-tab="graph"'), 'missing graph tab button')

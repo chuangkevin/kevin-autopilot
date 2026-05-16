@@ -1,12 +1,14 @@
 # Kevin Autopilot
 
-Kevin Autopilot is a planned background agent service that continuously looks
-for useful work, thinks with Kevin's decision model, and turns safe findings into
-bounded tasks for OpenCode or another coding agent.
+Kevin Autopilot is a read-only real-world workflow pain discovery agent. It
+looks for people stuck in messy workflows, thinks with Kevin's decision model,
+and turns safe findings into bounded research, spec, or prototype-planning tasks
+for OpenCode or another coding agent.
 
 Its north star is to act like Kevin's product-engineering brain: not a passive
-chatbot, but a proactive system that finds real pain, proposes useful work,
-validates with evidence, and keeps moving projects forward safely.
+chatbot, not an infra monitor, not a tech trend radar, and not a graph toy. The
+first question is: which people's workflow is being dragged down by bad tools,
+manual workarounds, information chaos, or platform limits?
 
 The first implementation is a read-only Dockerized observer and idea intake
 prototype. It runs consistently on different HomeProject hosts without hard-coded
@@ -16,14 +18,16 @@ application paths.
 
 Build an AI system that can proactively:
 
-1. Notice repeated pain, broken workflows, stale docs, failing checks, and small
-   improvement opportunities.
-2. Preserve each observed problem or idea with UX, stability, and verifiability
-   context, without deciding which one matters most for Kevin.
-3. Decide whether a task can be prepared read-only, needs Kevin approval, or must
+1. Notice repeated real-world workflow pain, manual workarounds, stale docs,
+   failing checks, and small improvement opportunities.
+2. Preserve each problem signal with people, workflow, pain, workaround, and
+   provenance.
+3. Pick one daily problem opportunity that balances evidence, Kevin fit, and
+   small-MVP feasibility.
+4. Decide whether a task can be prepared read-only, needs Kevin approval, or must
    be blocked.
-4. Produce bounded OpenCode prompts for safe implementation.
-5. Verify, commit, and push completed low-risk changes when allowed.
+5. Produce bounded OpenCode prompts for safe research/spec/prototype planning.
+6. Verify, commit, and push completed low-risk changes when allowed.
 
 The core expectation is continuous observation across Kevin's projects. Autopilot
 should keep watching for possible bugs, regressions, stale docs, failing checks,
@@ -353,6 +357,19 @@ This remains planning metadata only. It does not create repositories, deploy,
 edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
+
+v0.18.0 adds the first real-world problem discovery slice. Kevin-owned ideas,
+supplements, observation candidates, and durable backlog items are converted into
+`ProblemSignal` records under `data/problem-signals/`, deduplicated into
+evidence-backed `ProblemBrief` records under `data/problem-briefs/`, and selected
+as a stable `DailyProblemPick` using `Asia/Taipei` date semantics. The home
+dashboard now opens on `今日真實問題` with people, workflow, pain, workaround,
+evidence, existing-solution gap, Kevin-fit rationale, MVP, validation plan, kill
+criteria, and a bounded OpenCode prompt that forbids repo creation, deployment,
+spending, outreach, secrets access, or target-project mutation without explicit
+approval. The graph remains as a secondary exploration/debug tab. Problem
+discovery runs after observation cycles and exposes `/api/problem-discovery/daily`
+plus trusted-gated `POST /api/problem-discovery/run`. All 137 tests pass.
 
 v0.17.0 makes the 分身 actually sound like Kevin. `kevin-ai-persona/PERSONA.md`
 is mirrored into `persona/PERSONA.md`, copied into the image at build time,
