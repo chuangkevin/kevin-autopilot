@@ -67,7 +67,14 @@ and the public daily endpoint adds limited candidate summaries without exposing
 the full `briefs` array. Kevin approved v0.18.2 to add a narrow calm PKM /
 screenless knowledge-management problem pattern for existing digital-overwhelm,
 bionic-persona, and fragmented personal-knowledge signals so the candidate pool
-can show another real non-engineering workflow pain.
+can show another real non-engineering workflow pain. Kevin approved v0.18.3 to
+evaluate accepted problem candidates into `worth_chasing`, `needs_evidence`, and
+`not_now`, show validation cards and rejected summaries, and persist trusted
+dashboard feedback under `data/problem-feedback/` as Autopilot-owned ranking
+metadata only. The public daily API may expose sanitized evaluations and rejected
+counts, but not the full internal `briefs` array, evidence quotes, raw rejected
+snippets, unmanaged secrets, or any approval to build, deploy, spend, outreach,
+or mutate target repositories.
 
 Keep these versions read-only: they may observe, classify, report, and store
 Autopilot-owned reports/idea records/supplements, but they must not modify target

@@ -65,6 +65,12 @@ test('dashboard shows a sanitized candidate problem pool', async () => {
     assert.equal(pageBody.includes('候選問題池'), true)
     assert.equal(pageBody.includes('problem-candidate'), true)
     assert.equal(pageBody.includes('不是只看一個答案'), true)
+    assert.equal(pageBody.includes('值得追'), true)
+    assert.equal(pageBody.includes('先補證據'), true)
+    assert.equal(pageBody.includes('validation-card'), true)
+    assert.equal(pageBody.includes('有趣'), true)
+    assert.equal(pageBody.includes('不是問題'), true)
+    assert.equal(pageBody.includes('暫時不追 / 已排除訊號'), true)
 
     const dailyProblem = await fetch(`${baseUrl}/api/problem-discovery/daily`)
     assert.equal(dailyProblem.status, 200)
@@ -72,8 +78,32 @@ test('dashboard shows a sanitized candidate problem pool', async () => {
     assert.equal(Array.isArray(dailyProblemBody.candidates), true)
     assert.equal(dailyProblemBody.candidates.length >= 1, true)
     assert.equal('briefs' in dailyProblemBody, false)
+    assert.equal('evaluations' in dailyProblemBody, false)
+    assert.equal(Array.isArray(dailyProblemBody.rejectedSummary), true)
     assert.equal(dailyProblemBody.candidates.some((candidate: { evidence?: unknown }) => 'evidence' in candidate), false)
+    assert.equal(dailyProblemBody.candidates.every((candidate: { evaluation?: { tier?: unknown; strongestEvidence?: string } }) => typeof candidate.evaluation?.tier === 'string'), true)
+    assert.equal(JSON.stringify(dailyProblemBody.candidates).includes('full quotes stay out of the public daily API'), true)
+    assert.equal(dailyProblemBody.brief && 'evidence' in dailyProblemBody.brief, false)
+    assert.equal(JSON.stringify(dailyProblemBody.brief).includes('手動複製貼上到 8891 和 Facebook 很耗時'), false)
     assert.equal(JSON.stringify(dailyProblemBody.candidates).includes('safe idea handoff assistant'), false)
+
+    const candidateId = dailyProblemBody.candidates[0].id
+    const feedback = await fetch(`${baseUrl}/api/problem-discovery/${encodeURIComponent(candidateId)}/feedback`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'interesting' }),
+    })
+    assert.equal(feedback.status, 201)
+    const feedbackBody = await feedback.json()
+    assert.equal(feedbackBody.feedback.source, 'trusted-dashboard')
+    assert.equal(feedbackBody.evaluation.feedbackSummary.interesting, 1)
+
+    const feedbackUntrusted = await fetch(`${baseUrl}/api/problem-discovery/${encodeURIComponent(candidateId)}/feedback`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-forwarded-for': '8.8.8.8' },
+      body: JSON.stringify({ action: 'boring' }),
+    })
+    assert.equal(feedbackUntrusted.status, 403)
   } finally {
     server.close()
     await rm(dataDir, { recursive: true, force: true })

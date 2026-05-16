@@ -12,6 +12,13 @@ import type {
   ObservationReport,
   ProblemBrief,
   ProblemBriefConfidence,
+  ProblemCandidateEvaluation,
+  ProblemCandidateTier,
+  ProblemFeedback,
+  ProblemFeedbackAction,
+  ProblemFeedbackSummary,
+  RejectedProblemReason,
+  RejectedProblemSummary,
   ProblemSignal,
   ProblemSignalSourceType,
 } from './types.js'
@@ -19,6 +26,7 @@ import type {
 const DAILY_PICK_FILE = 'daily-problem-pick.json'
 const TAIPEI_TIME_ZONE = 'Asia/Taipei'
 const MIN_SNIPPET_LENGTH = 16
+const PROBLEM_FEEDBACK_ACTIONS: ProblemFeedbackAction[] = ['interesting', 'boring', 'not-a-problem', 'find-similar']
 
 const WORKAROUND_TERMS = [
   'excel', 'google sheets', 'spreadsheet', 'line', '截圖', 'screenshot', '手動', '人工', 'copy/paste', '複製貼上', '紙本', '表單', '檔案', '轉檔', '平台', '命名',
@@ -68,6 +76,9 @@ export async function getDailyProblemDiscovery(
   const existingBriefs = await listProblemBriefs(config)
   const briefs = buildProblemBriefs(signals, existingBriefs, now)
   await writeProblemBriefs(config, briefs)
+  const feedback = await listProblemFeedback(config)
+  const evaluations = evaluateProblemCandidates(briefs, feedback)
+  const rejectedSummary = buildRejectedProblemSummary(signals, briefs)
 
   if (!options.force) {
     const stored = await readDailyPick(config)
@@ -80,6 +91,8 @@ export async function getDailyProblemDiscovery(
           pick: stored,
           brief: storedBrief,
           briefs,
+          evaluations,
+          rejectedSummary,
           signalCount: signals.length,
         }
       }
@@ -94,6 +107,8 @@ export async function getDailyProblemDiscovery(
     pick,
     brief: pick.briefId ? briefs.find((brief) => brief.id === pick.briefId) ?? null : null,
     briefs,
+    evaluations,
+    rejectedSummary,
     signalCount: signals.length,
   }
 }
@@ -107,6 +122,40 @@ export async function listProblemBriefs(config: AutopilotConfig): Promise<Proble
   return records
     .filter((brief) => !isRejectedStoredProblemBrief(brief))
     .sort((a, b) => b.score - a.score || b.updatedAt.localeCompare(a.updatedAt))
+}
+
+export async function listProblemFeedback(config: AutopilotConfig): Promise<ProblemFeedback[]> {
+  const records = await readJsonRecords<ProblemFeedback>(problemFeedbackDir(config), isProblemFeedback)
+  return records.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+}
+
+export async function recordProblemFeedback(
+  config: AutopilotConfig,
+  briefId: string,
+  action: ProblemFeedbackAction,
+  now: Date = new Date(),
+): Promise<ProblemFeedback> {
+  if (!isProblemFeedbackAction(action)) throw new Error(`unsupported problem feedback action: ${action}`)
+  const dir = problemFeedbackDir(config)
+  await mkdir(dir, { recursive: true })
+  const day = taipeiDateKey(now)
+  const id = `problem-feedback-${shortHash(`${briefId}:${action}:${day}`)}`
+  const path = join(dir, `${id}.json`)
+  try {
+    const existing = JSON.parse(await readFile(path, 'utf8')) as unknown
+    if (isProblemFeedback(existing)) return existing
+  } catch {
+    // Missing or malformed records are replaced by the deterministic current record.
+  }
+  const record: ProblemFeedback = {
+    id,
+    briefId,
+    action,
+    createdAt: now.toISOString(),
+    source: 'trusted-dashboard',
+  }
+  await writeFile(path, `${JSON.stringify(record, null, 2)}\n`, 'utf8')
+  return record
 }
 
 export async function upsertProblemSignals(config: AutopilotConfig, signals: ProblemSignal[]): Promise<ProblemSignal[]> {
@@ -194,6 +243,58 @@ export function generateDailyProblemPick(date: string, briefs: ProblemBrief[], n
   }
 }
 
+export function evaluateProblemCandidates(briefs: ProblemBrief[], feedback: ProblemFeedback[] = []): ProblemCandidateEvaluation[] {
+  const summaries = summarizeFeedback(feedback)
+  return briefs
+    .map((brief) => {
+      const feedbackSummary = summaries.get(brief.id) ?? emptyFeedbackSummary()
+      const feedbackDelta = scoreFeedback(brief, feedback.filter((item) => item.briefId === brief.id), feedbackSummary)
+      const adjustedScore = brief.score + feedbackDelta
+      const rejectionReasons = evaluationRejectionReasons(brief, feedbackSummary, adjustedScore)
+      const tier = evaluationTier(brief, feedbackSummary, adjustedScore, rejectionReasons)
+      return {
+        brief,
+        adjustedScore,
+        evaluation: {
+          briefId: brief.id,
+          tier,
+          rank: 0,
+          rankingRationale: rankingRationale(brief, feedbackSummary, adjustedScore),
+          strongestEvidence: strongestEvidence(brief),
+          evidenceGap: brief.missingEvidence[0] ?? '已具備初步 people/workflow/pain/workaround，但仍需要真實樣本驗證。',
+          nextValidationStep: brief.validationPlan,
+          rejectionReasons,
+          feedbackSummary,
+        } satisfies ProblemCandidateEvaluation,
+      }
+    })
+    .sort((a, b) => tierWeight(b.evaluation.tier) - tierWeight(a.evaluation.tier) || b.adjustedScore - a.adjustedScore || b.brief.score - a.brief.score || a.brief.title.localeCompare(b.brief.title))
+    .map((entry, index) => ({ ...entry.evaluation, rank: index + 1 }))
+}
+
+export function buildRejectedProblemSummary(signals: ProblemSignal[], briefs: ProblemBrief[] = []): RejectedProblemSummary[] {
+  const acceptedSignalIds = new Set(briefs.flatMap((brief) => brief.sourceSignalIds))
+  const seenDedupKeys = new Set<string>()
+  const byReason = new Map<RejectedProblemReason, { count: number; examples: RejectedProblemSummary['examples'] }>()
+  for (const signal of signals) {
+    let reason: RejectedProblemReason | undefined
+    if (seenDedupKeys.has(signal.dedupKey)) reason = 'duplicate'
+    seenDedupKeys.add(signal.dedupKey)
+    if (!reason && acceptedSignalIds.has(signal.id)) continue
+    reason = reason ?? rejectedReasonForSignal(signal)
+    if (!reason) continue
+    const current = byReason.get(reason) ?? { count: 0, examples: [] }
+    current.count += 1
+    if (current.examples.length < 3) {
+      current.examples.push({ title: sanitizeRejectedTitle(signal.title), sourceType: signal.sourceType })
+    }
+    byReason.set(reason, current)
+  }
+  return [...byReason.entries()]
+    .map(([reason, value]) => ({ reason, count: value.count, examples: value.examples }))
+    .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason))
+}
+
 export function createProblemBriefPrompt(brief: ProblemBrief): string {
   return [
     `Research/spec a small Kevin-fit prototype opportunity for this real-world workflow pain: ${brief.title}`,
@@ -222,6 +323,105 @@ export function createProblemBriefPrompt(brief: ProblemBrief): string {
     '3. Define concrete validation steps and evidence needed.',
     '4. List approval gates before any repo creation, deployment, paid API, outreach, or mutation.',
   ].join('\n')
+}
+
+function summarizeFeedback(feedback: ProblemFeedback[]): Map<string, ProblemFeedbackSummary> {
+  const byBrief = new Map<string, ProblemFeedbackSummary>()
+  for (const item of feedback) {
+    const summary = byBrief.get(item.briefId) ?? emptyFeedbackSummary()
+    if (item.action === 'interesting') summary.interesting += 1
+    else if (item.action === 'boring') summary.boring += 1
+    else if (item.action === 'not-a-problem') summary.notAProblem += 1
+    else if (item.action === 'find-similar') summary.findSimilar += 1
+    byBrief.set(item.briefId, summary)
+  }
+  return byBrief
+}
+
+function emptyFeedbackSummary(): ProblemFeedbackSummary {
+  return { interesting: 0, boring: 0, notAProblem: 0, findSimilar: 0 }
+}
+
+function scoreFeedback(brief: ProblemBrief, records: ProblemFeedback[], summary: ProblemFeedbackSummary): number {
+  const positive = summary.interesting * 8 + summary.findSimilar * 6
+  let negative = summary.boring * 9 + summary.notAProblem * 18
+  if (negative > 0 && hasNewEvidenceAfterNegativeFeedback(brief, records)) negative = Math.round(negative * 0.35)
+  return positive - negative
+}
+
+function hasNewEvidenceAfterNegativeFeedback(brief: ProblemBrief, records: ProblemFeedback[]): boolean {
+  const negativeFeedbackAt = records
+    .filter((item) => item.action === 'boring' || item.action === 'not-a-problem')
+    .map((item) => item.createdAt)
+    .sort()
+    .at(-1)
+  if (!negativeFeedbackAt) return false
+  return brief.evidence.some((entry) => entry.fetchedAt > negativeFeedbackAt) || (brief.evidence.length >= 2 && brief.score >= 75)
+}
+
+function evaluationTier(brief: ProblemBrief, feedback: ProblemFeedbackSummary, adjustedScore: number, rejectionReasons: string[]): ProblemCandidateTier {
+  if (rejectionReasons.length > 0 && (adjustedScore < 70 || (feedback.notAProblem > 0 && adjustedScore < 65))) return 'not_now'
+  if (adjustedScore >= 70 && brief.validationPlan.length > 20 && brief.workaround !== '尚未看到明確 workaround') return 'worth_chasing'
+  return 'needs_evidence'
+}
+
+function evaluationRejectionReasons(brief: ProblemBrief, feedback: ProblemFeedbackSummary, adjustedScore: number): string[] {
+  const reasons: string[] = []
+  if (brief.people === '非工程使用者' || brief.people.length < 2) reasons.push('missing-people')
+  if (brief.workflow.length < 8) reasons.push('missing-workflow')
+  if (brief.workaround === '尚未看到明確 workaround') reasons.push('missing-workaround')
+  if (adjustedScore < 55 || brief.confidence === 'needs_evidence') reasons.push('low-signal')
+  if (feedback.boring > 0 && adjustedScore < 70) reasons.push('boring-feedback')
+  if (feedback.notAProblem > 0 && adjustedScore < 65) reasons.push('not-a-problem-feedback')
+  return [...new Set(reasons)]
+}
+
+function rankingRationale(brief: ProblemBrief, feedback: ProblemFeedbackSummary, adjustedScore: number): string {
+  const feedbackNote = feedback.interesting + feedback.findSimilar > 0
+    ? ` Kevin feedback 有正向訊號 ${feedback.interesting + feedback.findSimilar} 筆。`
+    : feedback.boring + feedback.notAProblem > 0
+      ? ` Kevin feedback 有降權訊號 ${feedback.boring + feedback.notAProblem} 筆。`
+      : ''
+  return `基礎分 ${brief.score}/100，回饋後約 ${Math.max(0, Math.min(100, adjustedScore))}/100；${brief.severity.rationale}${feedbackNote}`
+}
+
+function strongestEvidence(brief: ProblemBrief): string {
+  const evidence = brief.evidence[0]
+  if (!evidence) return '尚未有可稽核 evidence；需要補真實來源片段。'
+  return `${evidence.sourceName}: ${normalizeWhitespace(evidence.quote).slice(0, 180)}`
+}
+
+function tierWeight(tier: ProblemCandidateTier): number {
+  if (tier === 'worth_chasing') return 3
+  if (tier === 'needs_evidence') return 2
+  return 1
+}
+
+function rejectedReasonForSignal(signal: ProblemSignal): RejectedProblemReason | undefined {
+  const text = `${signal.title} ${signal.snippet}`
+  const lower = text.toLowerCase()
+  const matchedWorkarounds = WORKAROUND_TERMS.filter((term) => lower.includes(term.toLowerCase()))
+  const hasPain = PAIN_TERMS.some((term) => lower.includes(term.toLowerCase()))
+  const hasTech = TECH_TERMS.some((term) => lower.includes(term.toLowerCase()))
+  const category = detectCategory(lower)
+  if (isInternalEngineeringOnlySignal(lower)) return 'internal-engineering'
+  if (hasTech && !category && !hasPain && matchedWorkarounds.length === 0) return 'tech-only'
+  if (!category && !hasLikelyPeople(lower)) return 'missing-people'
+  if (!category && !hasLikelyWorkflow(lower)) return 'missing-workflow'
+  if (!category && matchedWorkarounds.length === 0) return 'missing-workaround'
+  return 'low-signal'
+}
+
+function hasLikelyPeople(lower: string): boolean {
+  return REAL_PERSON_WORKFLOW_TERMS.some((term) => includesWorkflowTerm(lower, term)) || /(user|customer|client|使用者|客戶|業務|創作者|店家|玩家|pm)/i.test(lower)
+}
+
+function hasLikelyWorkflow(lower: string): boolean {
+  return /(流程|workflow|整理|刊登|上傳|下載|回報|表單|剪輯|prototype|管理|記錄|搜尋|追蹤|維護|轉檔)/i.test(lower)
+}
+
+function sanitizeRejectedTitle(title: string): string {
+  return normalizeWhitespace(title).slice(0, 72) || 'untitled rejected signal'
 }
 
 async function collectKevinOwnedSignals(config: AutopilotConfig, report: ObservationReport | undefined, now: Date): Promise<ProblemSignal[]> {
@@ -649,6 +849,10 @@ function problemBriefsDir(config: AutopilotConfig): string {
   return join(config.dataDir, 'problem-briefs')
 }
 
+function problemFeedbackDir(config: AutopilotConfig): string {
+  return join(config.dataDir, 'problem-feedback')
+}
+
 function taipeiDateKey(date: Date): string {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: TAIPEI_TIME_ZONE,
@@ -677,6 +881,19 @@ function isProblemBrief(value: unknown): value is ProblemBrief {
     typeof (value as ProblemBrief).title === 'string' &&
     Array.isArray((value as ProblemBrief).evidence) &&
     typeof (value as ProblemBrief).score === 'number')
+}
+
+function isProblemFeedback(value: unknown): value is ProblemFeedback {
+  return Boolean(value && typeof value === 'object' &&
+    typeof (value as ProblemFeedback).id === 'string' &&
+    typeof (value as ProblemFeedback).briefId === 'string' &&
+    isProblemFeedbackAction((value as ProblemFeedback).action) &&
+    typeof (value as ProblemFeedback).createdAt === 'string' &&
+    (value as ProblemFeedback).source === 'trusted-dashboard')
+}
+
+export function isProblemFeedbackAction(value: unknown): value is ProblemFeedbackAction {
+  return typeof value === 'string' && (PROBLEM_FEEDBACK_ACTIONS as string[]).includes(value)
 }
 
 function isDailyProblemPick(value: unknown): value is DailyProblemPick {

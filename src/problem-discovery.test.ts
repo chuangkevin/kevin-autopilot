@@ -5,10 +5,14 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   buildProblemBriefs,
+  buildRejectedProblemSummary,
   createProblemSignal,
+  evaluateProblemCandidates,
   generateDailyProblemPick,
   getDailyProblemDiscovery,
+  listProblemFeedback,
   listProblemSignals,
+  recordProblemFeedback,
   upsertProblemSignals,
 } from './problem-discovery.js'
 import type { AutopilotConfig } from './types.js'
@@ -35,6 +39,24 @@ test('problem signal persistence deduplicates and skips malformed stored data', 
     const stored = await listProblemSignals(config)
     assert.equal(stored.length, 1)
     assert.equal(stored[0]?.id, signal.id)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('problem feedback persistence deduplicates same-day clicks and skips malformed records', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-problem-feedback-'))
+  try {
+    const config = testConfig(dataDir)
+    const dir = join(dataDir, 'problem-feedback')
+    await mkdir(dir, { recursive: true })
+    await writeFile(join(dir, 'bad.json'), '{not json', 'utf8')
+    const first = await recordProblemFeedback(config, 'problem-car', 'interesting', new Date('2026-05-16T02:00:00.000Z'))
+    const duplicate = await recordProblemFeedback(config, 'problem-car', 'interesting', new Date('2026-05-16T03:00:00.000Z'))
+    const stored = await listProblemFeedback(config)
+    assert.equal(first.id, duplicate.id)
+    assert.equal(stored.length, 1)
+    assert.equal(stored[0]?.action, 'interesting')
   } finally {
     await rm(dataDir, { recursive: true, force: true })
   }
@@ -124,6 +146,83 @@ test('daily pick candidates ignore boring internal engineering signals', () => {
   assert.equal(briefs.length, 1)
   assert.match(briefs[0]?.title ?? '', /車商/)
   assert.equal(pick.briefId, briefs[0]?.id)
+})
+
+test('candidate evaluation tiers account for feedback and recover when new evidence arrives', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-problem-eval-'))
+  try {
+    const config = testConfig(dataDir)
+    const firstSignal = createProblemSignal({
+      sourceType: 'kevin-input',
+      sourceName: 'car-workflow-1',
+      title: '車商照片刊登流程卡在手動整理',
+      snippet: '中古車業務每次刊登都要從 LINE 收照片，用 Excel 整理車輛規格，再截圖確認欄位，手動複製貼上到 8891 和 Facebook 很耗時。',
+      fetchedAt: '2026-05-15T17:00:00.000Z',
+    })
+    const initialBrief = buildProblemBriefs([firstSignal])[0]
+    assert.ok(initialBrief)
+    assert.equal(evaluateProblemCandidates([initialBrief])[0]?.tier, 'worth_chasing')
+
+    await recordProblemFeedback(config, initialBrief.id, 'boring', new Date('2026-05-16T01:00:00.000Z'))
+    const afterBoring = evaluateProblemCandidates([initialBrief], await listProblemFeedback(config))[0]
+    assert.equal(afterBoring?.tier, 'not_now')
+    assert.equal(afterBoring?.feedbackSummary.boring, 1)
+
+    const secondSignal = createProblemSignal({
+      sourceType: 'kevin-input',
+      sourceName: 'car-workflow-2',
+      title: '另一家車商同樣用 Excel LINE 刊登車輛',
+      snippet: '另一家中古車業務也每次靠 Excel、LINE、截圖和手動複製貼上整理刊登資料，重複又容易漏欄位。',
+      fetchedAt: '2026-05-16T02:00:00.000Z',
+    })
+    const recoveredBrief = buildProblemBriefs([firstSignal, secondSignal], [initialBrief], new Date('2026-05-16T02:30:00.000Z'))[0]
+    assert.ok(recoveredBrief)
+    const recovered = evaluateProblemCandidates([recoveredBrief], await listProblemFeedback(config))[0]
+    assert.equal(recovered?.tier, 'worth_chasing')
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('rejected problem summary distinguishes sanitized rejection reasons', () => {
+  const internal = createProblemSignal({
+    sourceType: 'kevin-input',
+    sourceName: 'internal-plan',
+    title: 'Repo architecture tests',
+    snippet: 'Plan repo architecture spec and tests for internal deploy workflow.',
+  })
+  const tech = createProblemSignal({
+    sourceType: 'forum',
+    sourceName: 'trend',
+    title: 'Vector DB LLM protocol trend',
+    snippet: 'Vector DB LLM protocol framework trend for AI agent startup category.',
+  })
+  const missingPeople = createProblemSignal({
+    sourceType: 'kevin-input',
+    sourceName: 'abstract-workflow',
+    title: '表單整理很麻煩',
+    snippet: '每次整理表單都很麻煩，手動複製貼上很多次。',
+  })
+  const missingWorkflow = createProblemSignal({
+    sourceType: 'review',
+    sourceName: 'customer-abstract',
+    title: '客戶覺得很痛',
+    snippet: 'customer 反覆覺得很痛很麻煩，但描述沒有說他們正在做哪個操作。',
+  })
+  const duplicate = createProblemSignal({
+    sourceType: 'kevin-input',
+    sourceName: 'dup',
+    title: '重複訊號',
+    snippet: '客戶每次整理資料 workflow 都很痛，只能人工處理。',
+  })
+  const summary = buildRejectedProblemSummary([internal, tech, missingPeople, missingWorkflow, duplicate, duplicate])
+  const reasons = new Set(summary.map((item) => item.reason))
+  assert.equal(reasons.has('internal-engineering'), true)
+  assert.equal(reasons.has('tech-only'), true)
+  assert.equal(reasons.has('missing-people'), true)
+  assert.equal(reasons.has('missing-workflow'), true)
+  assert.equal(reasons.has('duplicate'), true)
+  assert.equal(JSON.stringify(summary).includes('Plan repo architecture spec and tests for internal deploy workflow'), false)
 })
 
 test('daily pick returns insufficient evidence when no brief is strong enough', () => {

@@ -211,6 +211,50 @@ export interface ProblemBrief {
   sourceSignalIds: string[]
 }
 
+export type ProblemCandidateTier = 'worth_chasing' | 'needs_evidence' | 'not_now'
+
+export type ProblemFeedbackAction = 'interesting' | 'boring' | 'not-a-problem' | 'find-similar'
+
+export interface ProblemFeedback {
+  id: string
+  briefId: string
+  action: ProblemFeedbackAction
+  createdAt: string
+  source: 'trusted-dashboard'
+}
+
+export interface ProblemFeedbackSummary {
+  interesting: number
+  boring: number
+  notAProblem: number
+  findSimilar: number
+}
+
+export interface ProblemCandidateEvaluation {
+  briefId: string
+  tier: ProblemCandidateTier
+  rank: number
+  rankingRationale: string
+  strongestEvidence: string
+  evidenceGap: string
+  nextValidationStep: string
+  rejectionReasons: string[]
+  feedbackSummary: ProblemFeedbackSummary
+}
+
+export type RejectedProblemReason = 'internal-engineering' | 'tech-only' | 'missing-people' | 'missing-workflow' | 'missing-workaround' | 'duplicate' | 'low-signal'
+
+export interface RejectedProblemExample {
+  title: string
+  sourceType: ProblemSignalSourceType
+}
+
+export interface RejectedProblemSummary {
+  reason: RejectedProblemReason
+  count: number
+  examples: RejectedProblemExample[]
+}
+
 export interface DailyProblemPick {
   date: string
   status: 'picked' | 'insufficient-evidence'
@@ -227,6 +271,8 @@ export interface DailyProblemDiscovery {
   pick: DailyProblemPick
   brief: ProblemBrief | null
   briefs: ProblemBrief[]
+  evaluations: ProblemCandidateEvaluation[]
+  rejectedSummary: RejectedProblemSummary[]
   signalCount: number
 }
 

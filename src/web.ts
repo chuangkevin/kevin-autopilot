@@ -33,7 +33,7 @@ import { clearStoredGeminiKeys, getKeyStatus, importGeminiKeys } from './keys.js
 import { isBoostRunning, runBoost } from './boost.js'
 import { isDeliberationRunning, loadLatestDeliberation, runDeliberation } from './deliberation.js'
 import { recomputePreferences } from './preferences.js'
-import { createProblemBriefPrompt, getDailyProblemDiscovery } from './problem-discovery.js'
+import { createProblemBriefPrompt, getDailyProblemDiscovery, isProblemFeedbackAction, recordProblemFeedback } from './problem-discovery.js'
 import { createObservationLoop, readReflectionState, type ObservationLoop } from './observation-loop.js'
 import { isReflectionRewriteFresh } from './reflection.js'
 import { observe } from './observer.js'
@@ -59,6 +59,8 @@ import type {
   KeyStatusSummary,
   ObservationLoopState,
   ObservationReport,
+  ProblemCandidateEvaluation,
+  RejectedProblemSummary,
   RuntimeOverrides,
   UserSupplement,
 } from './types.js'
@@ -292,6 +294,39 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
     }
     const report = await getVisibleReport(config, observationLoop)
     writeJson(response, await getDailyProblemDiscovery(config, { report, force: true }), 201)
+    return
+  }
+
+  const problemFeedbackMatch = url.pathname.match(/^\/api\/problem-discovery\/([^/]+)\/feedback$/)
+  if (problemFeedbackMatch && request.method === 'POST') {
+    if (!isTrustedSettingsRequest(request)) {
+      writeText(response, 'Problem candidate feedback requires loopback, private LAN, Docker, or Tailscale access', 403)
+      return
+    }
+    const briefId = decodeURIComponent(problemFeedbackMatch[1] ?? '')
+    let body: { action?: unknown }
+    try {
+      const rawBody = await readBody(request)
+      body = rawBody.trim() ? JSON.parse(rawBody) as { action?: unknown } : {}
+    } catch {
+      writeText(response, 'feedback request body must be JSON', 400)
+      return
+    }
+    if (!isProblemFeedbackAction(body.action)) {
+      writeText(response, 'feedback action must be interesting, boring, not-a-problem, or find-similar', 400)
+      return
+    }
+    const report = await getVisibleReport(config, observationLoop)
+    const discovery = await getDailyProblemDiscovery(config, { report })
+    const brief = discovery.briefs.find((item) => item.id === briefId)
+    if (!brief) {
+      writeText(response, 'Problem brief not found', 404)
+      return
+    }
+    const feedback = await recordProblemFeedback(config, briefId, body.action)
+    const updated = await getDailyProblemDiscovery(config, { report })
+    const evaluation = updated.evaluations.find((item) => item.briefId === briefId)
+    writeJson(response, { feedback, candidate: toPublicProblemCandidate(brief, evaluation), evaluation }, 201)
     return
   }
 
@@ -671,21 +706,34 @@ interface PublicProblemCandidate {
   evidenceCount: number
   whyInteresting: string
   missingEvidence: string[]
+  evaluation?: PublicProblemCandidateEvaluation
+  killCriteria: string[]
 }
 
-function toPublicDailyProblemDiscovery(discovery: DailyProblemDiscovery): Omit<DailyProblemDiscovery, 'briefs'> & { briefCount: number; candidates: PublicProblemCandidate[] } {
+type PublicProblemCandidateEvaluation = Omit<ProblemCandidateEvaluation, 'strongestEvidence'> & { strongestEvidence: string }
+
+interface PublicProblemBrief extends PublicProblemCandidate {
+  pain: string
+  workaround: string
+  existingSolutionsGap: string
+  mvp: string
+  validationPlan: string
+}
+
+function toPublicDailyProblemDiscovery(discovery: DailyProblemDiscovery): Omit<DailyProblemDiscovery, 'briefs' | 'brief' | 'evaluations' | 'rejectedSummary'> & { brief: PublicProblemBrief | null; briefCount: number; candidates: PublicProblemCandidate[]; rejectedSummary: RejectedProblemSummary[] } {
   return {
     date: discovery.date,
     generatedAt: discovery.generatedAt,
     pick: discovery.pick,
-    brief: discovery.brief,
+    brief: discovery.brief ? toPublicProblemBrief(discovery.brief, discovery.evaluations.find((evaluation) => evaluation.briefId === discovery.brief?.id)) : null,
     signalCount: discovery.signalCount,
     briefCount: discovery.briefs.length,
-    candidates: discovery.briefs.slice(0, 6).map(toPublicProblemCandidate),
+    candidates: discovery.briefs.slice(0, 6).map((brief) => toPublicProblemCandidate(brief, discovery.evaluations.find((evaluation) => evaluation.briefId === brief.id))),
+    rejectedSummary: discovery.rejectedSummary,
   }
 }
 
-function toPublicProblemCandidate(brief: DailyProblemDiscovery['briefs'][number]): PublicProblemCandidate {
+function toPublicProblemCandidate(brief: DailyProblemDiscovery['briefs'][number], evaluation?: ProblemCandidateEvaluation): PublicProblemCandidate {
   return {
     id: brief.id,
     title: brief.title,
@@ -696,6 +744,26 @@ function toPublicProblemCandidate(brief: DailyProblemDiscovery['briefs'][number]
     evidenceCount: brief.evidence.length,
     whyInteresting: brief.kevinFit.rationale,
     missingEvidence: brief.missingEvidence.slice(0, 2),
+    killCriteria: brief.killCriteria.slice(0, 2),
+    ...(evaluation ? { evaluation: toPublicProblemEvaluation(brief, evaluation) } : {}),
+  }
+}
+
+function toPublicProblemBrief(brief: DailyProblemDiscovery['briefs'][number], evaluation?: ProblemCandidateEvaluation): PublicProblemBrief {
+  return {
+    ...toPublicProblemCandidate(brief, evaluation),
+    pain: `${brief.people}在「${brief.workflow}」流程中有重複痛點；原始片段不放在 public daily API。`,
+    workaround: brief.workaround,
+    existingSolutionsGap: brief.existingSolutionsGap,
+    mvp: brief.mvp,
+    validationPlan: brief.validationPlan,
+  }
+}
+
+function toPublicProblemEvaluation(brief: DailyProblemDiscovery['briefs'][number], evaluation: ProblemCandidateEvaluation): PublicProblemCandidateEvaluation {
+  return {
+    ...evaluation,
+    strongestEvidence: `${brief.evidence.length} sanitized evidence signal(s); full quotes stay out of the public daily API.`,
   }
 }
 
@@ -925,11 +993,21 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
 .problem-prompt pre { max-height: 280px; overflow: auto; }
 .problem-candidates { margin-top: 14px; }
 .problem-candidates h3 { margin: 0 0 4px; color: #f8fafc; font-size: 20px; }
+.problem-tier { margin-top: 12px; }
+.problem-tier h4 { margin: 0 0 8px; color: #bae6fd; letter-spacing: 0.06em; text-transform: uppercase; }
 .problem-candidate-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; margin-top: 10px; }
 .problem-candidate { border: 1px solid rgba(0,255,255,0.2); border-radius: 14px; padding: 12px; background: linear-gradient(180deg, rgba(15,23,42,0.76), rgba(15,23,42,0.42)); }
+.problem-candidate.selected { border-color: rgba(34,197,94,0.48); box-shadow: 0 0 20px rgba(34,197,94,0.1); }
+.problem-candidate.not-now { opacity: 0.72; border-color: rgba(148,163,184,0.2); }
 .problem-candidate h4 { margin: 6px 0; color: #e0f2fe; font-size: 17px; line-height: 1.25; }
 .problem-candidate-meta { color: #93c5fd; font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; }
 .problem-candidate .muted { margin: 5px 0; }
+.validation-card { margin-top: 8px; border: 1px solid rgba(148,163,184,0.16); border-radius: 10px; padding: 9px; background: rgba(2,6,23,0.38); }
+.feedback-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.feedback-actions button { border: 1px solid rgba(0,255,255,0.24); color: #bae6fd; background: rgba(8,13,25,0.6); border-radius: 999px; padding: 5px 9px; font-family: 'Courier New', monospace; }
+.feedback-actions button:disabled { opacity: 0.45; cursor: wait; }
+.rejected-summary { margin-top: 12px; border: 1px solid rgba(245,158,11,0.25); border-radius: 12px; padding: 10px; background: rgba(120,53,15,0.12); }
+.rejected-summary summary { cursor: pointer; color: #fde68a; }
 
 /* Labels */
 .sys-label { font-size: 16px; color: rgba(0,255,255,0.4); letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 6px; }
@@ -1896,6 +1974,22 @@ function switchTab(name) {
       .then(function() { btn.closest('.bl-item').style.opacity = '0.3'; btn.disabled = true; setTimeout(function() { cpLoadBacklogTab(cpBlCurrentFilter); }, 800); });
   }
 
+  function problemFeedback(briefId, action, btn) {
+    btn.disabled = true;
+    fetch('/api/problem-discovery/' + encodeURIComponent(briefId) + '/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: action })
+    }).then(function(res) {
+      if (!res.ok) throw new Error('feedback failed');
+      btn.textContent = '已記錄';
+      setTimeout(function() { location.reload(); }, 650);
+    }).catch(function() {
+      btn.disabled = false;
+      btn.textContent = '失敗，重試';
+    });
+  }
+
   cpLoadBacklogTab('active');
 </script>
 </body>
@@ -1965,36 +2059,90 @@ function renderProblemTab(discovery: DailyProblemDiscovery): string {
 }
 
 function renderProblemCandidatePool(discovery: DailyProblemDiscovery, selectedBriefId?: string): string {
-  const candidates = discovery.briefs
-    .filter((brief) => brief.id !== selectedBriefId)
+  const evaluations = new Map(discovery.evaluations.map((evaluation) => [evaluation.briefId, evaluation]))
+  const candidates = [...discovery.briefs]
+    .sort((a, b) => (evaluations.get(a.id)?.rank ?? 999) - (evaluations.get(b.id)?.rank ?? 999))
     .slice(0, 6)
   if (candidates.length === 0) {
     return `
   <section class="problem-candidates">
     <h3>候選問題池</h3>
     <p class="muted">目前只有 daily pick 這一個可用候選；需要更多 Kevin-owned 真實工作流訊號。</p>
+    ${renderRejectedSummary(discovery.rejectedSummary)}
   </section>`
   }
+  const tiers: Array<{ tier: ProblemCandidateEvaluation['tier']; label: string }> = [
+    { tier: 'worth_chasing', label: '值得追' },
+    { tier: 'needs_evidence', label: '先補證據' },
+    { tier: 'not_now', label: '暫時不追' },
+  ]
+  const tierHtml = tiers.map(({ tier, label }) => {
+    const tierCandidates = candidates.filter((brief) => (evaluations.get(brief.id)?.tier ?? 'needs_evidence') === tier)
+    return `<div class="problem-tier ${tier}">
+      <h4>${escapeHtml(label)} · ${tierCandidates.length}</h4>
+      ${tierCandidates.length === 0 ? '<p class="muted">目前沒有這一層的可見候選。</p>' : `<div class="problem-candidate-grid">
+        ${tierCandidates.map((brief, index) => renderProblemCandidateCard(brief, evaluations.get(brief.id), index + 1, brief.id === selectedBriefId)).join('')}
+      </div>`}
+    </div>`
+  }).join('')
   return `
   <section class="problem-candidates">
     <h3>候選問題池</h3>
-    <p class="muted">不是只看一個答案；下面是已排除內部 repo/spec/test 雜訊後，仍值得追的其他工作流痛點。</p>
-    <div class="problem-candidate-grid">
-      ${candidates.map((brief, index) => renderProblemCandidateCard(brief, index + 1)).join('')}
-    </div>
+    <p class="muted">不是只看一個答案；下面把候選分成值得追、先補證據、暫時不追，feedback 只改 Autopilot-owned ranking metadata。</p>
+    ${tierHtml}
+    ${renderRejectedSummary(discovery.rejectedSummary)}
   </section>`
 }
 
-function renderProblemCandidateCard(brief: DailyProblemDiscovery['briefs'][number], index: number): string {
-  const missing = brief.missingEvidence[0] ?? '需要更多直接使用者證據。'
-  return `<article class="problem-candidate">
-    <div class="problem-candidate-meta">candidate ${index} · ${brief.score}/100 · ${escapeHtml(brief.confidence)} · ${brief.evidence.length} evidence</div>
+function renderProblemCandidateCard(brief: DailyProblemDiscovery['briefs'][number], evaluation: ProblemCandidateEvaluation | undefined, index: number, selected: boolean): string {
+  const missing = evaluation?.evidenceGap ?? brief.missingEvidence[0] ?? '需要更多直接使用者證據。'
+  const tier = evaluation?.tier ?? 'needs_evidence'
+  const kill = brief.killCriteria[0] ?? evaluation?.rejectionReasons[0] ?? '如果無法找到真實樣本，就先不追。'
+  return `<article class="problem-candidate ${tier === 'not_now' ? 'not-now' : ''}${selected ? ' selected' : ''}">
+    <div class="problem-candidate-meta">candidate ${index} · ${tierLabel(tier)} · rank ${evaluation?.rank ?? index} · ${brief.score}/100 · ${brief.evidence.length} evidence</div>
     <h4>${escapeHtml(brief.title)}</h4>
     <p class="muted"><strong>人群</strong> ${escapeHtml(brief.people)}</p>
     <p class="muted"><strong>流程</strong> ${escapeHtml(brief.workflow)}</p>
-    <p class="muted"><strong>可能有趣</strong> ${escapeHtml(brief.kevinFit.rationale)}</p>
-    <p class="muted"><strong>還缺</strong> ${escapeHtml(missing)}</p>
+    <div class="validation-card">
+      <p class="muted"><strong>排序理由</strong> ${escapeHtml(evaluation?.rankingRationale ?? brief.kevinFit.rationale)}</p>
+      <p class="muted"><strong>最強證據</strong> ${escapeHtml(evaluation?.strongestEvidence ?? `${brief.evidence.length} evidence signal(s)`)}</p>
+      <p class="muted"><strong>還缺</strong> ${escapeHtml(missing)}</p>
+      <p class="muted"><strong>下一步驗證</strong> ${escapeHtml(evaluation?.nextValidationStep ?? brief.validationPlan)}</p>
+      <p class="muted"><strong>Kill / 暫停條件</strong> ${escapeHtml(kill)}</p>
+    </div>
+    <div class="feedback-actions" aria-label="problem candidate feedback">
+      <button type="button" onclick="problemFeedback('${escapeHtmlAttr(brief.id)}','interesting',this)">有趣 ${evaluation?.feedbackSummary.interesting ?? 0}</button>
+      <button type="button" onclick="problemFeedback('${escapeHtmlAttr(brief.id)}','boring',this)">無聊 ${evaluation?.feedbackSummary.boring ?? 0}</button>
+      <button type="button" onclick="problemFeedback('${escapeHtmlAttr(brief.id)}','not-a-problem',this)">不是問題 ${evaluation?.feedbackSummary.notAProblem ?? 0}</button>
+      <button type="button" onclick="problemFeedback('${escapeHtmlAttr(brief.id)}','find-similar',this)">再找類似 ${evaluation?.feedbackSummary.findSimilar ?? 0}</button>
+    </div>
   </article>`
+}
+
+function renderRejectedSummary(rejectedSummary: RejectedProblemSummary[]): string {
+  if (rejectedSummary.length === 0) return ''
+  return `<details class="rejected-summary">
+    <summary>暫時不追 / 已排除訊號 ${rejectedSummary.reduce((sum, item) => sum + item.count, 0)} 筆</summary>
+    <div class="problem-grid">
+      ${rejectedSummary.map((item) => `<div class="problem-box"><strong>${escapeHtml(rejectedReasonLabel(item.reason))} · ${item.count}</strong>${item.examples.map((example) => escapeHtml(`${example.sourceType}: ${example.title}`)).join('<br>')}</div>`).join('')}
+    </div>
+  </details>`
+}
+
+function tierLabel(tier: ProblemCandidateEvaluation['tier']): string {
+  if (tier === 'worth_chasing') return '值得追'
+  if (tier === 'needs_evidence') return '先補證據'
+  return '暫時不追'
+}
+
+function rejectedReasonLabel(reason: RejectedProblemSummary['reason']): string {
+  if (reason === 'internal-engineering') return '內部工程雜訊'
+  if (reason === 'tech-only') return '只有技術趨勢'
+  if (reason === 'missing-people') return '缺人群'
+  if (reason === 'missing-workflow') return '缺流程'
+  if (reason === 'missing-workaround') return '缺 workaround'
+  if (reason === 'duplicate') return '重複訊號'
+  return '低訊號'
 }
 
 export function renderBrainTab(loopState: ObservationLoopState, graph?: IdeaGraph, deliberationState?: DeliberationState): string {
@@ -3320,6 +3468,10 @@ function ideaStatus(idea: IdeaRecord): string {
 
 function escapeHtml(value: string): string {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;')
+}
+
+function escapeHtmlAttr(value: string): string {
+  return escapeHtml(value)
 }
 
 export function formatTaipeiTime(value: string): string {

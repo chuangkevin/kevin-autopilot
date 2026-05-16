@@ -358,6 +358,16 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
+v0.18.3 adds problem-candidate evaluation to the `今日真實問題` flow. Accepted
+`ProblemBrief` records now get `worth_chasing`, `needs_evidence`, or `not_now`
+evaluations with ranking rationale, evidence gap, next validation step, and kill
+criteria. Trusted dashboard feedback (`interesting`, `boring`, `not-a-problem`,
+`find-similar`) is stored only as Autopilot-owned metadata under
+`data/problem-feedback/`; it does not approve build, deploy, outreach, spending,
+or target-repo mutation. The public daily API exposes sanitized candidate
+evaluations and rejected reason counts without the full `briefs` array, evidence
+quotes, or raw rejected snippets. All 146 tests pass.
+
 v0.18.2 adds a narrow calm PKM / screenless knowledge-management problem pattern
 so existing Kevin-owned signals about digital overwhelm, bionic persona devices,
 and fragmented personal knowledge workflows can appear as a second real candidate
