@@ -32,6 +32,14 @@ const TECH_TERMS = [
   'llm', 'gpt', 'model', 'framework', 'kubernetes', 'vector db', 'protocol', 'mcp', 'react', 'next.js', 'startup idea', 'ai agent', 'foundation model',
 ]
 
+const INTERNAL_ENGINEERING_TERMS = [
+  'repo', 'repository', 'architecture', 'test', 'tests', 'ci', 'deploy', 'docker', 'worktree', 'branch', 'commit', 'pull request', 'github actions', 'openspec', 'agent handoff', 'handoff assistant',
+]
+
+const REAL_PERSON_WORKFLOW_TERMS = [
+  'pm', '產品經理', '設計師', '設計稿', 'figma', 'prototype', 'ui', 'ux', '使用者', '客戶', 'customer', 'client', '車商', '業務', '創作者', '店家', '課程', '考試', '問卷', '公部門', '玩家', 'npc', 'excel', 'line', '截圖', '照片', '影片', '日記', '情緒', 'cad', 'onshape',
+]
+
 interface ProblemPattern {
   key: string
   title: string
@@ -64,13 +72,16 @@ export async function getDailyProblemDiscovery(
   if (!options.force) {
     const stored = await readDailyPick(config)
     if (stored?.date === date) {
-      return {
-        date,
-        generatedAt: stored.generatedAt,
-        pick: stored,
-        brief: stored.briefId ? briefs.find((brief) => brief.id === stored.briefId) ?? null : null,
-        briefs,
-        signalCount: signals.length,
+      const storedBrief = stored.briefId ? briefs.find((brief) => brief.id === stored.briefId) ?? null : null
+      if (!(stored.status === 'picked' && !storedBrief)) {
+        return {
+          date,
+          generatedAt: stored.generatedAt,
+          pick: stored,
+          brief: storedBrief,
+          briefs,
+          signalCount: signals.length,
+        }
       }
     }
   }
@@ -93,7 +104,9 @@ export async function listProblemSignals(config: AutopilotConfig): Promise<Probl
 
 export async function listProblemBriefs(config: AutopilotConfig): Promise<ProblemBrief[]> {
   const records = await readJsonRecords<ProblemBrief>(problemBriefsDir(config), isProblemBrief)
-  return records.sort((a, b) => b.score - a.score || b.updatedAt.localeCompare(a.updatedAt))
+  return records
+    .filter((brief) => !isRejectedStoredProblemBrief(brief))
+    .sort((a, b) => b.score - a.score || b.updatedAt.localeCompare(a.updatedAt))
 }
 
 export async function upsertProblemSignals(config: AutopilotConfig, signals: ProblemSignal[]): Promise<ProblemSignal[]> {
@@ -139,7 +152,9 @@ export function createProblemSignal(input: {
 
 export function buildProblemBriefs(signals: ProblemSignal[], existingBriefs: ProblemBrief[] = [], now: Date = new Date()): ProblemBrief[] {
   const byKey = new Map<string, ProblemBrief>()
-  for (const brief of existingBriefs) byKey.set(brief.dedupKey, brief)
+  for (const brief of existingBriefs) {
+    if (!isRejectedStoredProblemBrief(brief)) byKey.set(brief.dedupKey, brief)
+  }
 
   for (const signal of signals) {
     const pattern = extractProblemPattern(signal)
@@ -268,6 +283,7 @@ function signalFromBacklog(item: BacklogItem, fetchedAt: string): ProblemSignal 
 function extractProblemPattern(signal: ProblemSignal): ProblemPattern | undefined {
   const text = `${signal.title} ${signal.snippet}`
   const lower = text.toLowerCase()
+  if (isInternalEngineeringOnlySignal(lower)) return undefined
   const matchedWorkarounds = WORKAROUND_TERMS.filter((term) => lower.includes(term.toLowerCase()))
   const hasPain = PAIN_TERMS.some((term) => lower.includes(term.toLowerCase()))
   const hasTech = TECH_TERMS.some((term) => lower.includes(term.toLowerCase()))
@@ -332,11 +348,47 @@ function detectCategory(lower: string): ProblemPattern['key'] | undefined {
   if (/(車商|中古車|車輛|8891|刊登|車照|listing|marketplace)/i.test(lower)) return 'car-listing'
   if (/(短影音|影片|剪輯|字幕|素材|reels|shorts|content|media)/i.test(lower)) return 'media'
   if (/(課程|考試|問卷|elearn|公部門|官僚|訓練|平台限制)/i.test(lower)) return 'bureaucracy'
-  if (/(pm|產品經理|設計稿|prototype|figma|spec|規格|需求)/i.test(lower)) return 'pm-prototype'
+  if (hasPmPrototypeContext(lower)) return 'pm-prototype'
   if (/(日記|情緒|記憶|回想|心理|memory|diary)/i.test(lower)) return 'memory'
   if (/(cad|onshape|3d|照片建模|量測|工程圖|零件)/i.test(lower)) return 'cad'
   if (/(遊戲|世界|規則|npc|任務|living world|greed island)/i.test(lower)) return 'living-world'
   return undefined
+}
+
+function hasPmPrototypeContext(lower: string): boolean {
+  return /(pm|產品經理|設計師|設計稿|figma|prototype|clickable|\bui\b|\bux\b|畫面|截圖標註|設計需求)/i.test(lower) &&
+    /(需求|spec|規格|prototype|figma|截圖|畫面|ui|ux|原型)/i.test(lower)
+}
+
+function isInternalEngineeringOnlySignal(lower: string): boolean {
+  const hasInternalEngineering = INTERNAL_ENGINEERING_TERMS_SAFE.some((term) => includesTerm(lower, term))
+  if (!hasInternalEngineering) return false
+  const hasRealWorkflow = REAL_PERSON_WORKFLOW_TERMS.some((term) => includesWorkflowTerm(lower, term))
+  if (hasRealWorkflow) return false
+  return true
+}
+
+const INTERNAL_ENGINEERING_TERMS_SAFE = INTERNAL_ENGINEERING_TERMS.map((term) => term.toLowerCase())
+
+function includesWorkflowTerm(lower: string, term: string): boolean {
+  const normalized = term.toLowerCase()
+  if (normalized === 'pm' || normalized === 'ui' || normalized === 'ux') {
+    return includesTerm(lower, normalized)
+  }
+  return lower.includes(normalized)
+}
+
+function includesTerm(lower: string, normalized: string): boolean {
+  return new RegExp(`(^|[^a-z0-9])${escapeRegExp(normalized)}([^a-z0-9]|$)`, 'i').test(lower)
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function isRejectedStoredProblemBrief(brief: ProblemBrief): boolean {
+  const evidenceText = brief.evidence.map((entry) => entry.quote).join(' ').toLowerCase()
+  return evidenceText.length > 0 && isInternalEngineeringOnlySignal(evidenceText)
 }
 
 function carListingPattern(signal: ProblemSignal, workarounds: string[]): ProblemPattern {

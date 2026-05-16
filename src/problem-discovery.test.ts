@@ -51,6 +51,30 @@ test('problem extraction rejects tech-only trends', () => {
   assert.equal(buildProblemBriefs([signal]).length, 0)
 })
 
+test('problem extraction rejects internal repo architecture spec and tests', () => {
+  const signal = createProblemSignal({
+    sourceType: 'kevin-input',
+    sourceName: 'internal-plan',
+    title: 'Idea intake should plan repo architecture spec and tests',
+    snippet: 'Plan repo architecture spec and tests for a safe idea handoff assistant before implementation.',
+    fetchedAt: '2026-05-15T00:00:00.000Z',
+  })
+  assert.equal(buildProblemBriefs([signal]).length, 0)
+})
+
+test('problem extraction keeps real PM design prototype workflow', () => {
+  const signal = createProblemSignal({
+    sourceType: 'kevin-input',
+    sourceName: 'pm-workflow',
+    title: 'PM 用截圖和 Figma 對齊需求太慢',
+    snippet: 'PM 每次把客戶需求、截圖和 Figma 註解整理給設計師與工程師，靠文件來回手動對齊 prototype，重複又耗時。',
+    fetchedAt: '2026-05-15T00:00:00.000Z',
+  })
+  const briefs = buildProblemBriefs([signal])
+  assert.equal(briefs.length, 1)
+  assert.equal(briefs[0]?.dedupKey, 'pm-spec-to-prototype')
+})
+
 test('problem extraction accepts Excel LINE screenshot manual workaround', () => {
   const signal = createProblemSignal({
     sourceType: 'kevin-input',
@@ -64,6 +88,28 @@ test('problem extraction accepts Excel LINE screenshot manual workaround', () =>
   assert.match(briefs[0]?.people ?? '', /車商|中古車/)
   assert.match(briefs[0]?.workaround ?? '', /Excel|LINE|截圖/)
   assert.equal(briefs[0]?.kevinFit.relatedProjects.includes('sheet-to-car'), true)
+})
+
+test('daily pick candidates ignore boring internal engineering signals', () => {
+  const internal = createProblemSignal({
+    sourceType: 'kevin-input',
+    sourceName: 'internal-plan',
+    title: 'Idea intake should plan repo architecture spec and tests',
+    snippet: 'Plan repo architecture spec and tests for a safe idea handoff assistant before implementation.',
+    fetchedAt: '2026-05-15T00:00:00.000Z',
+  })
+  const car = createProblemSignal({
+    sourceType: 'kevin-input',
+    sourceName: 'car-workflow',
+    title: '車商照片刊登流程卡在手動整理',
+    snippet: '中古車業務每次刊登都要從 LINE 收照片，用 Excel 整理車輛規格，再截圖確認欄位，手動複製貼上到 8891 和 Facebook 很耗時。',
+    fetchedAt: '2026-05-15T00:00:00.000Z',
+  })
+  const briefs = buildProblemBriefs([internal, car])
+  const pick = generateDailyProblemPick('2026-05-16', briefs)
+  assert.equal(briefs.length, 1)
+  assert.match(briefs[0]?.title ?? '', /車商/)
+  assert.equal(pick.briefId, briefs[0]?.id)
 })
 
 test('daily pick returns insufficient evidence when no brief is strong enough', () => {
@@ -99,6 +145,35 @@ test('daily pick is stable for the same Taipei date unless forced', async () => 
     assert.equal((await listProblemSignals(config)).length, 2)
     assert.equal(sameDay.briefs.length >= first.briefs.length, true)
     assert.equal(nextDay.pick.date, '2026-05-17')
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('daily pick regenerates when same-day stored brief was retired', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-stale-daily-problem-'))
+  try {
+    const config = testConfig(dataDir)
+    await writeFile(join(dataDir, 'daily-problem-pick.json'), `${JSON.stringify({
+      date: '2026-05-16',
+      status: 'picked',
+      generatedAt: '2026-05-15T16:00:00.000Z',
+      briefId: 'problem-retired-internal-spec',
+      whyThis: 'old classifier pick',
+      whyNotOthers: [],
+      missingEvidence: [],
+    }, null, 2)}\n`, 'utf8')
+    await upsertProblemSignals(config, [createProblemSignal({
+      sourceType: 'kevin-input',
+      sourceName: 'car-workflow',
+      title: '車商照片刊登流程卡在手動整理',
+      snippet: '中古車業務每次刊登都要從 LINE 收照片，用 Excel 整理車輛規格，再截圖確認欄位，手動複製貼上到 8891 和 Facebook 很耗時。',
+      fetchedAt: '2026-05-15T17:00:00.000Z',
+    })])
+    const discovery = await getDailyProblemDiscovery(config, { now: new Date('2026-05-15T23:30:00.000Z') })
+    assert.equal(discovery.pick.status, 'picked')
+    assert.notEqual(discovery.pick.briefId, 'problem-retired-internal-spec')
+    assert.match(discovery.brief?.title ?? '', /車商/)
   } finally {
     await rm(dataDir, { recursive: true, force: true })
   }

@@ -47,6 +47,7 @@
 - [x] 7.3 Add a copyable OpenCode prompt that asks for research/spec/prototype planning without creating repos or deploying.
 - [x] 7.4 Move graph to a secondary `探索圖` or debug tab.
 - [x] 7.5 Add empty-state copy for "今天還沒有足夠真實問題證據" rather than filling the page with speculative bubbles.
+- [x] 7.6 Show a sanitized candidate problem pool so the first screen is not limited to one daily pick.
 
 ## 8. Observation Loop Integration
 
@@ -60,6 +61,7 @@
 - [x] 9.2 Run `npm test` and record success.
 - [x] 9.3 Verify the dashboard loads and shows either a daily pick or a truthful empty state.
 - [x] 9.4 Verify live deploy after version bump through GitHub Actions and `https://kevin.sisihome.org/health`.
+- [x] 9.5 Add tests that reject internal repo/spec/test signals, preserve real PM/design prototype workflows, and verify the candidate pool/API shape.
 
 ## 10. Release / Archive
 

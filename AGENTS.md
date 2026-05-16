@@ -59,7 +59,12 @@ semantics, and makes the home dashboard open on `今日真實問題` while the g
 secondary. The generated OpenCode prompt is bounded to read-only research,
 specification, and prototype planning; it must not create repos, deploy, spend
 money, contact external users, read secrets, or mutate target projects without
-explicit later approval.
+explicit later approval. Kevin approved v0.18.1 to reduce boring picks: internal
+repo/spec/test/CI/deploy planning snippets are rejected unless they also show a
+real PM/design/user workflow, stale same-day picks are regenerated when their
+brief is retired, the home dashboard shows a sanitized candidate problem pool,
+and the public daily endpoint adds limited candidate summaries without exposing
+the full `briefs` array.
 
 Keep these versions read-only: they may observe, classify, report, and store
 Autopilot-owned reports/idea records/supplements, but they must not modify target

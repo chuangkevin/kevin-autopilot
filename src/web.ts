@@ -661,7 +661,19 @@ function writeText(response: ServerResponse, body: string, statusCode = 200): vo
   response.end(`${body}\n`)
 }
 
-function toPublicDailyProblemDiscovery(discovery: DailyProblemDiscovery): Omit<DailyProblemDiscovery, 'briefs'> & { briefCount: number } {
+interface PublicProblemCandidate {
+  id: string
+  title: string
+  people: string
+  workflow: string
+  score: number
+  confidence: string
+  evidenceCount: number
+  whyInteresting: string
+  missingEvidence: string[]
+}
+
+function toPublicDailyProblemDiscovery(discovery: DailyProblemDiscovery): Omit<DailyProblemDiscovery, 'briefs'> & { briefCount: number; candidates: PublicProblemCandidate[] } {
   return {
     date: discovery.date,
     generatedAt: discovery.generatedAt,
@@ -669,6 +681,21 @@ function toPublicDailyProblemDiscovery(discovery: DailyProblemDiscovery): Omit<D
     brief: discovery.brief,
     signalCount: discovery.signalCount,
     briefCount: discovery.briefs.length,
+    candidates: discovery.briefs.slice(0, 6).map(toPublicProblemCandidate),
+  }
+}
+
+function toPublicProblemCandidate(brief: DailyProblemDiscovery['briefs'][number]): PublicProblemCandidate {
+  return {
+    id: brief.id,
+    title: brief.title,
+    people: brief.people,
+    workflow: brief.workflow,
+    score: brief.score,
+    confidence: brief.confidence,
+    evidenceCount: brief.evidence.length,
+    whyInteresting: brief.kevinFit.rationale,
+    missingEvidence: brief.missingEvidence.slice(0, 2),
   }
 }
 
@@ -896,6 +923,13 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
 .problem-empty { border-color: rgba(245,158,11,0.38); background: radial-gradient(circle at top left, rgba(245,158,11,0.16), transparent 34%), rgba(15,23,42,0.48); }
 .problem-prompt { margin-top: 12px; }
 .problem-prompt pre { max-height: 280px; overflow: auto; }
+.problem-candidates { margin-top: 14px; }
+.problem-candidates h3 { margin: 0 0 4px; color: #f8fafc; font-size: 20px; }
+.problem-candidate-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; margin-top: 10px; }
+.problem-candidate { border: 1px solid rgba(0,255,255,0.2); border-radius: 14px; padding: 12px; background: linear-gradient(180deg, rgba(15,23,42,0.76), rgba(15,23,42,0.42)); }
+.problem-candidate h4 { margin: 6px 0; color: #e0f2fe; font-size: 17px; line-height: 1.25; }
+.problem-candidate-meta { color: #93c5fd; font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; }
+.problem-candidate .muted { margin: 5px 0; }
 
 /* Labels */
 .sys-label { font-size: 16px; color: rgba(0,255,255,0.4); letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 6px; }
@@ -1875,6 +1909,7 @@ function renderProblemTab(discovery: DailyProblemDiscovery): string {
     const whyNot = pick.whyNotOthers.length > 0
       ? `<div class="problem-grid">${pick.whyNotOthers.map((item) => `<div class="problem-box">${escapeHtml(item)}</div>`).join('')}</div>`
       : ''
+    const candidatePool = renderProblemCandidatePool(discovery)
     return `
 <section class="cp-card problem-empty">
   <div class="sys-label">/// 今日真實問題 · ${escapeHtml(pick.date)}</div>
@@ -1884,6 +1919,7 @@ function renderProblemTab(discovery: DailyProblemDiscovery): string {
     ${missing.map((item) => `<div class="problem-box"><strong>缺的證據</strong>${escapeHtml(item)}</div>`).join('')}
   </div>
   ${whyNot}
+  ${candidatePool}
   <form method="post" action="/api/problem-discovery/run" onsubmit="event.preventDefault();fetch('/api/problem-discovery/run',{method:'POST'}).then(function(){location.reload();});">
     <button type="submit" class="secondary">重新整理 Kevin-owned signals</button>
   </form>
@@ -1897,6 +1933,7 @@ function renderProblemTab(discovery: DailyProblemDiscovery): string {
   const whyNot = pick.whyNotOthers.length > 0
     ? `<div class="problem-grid">${pick.whyNotOthers.map((item) => `<div class="problem-box"><strong>今天沒選</strong>${escapeHtml(item)}</div>`).join('')}</div>`
     : ''
+  const candidatePool = renderProblemCandidatePool(discovery, brief.id)
   return `
 <section class="cp-card problem-hero">
   <div class="sys-label">/// 今日真實問題 · ${escapeHtml(pick.date)}</div>
@@ -1915,6 +1952,7 @@ function renderProblemTab(discovery: DailyProblemDiscovery): string {
     <div class="problem-box"><strong>驗證方式</strong>${escapeHtml(brief.validationPlan)}</div>
   </div>
   <div class="problem-box" style="margin-top:12px"><strong>為什麼今天選它</strong>${escapeHtml(pick.whyThis)}</div>
+  ${candidatePool}
   <div class="problem-box" style="margin-top:12px"><strong>證據片段</strong>${evidenceHtml}</div>
   <div class="problem-box" style="margin-top:12px"><strong>Kill criteria</strong><ul class="radar-signals">${brief.killCriteria.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul></div>
   ${whyNot}
@@ -1924,6 +1962,39 @@ function renderProblemTab(discovery: DailyProblemDiscovery): string {
     <pre>${escapeHtml(prompt)}</pre>
   </details>
 </section>`
+}
+
+function renderProblemCandidatePool(discovery: DailyProblemDiscovery, selectedBriefId?: string): string {
+  const candidates = discovery.briefs
+    .filter((brief) => brief.id !== selectedBriefId)
+    .slice(0, 6)
+  if (candidates.length === 0) {
+    return `
+  <section class="problem-candidates">
+    <h3>候選問題池</h3>
+    <p class="muted">目前只有 daily pick 這一個可用候選；需要更多 Kevin-owned 真實工作流訊號。</p>
+  </section>`
+  }
+  return `
+  <section class="problem-candidates">
+    <h3>候選問題池</h3>
+    <p class="muted">不是只看一個答案；下面是已排除內部 repo/spec/test 雜訊後，仍值得追的其他工作流痛點。</p>
+    <div class="problem-candidate-grid">
+      ${candidates.map((brief, index) => renderProblemCandidateCard(brief, index + 1)).join('')}
+    </div>
+  </section>`
+}
+
+function renderProblemCandidateCard(brief: DailyProblemDiscovery['briefs'][number], index: number): string {
+  const missing = brief.missingEvidence[0] ?? '需要更多直接使用者證據。'
+  return `<article class="problem-candidate">
+    <div class="problem-candidate-meta">candidate ${index} · ${brief.score}/100 · ${escapeHtml(brief.confidence)} · ${brief.evidence.length} evidence</div>
+    <h4>${escapeHtml(brief.title)}</h4>
+    <p class="muted"><strong>人群</strong> ${escapeHtml(brief.people)}</p>
+    <p class="muted"><strong>流程</strong> ${escapeHtml(brief.workflow)}</p>
+    <p class="muted"><strong>可能有趣</strong> ${escapeHtml(brief.kevinFit.rationale)}</p>
+    <p class="muted"><strong>還缺</strong> ${escapeHtml(missing)}</p>
+  </article>`
 }
 
 export function renderBrainTab(loopState: ObservationLoopState, graph?: IdeaGraph, deliberationState?: DeliberationState): string {

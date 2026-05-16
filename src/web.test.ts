@@ -34,6 +34,52 @@ test('isTrustedSettingsAddress protects supplement writes', () => {
   assert.equal(isTrustedSettingsSource('127.0.0.1', undefined, '203.0.113.10'), false)
 })
 
+test('dashboard shows a sanitized candidate problem pool', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-problem-pool-'))
+  const config: AutopilotConfig = { environment: 'test', dataDir, ruleSources: [], repositories: [], services: [] }
+  const server = createWebServer(config)
+  try {
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const address = server.address()
+    assert.ok(address && typeof address === 'object' && 'port' in address)
+    const baseUrl = `http://127.0.0.1:${address.port}`
+
+    for (const rawText of [
+      'Idea intake should plan repo architecture spec and tests. Plan repo architecture spec and tests for a safe idea handoff assistant before implementation.',
+      '中古車業務每次刊登都要從 LINE 收照片，用 Excel 整理車輛規格，再截圖確認欄位，手動複製貼上到 8891 和 Facebook 很耗時。',
+      '小型品牌創作者每週做短影音都要手動挑素材、截圖、命名和轉檔，在剪輯工具之間切換很耗時。',
+    ]) {
+      const created = await fetch(`${baseUrl}/api/ideas`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ rawText }),
+      })
+      assert.equal(created.status, 201)
+      await new Promise((resolve) => setTimeout(resolve, 2))
+    }
+
+    const page = await fetch(`${baseUrl}/`)
+    assert.equal(page.status, 200)
+    const pageBody = await page.text()
+    assert.equal(pageBody.includes('候選問題池'), true)
+    assert.equal(pageBody.includes('problem-candidate'), true)
+    assert.equal(pageBody.includes('不是只看一個答案'), true)
+
+    const dailyProblem = await fetch(`${baseUrl}/api/problem-discovery/daily`)
+    assert.equal(dailyProblem.status, 200)
+    const dailyProblemBody = await dailyProblem.json()
+    assert.equal(Array.isArray(dailyProblemBody.candidates), true)
+    assert.equal(dailyProblemBody.candidates.length >= 1, true)
+    assert.equal('briefs' in dailyProblemBody, false)
+    assert.equal(dailyProblemBody.candidates.some((candidate: { evidence?: unknown }) => 'evidence' in candidate), false)
+    assert.equal(JSON.stringify(dailyProblemBody.candidates).includes('safe idea handoff assistant'), false)
+  } finally {
+    server.close()
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
 test('web server exposes health and idea intake', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-web-'))
   const config: AutopilotConfig = {
@@ -142,7 +188,7 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(pageBody.includes('這不是模型私有 chain-of-thought'), false) // moved to stub
     assert.equal(pageBody.includes('像 Kevin 嗎？'), false) // moved to stub
     assert.equal(pageBody.includes('差在哪'), false) // moved to stub
-    assert.equal(pageBody.includes('/100'), true) // daily problem score is now first-screen content
+    assert.equal(pageBody.includes('候選問題池'), true) // daily problem tab still carries candidate-pool guidance when evidence is thin
     assert.equal(pageBody.includes('/api/main-agent/thinking'), false) // moved to stub
     assert.equal(pageBody.includes('分身現在在想'), false) // was in neural cockpit HTML; moved to stub
     assert.equal(pageBody.includes('💭 分身怎麼想這個'), true) // still in JS renderNodeDrawer (was: 我怎麼理解它 before v0.16.0)
