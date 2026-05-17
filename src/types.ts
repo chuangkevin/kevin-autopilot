@@ -405,11 +405,13 @@ export interface IdeaRecord {
   dismissedAt?: string
 }
 
+export type ReflectionPromptVersion = 'v1' | 'v2'
+
 export interface IdeaAiReflectionProvenance {
   generatedAt: string
   model: string
   evidence: string[]
-  promptVersion: 'v1'
+  promptVersion: ReflectionPromptVersion
 }
 
 export interface ReflectionIdeaSeed {
@@ -432,6 +434,7 @@ export interface ReflectionTokenUsage {
 export interface ReflectionRecord {
   generatedAt: string
   model: string
+  promptVersion: ReflectionPromptVersion
   graphSignature: string
   skipped: false
   newIdeaSeeds: ReflectionIdeaSeed[]
@@ -446,6 +449,7 @@ export interface SkippedReflectionRecord {
   generatedAt: string
   skipped: true
   reason: SkippedReflectionReason
+  promptVersion?: ReflectionPromptVersion
   detail?: string
   graphSignature?: string
   pendingAiIdeaCount: number

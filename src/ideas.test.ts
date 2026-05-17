@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -84,19 +84,20 @@ test('createAiIdeaFromSeed mints unique ids per index and marks aiSource', async
   try {
     const config: AutopilotConfig = { environment: 'test', dataDir: root, ruleSources: [], repositories: [], services: [] }
     const seed: ReflectionIdeaSeed = {
-      title: 'Test AI seed',
-      rawText: 'AI 反思根據 backlog X 與 idea Y 推導出的方向。',
+      title: 'LINE photo listing workflow',
+      rawText: '車商業務每次手動把 LINE 照片整理到 Google Sheets 再刊登官網。',
       evidence: ['node:idea-foo', 'backlog:repo-bar'],
       approvalRequired: false,
     }
     const now = new Date('2026-05-13T08:00:00.000Z')
-    const first = await createAiIdeaFromSeed(config, seed, { generatedAt: now.toISOString(), model: 'gemini-flash' }, 0, now)
-    const second = await createAiIdeaFromSeed(config, seed, { generatedAt: now.toISOString(), model: 'gemini-flash' }, 1, now)
+    const first = await createAiIdeaFromSeed(config, seed, { generatedAt: now.toISOString(), model: 'gemini-flash', promptVersion: 'v2' }, 0, now)
+    const second = await createAiIdeaFromSeed(config, seed, { generatedAt: now.toISOString(), model: 'gemini-flash', promptVersion: 'v2' }, 1, now)
     assert.notEqual(first.id, second.id)
     assert.match(first.id, /-r1$/)
     assert.match(second.id, /-r2$/)
     assert.equal(first.aiSource, 'ai-reflection')
     assert.deepEqual(first.aiReflection?.evidence, ['node:idea-foo', 'backlog:repo-bar'])
+    assert.equal(first.aiReflection?.promptVersion, 'v2')
     assert.equal(first.thinking.mode, 'ai-core')
     assert.equal(first.classification, 'explore')
     assert.equal(first.approvalRequired, false)
@@ -131,16 +132,26 @@ test('countPendingAiIdeas counts ai-reflection ideas only', async () => {
   try {
     const config: AutopilotConfig = { environment: 'test', dataDir: root, ruleSources: [], repositories: [], services: [] }
     const seed: ReflectionIdeaSeed = {
-      title: 'AI seed',
-      rawText: 'AI 反思產生的 idea',
+      title: 'LINE photo listing workflow',
+      rawText: '車商業務每次手動把 LINE 照片整理到 Google Sheets 再刊登官網。',
       evidence: ['node:idea-foo'],
     }
     const now = new Date('2026-05-17T00:00:00.000Z')
     await createAiIdeaFromSeed(config, seed, { generatedAt: now.toISOString(), model: 'gemini-flash' }, 0, now)
     await createAiIdeaFromSeed(config, seed, { generatedAt: now.toISOString(), model: 'gemini-flash' }, 1, now)
     await createAiIdeaFromSeed(config, seed, { generatedAt: '2026-05-12T00:00:00.000Z', model: 'gemini-flash' }, 2, new Date('2026-05-12T00:00:00.000Z'))
+    await createAiIdeaFromSeed(config, { ...seed, approvalRequired: true }, { generatedAt: now.toISOString(), model: 'gemini-flash' }, 3, now)
     await createIdea(config, '使用者自己打的想法')
-    assert.equal(await countPendingAiIdeas(config, now), 2)
+    await mkdir(join(root, 'ideas'), { recursive: true })
+    await writeFile(join(root, 'ideas', 'idea-garbage.json'), `${JSON.stringify({
+      id: 'idea-garbage',
+      createdAt: now.toISOString(),
+      rawText: 'Track Kevin\'s mood and interaction patterns for tailored suggestions.',
+      title: 'Create mood log',
+      aiSource: 'ai-reflection',
+      approvalRequired: false,
+    }, null, 2)}\n`, 'utf8')
+    assert.equal(await countPendingAiIdeas(config, now), 3)
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -158,8 +169,8 @@ test('dismissIdea moves AI ideas to ideas-dismissed and refuses user ideas', asy
     })
 
     const seed: ReflectionIdeaSeed = {
-      title: 'AI seed',
-      rawText: 'AI 反思產生的 idea，可以被略過。',
+      title: 'LINE photo listing workflow',
+      rawText: '車商業務每次手動把 LINE 照片整理到 Google Sheets 再刊登官網。',
       evidence: ['node:idea-foo'],
     }
     const now = new Date()

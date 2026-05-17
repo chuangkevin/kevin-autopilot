@@ -358,6 +358,12 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
+v0.18.7 rejects low-value AI reflection loops. Reflection now filters out
+Autopilot self-monitoring, mood/interaction-pattern tracking, prompt/dashboard
+hygiene, and internal repo/CI/deploy/unit-test ideas unless they name a
+concrete real-world workflow; legacy low-value AI ideas also stop counting
+against the pending AI idea cap.
+
 v0.18.6 makes reflection less passive when AI idea slots are open. A previous
 successful reflection no longer blocks another attempt on the same graph if the
 pending AI idea cap has room, and the prompt now requires at least one grounded

@@ -263,7 +263,7 @@ export class ObservationLoop {
             await createAiIdeaFromSeed(
               config,
               seed,
-              { generatedAt: record.generatedAt, model: record.model },
+              { generatedAt: record.generatedAt, model: record.model, promptVersion: record.promptVersion },
               index,
             )
           } catch (error) {
@@ -354,7 +354,10 @@ const REFLECTION_STATE_FILE = 'reflection-state.json'
 export async function readReflectionState(config: AutopilotConfig): Promise<ReflectionStateRecord | undefined> {
   try {
     const text = await readFile(join(config.dataDir, REFLECTION_STATE_FILE), 'utf8')
-    return JSON.parse(text) as ReflectionStateRecord
+    const parsed = JSON.parse(text) as ReflectionStateRecord
+    const promptVersion = (parsed as { promptVersion?: unknown }).promptVersion
+    if (parsed.skipped === false && !promptVersion) return { ...(parsed as ReflectionStateRecord & { skipped: false }), promptVersion: 'v1' }
+    return parsed
   } catch {
     return undefined
   }

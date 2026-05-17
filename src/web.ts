@@ -393,7 +393,7 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
       })
       return
     }
-    writeJson(response, { ...reflection, pendingAiIdeasCap })
+    writeJson(response, { ...reflection, pendingAiIdeaCount, pendingAiIdeasCap })
     return
   }
 

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { getReflectionSeedQualityRejection } from './idea-quality.js'
 import {
   buildReflectionGenerationConfig,
   buildReflectionPromptInput,
@@ -94,10 +95,10 @@ test('computeReflectionSignature changes when backlog seenCount changes', () => 
 test('parseReflectionOutput truncates seeds to maxNewSeeds and drops empty-evidence seeds', () => {
   const text = JSON.stringify({
     newIdeaSeeds: [
-      { title: 'a', rawText: 'a body', evidence: ['n1'] },
-      { title: 'b', rawText: 'b body', evidence: [] },
-      { title: 'c', rawText: 'c body', evidence: ['n2'] },
-      { title: 'd', rawText: 'd body', evidence: ['n3'] },
+      { title: 'a', rawText: '車商業務每次手動整理 LINE 照片 a body', evidence: ['n1'] },
+      { title: 'b', rawText: '車商業務每次手動整理 LINE 照片 b body', evidence: [] },
+      { title: 'c', rawText: 'PM 每次手動把 Figma spec 轉成 prototype c body', evidence: ['n2'] },
+      { title: 'd', rawText: '消防課程學員反覆填寫問卷 d body', evidence: ['n3'] },
     ],
     nextExplorationRewrites: [],
   })
@@ -172,8 +173,8 @@ test('parseReflectionOutput throws when no JSON is present', () => {
 test('parseReflectionOutput drops seeds whose evidence is not known', () => {
   const text = JSON.stringify({
     newIdeaSeeds: [
-      { title: 'unknown', rawText: 'body', evidence: ['missing'] },
-      { title: 'backlog', rawText: 'body', evidence: ['b1'] },
+      { title: 'unknown', rawText: '車商業務每次手動整理 LINE 照片', evidence: ['missing'] },
+      { title: 'backlog', rawText: '車商業務每次手動整理 LINE 照片', evidence: ['b1'] },
     ],
     nextExplorationRewrites: [],
   })
@@ -184,6 +185,90 @@ test('parseReflectionOutput drops seeds whose evidence is not known', () => {
   })
   assert.equal(result.newIdeaSeeds.length, 1)
   assert.equal(result.newIdeaSeeds[0].title, 'backlog')
+})
+
+test('parseReflectionOutput drops meta Autopilot seeds and keeps real workflow seeds', () => {
+  const text = JSON.stringify({
+    newIdeaSeeds: [
+      {
+        title: 'Monitor double suggestions vs Kevin actual behavior',
+        rawText: 'Implement a read-only tracking system for double-kevin-autopilot proactive suggestions and Kevin feedback.',
+        evidence: ['n1'],
+      },
+      {
+        title: 'LINE photo listing handoff pain',
+        rawText: '車商業務每次從 LINE 複製照片到 Google Sheets 再刊登官網，流程很手動。',
+        evidence: ['n2'],
+      },
+    ],
+    nextExplorationRewrites: [],
+  })
+  const result = parseReflectionOutput(text, {
+    knownNodeIds: new Set(['n1', 'n2']),
+    maxNewSeeds: 2,
+  })
+  assert.equal(result.newIdeaSeeds.length, 1)
+  assert.equal(result.newIdeaSeeds[0].title, 'LINE photo listing handoff pain')
+})
+
+test('getReflectionSeedQualityRejection rejects approval and missing workflow seeds', () => {
+  assert.equal(getReflectionSeedQualityRejection({
+    title: 'Create mood log',
+    rawText: 'Track Kevin\'s mood and interaction patterns for tailored suggestions.',
+  }), 'meta-self-reference')
+  assert.equal(getReflectionSeedQualityRejection({
+    title: 'Deploy repo dashboard',
+    rawText: 'Improve CI tests and deploy repo dashboard.',
+  }), 'internal-engineering')
+  assert.equal(getReflectionSeedQualityRejection({
+    title: 'Improve user dashboard tests workflow',
+    rawText: 'Make the user dashboard test workflow easier to maintain.',
+  }), 'internal-engineering')
+  assert.equal(getReflectionSeedQualityRejection({
+    title: 'Improve user workflow',
+    rawText: 'Improve user workflow.',
+  }), 'missing-real-world-workflow')
+  assert.equal(getReflectionSeedQualityRejection({
+    title: 'Improve customer manual workflow',
+    rawText: 'Make customer manual workflow better.',
+  }), 'missing-real-world-workflow')
+  assert.equal(getReflectionSeedQualityRejection({
+    title: 'Generic workflow tracker',
+    rawText: 'Build a manual workflow tracking idea with no concrete person or external tool.',
+  }), 'missing-real-world-workflow')
+  assert.equal(getReflectionSeedQualityRejection({
+    title: 'Customer idea',
+    rawText: 'A customer-related concept without a concrete operational task.',
+  }), 'missing-real-world-workflow')
+  assert.equal(getReflectionSeedQualityRejection({
+    title: 'Needs approval',
+    rawText: '車商業務每次手動整理 LINE 照片。',
+    approvalRequired: true,
+  }), 'requires-approval')
+  assert.equal(getReflectionSeedQualityRejection({
+    title: 'Real workflow',
+    rawText: '車商業務每次手動整理 LINE 照片到 Google Sheets。',
+  }), undefined)
+  assert.equal(getReflectionSeedQualityRejection({
+    title: 'Figma usability test workflow',
+    rawText: 'PM manually runs Figma usability tests with clients and copies notes into spreadsheets.',
+  }), undefined)
+  assert.equal(getReflectionSeedQualityRejection({
+    title: 'Weekly usability test notes',
+    rawText: 'Product designer runs weekly usability tests with users and summarizes findings.',
+  }), undefined)
+  assert.equal(getReflectionSeedQualityRejection({
+    title: 'Interview transcript tagging',
+    rawText: 'UX researcher manually tags interview transcripts from participant sessions.',
+  }), undefined)
+  assert.equal(getReflectionSeedQualityRejection({
+    title: 'Client QA screenshot handoff',
+    rawText: 'PM manually copies GitHub Actions CI failure screenshots into client QA documents.',
+  }), undefined)
+  assert.equal(getReflectionSeedQualityRejection({
+    title: 'Invoice PDF email to ERP handoff',
+    rawText: 'Accountant manually copies invoice PDFs from email to ERP.',
+  }), undefined)
 })
 
 test('buildReflectionPromptInput includes backlog ids as valid evidence ids', () => {
@@ -211,7 +296,7 @@ test('summarizeAiReflectionText makes parse failures diagnosable without huge de
 
 test('parseReflectionOutput truncates over-long fields', () => {
   const longTitle = 'a'.repeat(200)
-  const longRaw = 'b'.repeat(500)
+  const longRaw = `車商業務每次手動整理 LINE 照片 ${'b'.repeat(500)}`
   const longRewrite = 'c'.repeat(400)
   const text = JSON.stringify({
     newIdeaSeeds: [{ title: longTitle, rawText: longRaw, evidence: ['n1'] }],
@@ -252,8 +337,11 @@ test('buildReflectionPromptInput requires a seed when capacity is open', () => {
     recentIdeas: [],
     dismissedAiIdeaTitles: [],
     pendingAiIdeaCount: 0,
-  }, 2, computeReflectionSignature(graph, []))
+  }, 5, computeReflectionSignature(graph, []))
+  assert.equal(payload.promptVersion, 'v2')
   assert.deepEqual((payload.caps as Record<string, unknown>).minNewIdeaSeeds, 1)
+  assert.deepEqual((payload.caps as Record<string, unknown>).maxNewIdeaSeeds, 2)
+  assert.match(JSON.stringify(payload.qualityGate), /mood log/i)
 })
 
 test('reflect skips when aiReflection is disabled', async () => {

@@ -3,6 +3,7 @@ import { basename, join } from 'node:path'
 import { createAgentHandoff } from './agents.js'
 import { analyzeIdeaWithAiCore, applyAiAnalysis } from './ai.js'
 import { createProjectHandoffPlan } from './handoff.js'
+import { isLowValueReflectionTopic } from './idea-quality.js'
 import type {
   AutopilotConfig,
   ExistingProjectAnalysis,
@@ -232,6 +233,7 @@ async function saveIdea(config: AutopilotConfig, record: IdeaRecord): Promise<vo
 export interface AiSeedMeta {
   generatedAt: string
   model: string
+  promptVersion?: IdeaAiReflectionProvenance['promptVersion']
 }
 
 export async function createAiIdeaFromSeed(
@@ -257,7 +259,7 @@ export async function createAiIdeaFromSeed(
     generatedAt: meta.generatedAt,
     model: meta.model,
     evidence: [...seed.evidence],
-    promptVersion: 'v1',
+    promptVersion: meta.promptVersion ?? 'v1',
   }
 
   const baseRecord: Omit<IdeaRecord, 'thinking' | 'agentHandoff'> = {
@@ -312,6 +314,10 @@ export async function countPendingAiIdeas(config: AutopilotConfig, now: Date = n
 export function isPendingAiIdea(record: Partial<IdeaRecord>, now: Date = new Date()): boolean {
   if (record.aiSource !== 'ai-reflection') return false
   if (typeof record.dismissedAt === 'string' && record.dismissedAt.trim()) return false
+  if (isLowValueReflectionTopic({
+    title: record.title,
+    rawText: record.rawText,
+  })) return false
   const createdAt = typeof record.createdAt === 'string' ? new Date(record.createdAt).getTime() : Number.NaN
   if (!Number.isFinite(createdAt)) return true
   return now.getTime() - createdAt <= PENDING_AI_IDEA_TTL_MS

@@ -3,6 +3,7 @@ import { GoogleGenerativeAI, SchemaType, type GenerationConfig, type ResponseSch
 import { FileKeyStorageAdapter, hasGeminiKeys } from './keys.js'
 import { stableHash6 } from './idea-graph.js'
 import { buildPersonaPrefix } from './persona.js'
+import { getReflectionSeedQualityRejection, isLowValueReflectionTopic } from './idea-quality.js'
 import type {
   AiConfig,
   AiReflectionConfig,
@@ -24,7 +25,7 @@ const DEFAULT_MAX_OUTPUT_TOKENS = 1200
 const MIN_JSON_OUTPUT_TOKENS = 700
 const DEFAULT_MAX_PENDING_AI_IDEAS = 5
 const DEFAULT_TIMEOUT_MS = 25_000
-const PROMPT_VERSION = 'v1'
+const PROMPT_VERSION = 'v2'
 const GEMINI_THINKING_BUDGET = 0
 
 async function safeBuildPersonaPrefix(mode: 'reflection' | 'boost', config: AutopilotConfig): Promise<string> {
@@ -107,6 +108,7 @@ export function buildReflectionPromptInput(input: ReflectionInput, maxNewSeeds: 
   knownNodeIds: Set<string>
   knownEvidenceIds: Set<string>
 } {
+  const promptSeedCap = Math.min(SEED_CAP, Math.max(0, maxNewSeeds))
   const knownNodeIds = new Set(input.graph.nodes.map((node) => node.id))
   const knownEvidenceIds = new Set([...knownNodeIds, ...input.backlog.map((item) => item.id)])
   const nodesSummary = [...input.graph.nodes]
@@ -126,6 +128,7 @@ export function buildReflectionPromptInput(input: ReflectionInput, maxNewSeeds: 
       seenCount: item.seenCount,
     }))
   const ideasSummary = [...input.recentIdeas]
+    .filter((idea) => !isLowValueReflectionTopic({ title: idea.title, rawText: idea.rawText }))
     .slice(0, PROMPT_MAX_IDEAS)
     .map((idea) => ({
       id: idea.id,
@@ -139,11 +142,11 @@ export function buildReflectionPromptInput(input: ReflectionInput, maxNewSeeds: 
     knownEvidenceIds,
     payload: {
       promptVersion: PROMPT_VERSION,
-      task: 'Reflect on Kevin Autopilot\'s current graph. Output one-line minified JSON only: no Markdown, no code fences, no explanation. If seed slots are open, propose grounded read-only seeds instead of returning empty arrays.',
+      task: 'Reflect on Kevin Autopilot\'s current graph. Output one-line minified JSON only: no Markdown, no code fences, no explanation. If seed slots are open, propose grounded read-only seeds about real external workflow pain instead of returning empty arrays or meta Autopilot work.',
       signature,
       caps: {
-        maxNewIdeaSeeds: maxNewSeeds,
-        minNewIdeaSeeds: maxNewSeeds > 0 ? 1 : 0,
+        maxNewIdeaSeeds: promptSeedCap,
+        minNewIdeaSeeds: promptSeedCap > 0 ? 1 : 0,
         maxNextExplorationRewrites: REWRITE_CAP,
         seedTitleMaxChars: SEED_TITLE_MAX,
         seedRawTextMaxChars: SEED_RAWTEXT_MAX,
@@ -156,6 +159,29 @@ export function buildReflectionPromptInput(input: ReflectionInput, maxNewSeeds: 
       backlog: backlogSummary,
       recentIdeas: ideasSummary,
       dismissedAiIdeaTitles: input.dismissedAiIdeaTitles.slice(0, PROMPT_MAX_DISMISSED_TITLES),
+      qualityGate: {
+        required: [
+          'A concrete person, role, domain tool, or operational artifact outside the Autopilot implementation',
+          'A concrete workflow detail plus repeated manual work, fragile workaround, or real-world friction',
+          'Read-only exploration that does not need repo/deploy/secret/API approval',
+        ],
+        rejectIf: [
+          'Self-monitoring Kevin Autopilot, the double, moods, interaction patterns, prompt quality, or dashboard hygiene',
+          'Internal engineering maintenance such as repo, CI, deploy, Docker, unit tests, branches, commits, or GitHub Actions when no external workflow detail is present',
+          'No clear real person/tool/artifact, workflow detail, pain, or workaround',
+        ],
+        badExamples: [
+          'Create a mood log of Kevin interactions',
+          'Monitor double suggestions vs Kevin actual behavior',
+          'Proactive Git status summaries',
+        ],
+        goodExamples: [
+          'Car dealer LINE photo to listing workflow friction',
+          'PM Figma spec to runnable UI prototype handoff',
+          'Firefighter course/exam/questionnaire repetition',
+          'CAD/Onshape design review or file handoff pain',
+        ],
+      },
       outputSchema: {
         newIdeaSeeds: [
           {
@@ -235,6 +261,7 @@ export function parseReflectionOutput(text: string, options: ParseReflectionOutp
     const obj = entry as Record<string, unknown>
     const title = typeof obj.title === 'string' ? truncate(obj.title.trim(), SEED_TITLE_MAX) : ''
     const rawText = typeof obj.rawText === 'string' ? truncate(obj.rawText.trim(), SEED_RAWTEXT_MAX) : ''
+    const approvalRequired = Boolean(obj.approvalRequired)
     const evidence = Array.isArray(obj.evidence)
       ? obj.evidence
         .filter((item): item is string => typeof item === 'string')
@@ -244,11 +271,12 @@ export function parseReflectionOutput(text: string, options: ParseReflectionOutp
         .slice(0, 4)
       : []
     if (!title || !rawText || evidence.length === 0) continue
+    if (getReflectionSeedQualityRejection({ title, rawText, approvalRequired })) continue
     newIdeaSeeds.push({
       title,
       rawText,
       evidence,
-      approvalRequired: Boolean(obj.approvalRequired),
+      approvalRequired,
     })
   }
 
@@ -295,6 +323,7 @@ export async function reflect(input: ReflectionInput): Promise<ReflectionStateRe
     generatedAt: new Date().toISOString(),
     skipped: true,
     reason,
+    promptVersion: PROMPT_VERSION,
     detail,
     graphSignature: signature,
     pendingAiIdeaCount: input.pendingAiIdeaCount,
@@ -327,7 +356,8 @@ export async function reflect(input: ReflectionInput): Promise<ReflectionStateRe
       ' 不得提議新建 repo、deployment、production、讀 secrets、刪資料、API contract change；遇到這類 idea 必須將 approvalRequired 設 true 並改寫成 read-only 觀察任務。' +
       ' 不要再次提出與 dismissedAiIdeaTitles 中標題語意相同的 idea。' +
       ' newIdeaSeeds 上限 2；若 caps.maxNewIdeaSeeds 大於 0，必須至少回 1 個 grounded read-only seed；只有 caps.maxNewIdeaSeeds 為 0 才能回 []。nextExplorationRewrites 上限 1。' +
-      ' newIdeaSeeds 每筆都必須有 evidence 引用 knownNodeIds 或 backlog id，否則整筆會被丟掉。'
+      ' newIdeaSeeds 每筆都必須有 evidence 引用 knownNodeIds 或 backlog id，否則整筆會被丟掉。' +
+      ' 垃圾 seed 會被丟掉：不要輸出分身/Autopilot 自我監控、mood/interaction pattern、prompt/dashboard hygiene、repo/CI/deploy/unit-test/commit 等純內部工程維護；只有在描述真實人物或外部工具/文件、具體工作流細節、痛點或手動 workaround 時，才能提到 CI/test/GitHub Actions 等詞。'
     const response = await generateStructuredGeminiReflection(input.config, {
       model: aiConfig.model,
       maxOutputTokens,
@@ -354,6 +384,7 @@ export async function reflect(input: ReflectionInput): Promise<ReflectionStateRe
   const record: ReflectionRecord = {
     generatedAt: new Date().toISOString(),
     model: aiConfig.model,
+    promptVersion: PROMPT_VERSION,
     graphSignature: signature,
     skipped: false,
     newIdeaSeeds: parsed.newIdeaSeeds,

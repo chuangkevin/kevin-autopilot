@@ -8,6 +8,7 @@ import { createWebServer, formatTaipeiTime, isTrustedSettingsAddress, isTrustedS
 import { mergeCandidatesIntoBacklog, openBacklogDatabase } from './backlog.js'
 import { saveRuntimeOverrides } from './runtime-overrides.js'
 import { _setDeliberationRunning } from './deliberation.js'
+import { writeReflectionState } from './observation-loop.js'
 import type { AutopilotConfig, ObservationCandidate } from './types.js'
 
 const GEMINI_KEY = `AIzaSy${'C'.repeat(33)}`
@@ -707,6 +708,92 @@ test('GET /api/reflection/state returns never-run shape before any cycle', async
     assert.equal(body.reason, 'never-run')
     assert.equal(body.pendingAiIdeaCount, 0)
     assert.equal(body.pendingAiIdeasCap, 14)
+  } finally {
+    if (server.listening) {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+    }
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('GET /api/reflection/state refreshes pending AI idea count for stored state', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-reflection-count-'))
+  const config: AutopilotConfig = {
+    environment: 'test',
+    dataDir,
+    aiReflection: { maxPendingAiIdeas: 5 },
+    ruleSources: [],
+    repositories: [],
+    services: [],
+  }
+  await mkdir(join(dataDir, 'ideas'), { recursive: true })
+  await writeFile(join(dataDir, 'ideas', 'idea-garbage.json'), `${JSON.stringify({
+    id: 'idea-garbage',
+    createdAt: new Date().toISOString(),
+    rawText: 'Track Kevin\'s mood and interaction patterns for tailored suggestions.',
+    title: 'Create mood log',
+    aiSource: 'ai-reflection',
+    approvalRequired: false,
+  }, null, 2)}\n`, 'utf8')
+  await writeReflectionState(config, {
+    generatedAt: '2026-05-17T00:00:00.000Z',
+    skipped: true,
+    reason: 'pending-cap',
+    pendingAiIdeaCount: 5,
+  })
+  const server = createWebServer(config)
+  try {
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const address = server.address()
+    assert.ok(address && typeof address === 'object' && 'port' in address)
+    const baseUrl = `http://127.0.0.1:${address.port}`
+    const response = await fetch(`${baseUrl}/api/reflection/state`)
+    assert.equal(response.status, 200)
+    const body = await response.json()
+    assert.equal(body.reason, 'pending-cap')
+    assert.equal(body.pendingAiIdeaCount, 0)
+    assert.equal(body.pendingAiIdeasCap, 5)
+  } finally {
+    if (server.listening) {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+    }
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('GET /api/reflection/state normalizes legacy successful prompt version', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-reflection-legacy-'))
+  const config: AutopilotConfig = {
+    environment: 'test',
+    dataDir,
+    aiReflection: { maxPendingAiIdeas: 5 },
+    ruleSources: [],
+    repositories: [],
+    services: [],
+  }
+  await writeFile(join(dataDir, 'reflection-state.json'), `${JSON.stringify({
+    generatedAt: '2026-05-17T00:00:00.000Z',
+    model: 'gemini-flash',
+    graphSignature: 'legacy',
+    skipped: false,
+    newIdeaSeeds: [],
+    nextExplorationRewrites: [],
+    pendingAiIdeaCount: 0,
+  }, null, 2)}\n`, 'utf8')
+  const server = createWebServer(config)
+  try {
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const address = server.address()
+    assert.ok(address && typeof address === 'object' && 'port' in address)
+    const baseUrl = `http://127.0.0.1:${address.port}`
+    const response = await fetch(`${baseUrl}/api/reflection/state`)
+    assert.equal(response.status, 200)
+    const body = await response.json()
+    assert.equal(body.skipped, false)
+    assert.equal(body.promptVersion, 'v1')
+    assert.equal(body.pendingAiIdeasCap, 5)
   } finally {
     if (server.listening) {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
