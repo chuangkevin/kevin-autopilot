@@ -98,6 +98,20 @@ test('dashboard shows a sanitized candidate problem pool', async () => {
     assert.equal(feedbackBody.feedback.source, 'trusted-dashboard')
     assert.equal(feedbackBody.evaluation.feedbackSummary.interesting, 1)
 
+    const boringCandidateId = dailyProblemBody.candidates[1]?.id
+    assert.ok(boringCandidateId, 'expected a second visible candidate for dismissal feedback')
+    const boringFeedback = await fetch(`${baseUrl}/api/problem-discovery/${encodeURIComponent(boringCandidateId)}/feedback`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'boring' }),
+    })
+    assert.equal(boringFeedback.status, 201)
+    const dailyAfterBoring = await fetch(`${baseUrl}/api/problem-discovery/daily`)
+    const dailyAfterBoringBody = await dailyAfterBoring.json()
+    assert.equal(dailyAfterBoringBody.candidates.some((candidate: { id: string }) => candidate.id === boringCandidateId), false)
+    const pageAfterBoring = await fetch(`${baseUrl}/`)
+    assert.equal((await pageAfterBoring.text()).includes(`problemFeedback('${boringCandidateId}'`), false)
+
     const feedbackUntrusted = await fetch(`${baseUrl}/api/problem-discovery/${encodeURIComponent(candidateId)}/feedback`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-forwarded-for': '8.8.8.8' },

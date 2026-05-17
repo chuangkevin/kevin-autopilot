@@ -84,7 +84,8 @@ export async function getDailyProblemDiscovery(
     const stored = await readDailyPick(config)
     if (stored?.date === date) {
       const storedBrief = stored.briefId ? briefs.find((brief) => brief.id === stored.briefId) ?? null : null
-      if (!(stored.status === 'picked' && !storedBrief)) {
+      const storedEvaluation = stored.briefId ? evaluations.find((evaluation) => evaluation.briefId === stored.briefId) : undefined
+      if (!(stored.status === 'picked' && (!storedBrief || isProblemCandidateDismissed(storedEvaluation)))) {
         return {
           date,
           generatedAt: stored.generatedAt,
@@ -99,7 +100,7 @@ export async function getDailyProblemDiscovery(
     }
   }
 
-  const pick = generateDailyProblemPick(date, briefs, now)
+  const pick = generateDailyProblemPick(date, briefs, now, evaluations)
   await writeDailyPick(config, pick)
   return {
     date,
@@ -215,10 +216,12 @@ export function buildProblemBriefs(signals: ProblemSignal[], existingBriefs: Pro
   return [...byKey.values()].sort((a, b) => b.score - a.score || b.updatedAt.localeCompare(a.updatedAt))
 }
 
-export function generateDailyProblemPick(date: string, briefs: ProblemBrief[], now: Date = new Date()): DailyProblemPick {
+export function generateDailyProblemPick(date: string, briefs: ProblemBrief[], now: Date = new Date(), evaluations: ProblemCandidateEvaluation[] = []): DailyProblemPick {
+  const evaluationsByBrief = new Map(evaluations.map((evaluation) => [evaluation.briefId, evaluation]))
   const candidates = briefs
+    .filter((brief) => !isProblemCandidateDismissed(evaluationsByBrief.get(brief.id)))
     .filter((brief) => brief.confidence !== 'needs_evidence' && brief.score >= 60)
-    .sort((a, b) => b.score - a.score || b.evidence.length - a.evidence.length || a.title.localeCompare(b.title))
+    .sort((a, b) => (evaluationsByBrief.get(a.id)?.rank ?? 999) - (evaluationsByBrief.get(b.id)?.rank ?? 999) || b.score - a.score || b.evidence.length - a.evidence.length || a.title.localeCompare(b.title))
   const generatedAt = now.toISOString()
   if (candidates.length === 0) {
     return {
@@ -241,6 +244,12 @@ export function generateDailyProblemPick(date: string, briefs: ProblemBrief[], n
     whyNotOthers: candidates.slice(1, 4).map((brief) => `「${brief.title}」今天沒選：${brief.score}/100，${brief.missingEvidence[0] ?? '證據或驗證路徑較弱。'}`),
     missingEvidence: picked.missingEvidence,
   }
+}
+
+export function isProblemCandidateDismissed(evaluation: ProblemCandidateEvaluation | undefined): boolean {
+  const feedback = evaluation?.feedbackSummary
+  if (!feedback) return false
+  return feedback.notAProblem > 0 || feedback.boring > feedback.interesting + feedback.findSimilar
 }
 
 export function evaluateProblemCandidates(briefs: ProblemBrief[], feedback: ProblemFeedback[] = []): ProblemCandidateEvaluation[] {

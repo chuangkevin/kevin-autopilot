@@ -10,6 +10,7 @@ import {
   evaluateProblemCandidates,
   generateDailyProblemPick,
   getDailyProblemDiscovery,
+  isProblemCandidateDismissed,
   listProblemFeedback,
   listProblemSignals,
   recordProblemFeedback,
@@ -167,6 +168,7 @@ test('candidate evaluation tiers account for feedback and recover when new evide
     const afterBoring = evaluateProblemCandidates([initialBrief], await listProblemFeedback(config))[0]
     assert.equal(afterBoring?.tier, 'not_now')
     assert.equal(afterBoring?.feedbackSummary.boring, 1)
+    assert.equal(isProblemCandidateDismissed(afterBoring), true)
 
     const secondSignal = createProblemSignal({
       sourceType: 'kevin-input',
@@ -179,6 +181,39 @@ test('candidate evaluation tiers account for feedback and recover when new evide
     assert.ok(recoveredBrief)
     const recovered = evaluateProblemCandidates([recoveredBrief], await listProblemFeedback(config))[0]
     assert.equal(recovered?.tier, 'worth_chasing')
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('daily pick skips candidates Kevin dismissed as boring', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-dismissed-daily-problem-'))
+  try {
+    const config = testConfig(dataDir)
+    const carSignal = createProblemSignal({
+      sourceType: 'kevin-input',
+      sourceName: 'car-workflow',
+      title: '車商照片刊登流程卡在手動整理',
+      snippet: '中古車業務每次刊登都要從 LINE 收照片，用 Excel 整理車輛規格，再截圖確認欄位，手動複製貼上到 8891 和 Facebook 很耗時。',
+      fetchedAt: '2026-05-15T17:00:00.000Z',
+    })
+    const mediaSignal = createProblemSignal({
+      sourceType: 'kevin-input',
+      sourceName: 'media-workflow',
+      title: '短影音素材整理卡在手動前處理',
+      snippet: '小型品牌創作者每週做短影音都要手動挑素材、截圖、命名和轉檔，在剪輯工具之間切換很耗時。',
+      fetchedAt: '2026-05-15T17:05:00.000Z',
+    })
+    const briefs = buildProblemBriefs([carSignal, mediaSignal])
+    const firstPick = generateDailyProblemPick('2026-05-16', briefs)
+    assert.equal(firstPick.status, 'picked')
+    assert.ok(firstPick.briefId)
+
+    await recordProblemFeedback(config, firstPick.briefId, 'boring', new Date('2026-05-16T01:00:00.000Z'))
+    const evaluations = evaluateProblemCandidates(briefs, await listProblemFeedback(config))
+    const nextPick = generateDailyProblemPick('2026-05-16', briefs, new Date('2026-05-16T01:01:00.000Z'), evaluations)
+    assert.equal(nextPick.status, 'picked')
+    assert.notEqual(nextPick.briefId, firstPick.briefId)
   } finally {
     await rm(dataDir, { recursive: true, force: true })
   }

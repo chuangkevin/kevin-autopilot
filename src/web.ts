@@ -33,7 +33,7 @@ import { clearStoredGeminiKeys, getKeyStatus, importGeminiKeys } from './keys.js
 import { isBoostRunning, runBoost } from './boost.js'
 import { isDeliberationRunning, loadLatestDeliberation, runDeliberation } from './deliberation.js'
 import { recomputePreferences } from './preferences.js'
-import { createProblemBriefPrompt, getDailyProblemDiscovery, isProblemFeedbackAction, recordProblemFeedback } from './problem-discovery.js'
+import { createProblemBriefPrompt, getDailyProblemDiscovery, isProblemCandidateDismissed, isProblemFeedbackAction, recordProblemFeedback } from './problem-discovery.js'
 import { createObservationLoop, readReflectionState, type ObservationLoop } from './observation-loop.js'
 import { isReflectionRewriteFresh } from './reflection.js'
 import { observe } from './observer.js'
@@ -728,7 +728,7 @@ function toPublicDailyProblemDiscovery(discovery: DailyProblemDiscovery): Omit<D
     brief: discovery.brief ? toPublicProblemBrief(discovery.brief, discovery.evaluations.find((evaluation) => evaluation.briefId === discovery.brief?.id)) : null,
     signalCount: discovery.signalCount,
     briefCount: discovery.briefs.length,
-    candidates: discovery.briefs.slice(0, 6).map((brief) => toPublicProblemCandidate(brief, discovery.evaluations.find((evaluation) => evaluation.briefId === brief.id))),
+    candidates: visibleProblemCandidates(discovery).slice(0, 6).map((brief) => toPublicProblemCandidate(brief, discovery.evaluations.find((evaluation) => evaluation.briefId === brief.id))),
     rejectedSummary: discovery.rejectedSummary,
   }
 }
@@ -1332,6 +1332,7 @@ function switchTab(name) {
   if (panel) panel.hidden = false;
   var btn = document.querySelector('[data-tab="' + name + '"]');
   if (btn) btn.classList.add('active');
+  setTimeout(function() { window.dispatchEvent(new Event('resize')); }, 0);
   history.replaceState(null, '', '#' + name);
 }
 (function() {
@@ -1995,7 +1996,9 @@ function switchTab(name) {
     }).then(function(res) {
       if (!res.ok) throw new Error('feedback failed');
       btn.textContent = '已記錄';
-      setTimeout(function() { location.reload(); }, 650);
+      var card = btn.closest('.problem-candidate');
+      if (card && (action === 'boring' || action === 'not-a-problem')) card.style.display = 'none';
+      setTimeout(function() { location.reload(); }, 450);
     }).catch(function() {
       btn.disabled = false;
       btn.textContent = '失敗，重試';
@@ -2072,7 +2075,7 @@ function renderProblemTab(discovery: DailyProblemDiscovery): string {
 
 function renderProblemCandidatePool(discovery: DailyProblemDiscovery, selectedBriefId?: string): string {
   const evaluations = new Map(discovery.evaluations.map((evaluation) => [evaluation.briefId, evaluation]))
-  const candidates = [...discovery.briefs]
+  const candidates = visibleProblemCandidates(discovery)
     .sort((a, b) => (evaluations.get(a.id)?.rank ?? 999) - (evaluations.get(b.id)?.rank ?? 999))
     .slice(0, 6)
   if (candidates.length === 0) {
@@ -2100,7 +2103,7 @@ function renderProblemCandidatePool(discovery: DailyProblemDiscovery, selectedBr
   return `
   <section class="problem-candidates">
     <h3>候選問題池</h3>
-    <p class="muted">不是只看一個答案；下面把候選分成值得追、先補證據、暫時不追，feedback 只改 Autopilot-owned ranking metadata。</p>
+    <p class="muted">不是只看一個答案；下面把候選分成值得追、先補證據、暫時不追。按「無聊 / 不是問題」會把該候選從可見池移走，feedback 只改 Autopilot-owned ranking metadata。</p>
     ${tierHtml}
     ${renderRejectedSummary(discovery.rejectedSummary)}
   </section>`
@@ -2753,6 +2756,11 @@ function renderIdeaTab(ideas: IdeaRecord[]): string {
   });
 })();
 </script>`
+}
+
+function visibleProblemCandidates(discovery: DailyProblemDiscovery): DailyProblemDiscovery['briefs'] {
+  const evaluations = new Map(discovery.evaluations.map((evaluation) => [evaluation.briefId, evaluation]))
+  return discovery.briefs.filter((brief) => !isProblemCandidateDismissed(evaluations.get(brief.id)))
 }
 
 function renderCpIdeaCard(idea: IdeaRecord): string {
