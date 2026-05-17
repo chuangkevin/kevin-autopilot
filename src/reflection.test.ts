@@ -5,9 +5,11 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   buildReflectionGenerationConfig,
+  buildReflectionPromptInput,
   computeReflectionSignature,
   parseReflectionOutput,
   resolveReflectionMaxOutputTokens,
+  shouldSkipUnchangedReflection,
   summarizeAiReflectionText,
 } from './reflection.js'
 import type {
@@ -167,6 +169,38 @@ test('parseReflectionOutput throws when no JSON is present', () => {
   assert.throws(() => parseReflectionOutput('hello world', { knownNodeIds: new Set(), maxNewSeeds: 2 }))
 })
 
+test('parseReflectionOutput drops seeds whose evidence is not known', () => {
+  const text = JSON.stringify({
+    newIdeaSeeds: [
+      { title: 'unknown', rawText: 'body', evidence: ['missing'] },
+      { title: 'backlog', rawText: 'body', evidence: ['b1'] },
+    ],
+    nextExplorationRewrites: [],
+  })
+  const result = parseReflectionOutput(text, {
+    knownNodeIds: new Set(['n1']),
+    knownEvidenceIds: new Set(['n1', 'b1']),
+    maxNewSeeds: 2,
+  })
+  assert.equal(result.newIdeaSeeds.length, 1)
+  assert.equal(result.newIdeaSeeds[0].title, 'backlog')
+})
+
+test('buildReflectionPromptInput includes backlog ids as valid evidence ids', () => {
+  const graph = makeGraph([makeNode('n1')])
+  const backlog = [makeBacklog('b1')]
+  const input = {
+    config: { environment: 'test', dataDir: '.', ruleSources: [], repositories: [], services: [] },
+    graph,
+    backlog,
+    recentIdeas: [],
+    dismissedAiIdeaTitles: [],
+    pendingAiIdeaCount: 0,
+  }
+  const { knownEvidenceIds } = buildReflectionPromptInput(input, 2, computeReflectionSignature(graph, backlog))
+  assert.deepEqual([...knownEvidenceIds].sort(), ['b1', 'n1'])
+})
+
 test('summarizeAiReflectionText makes parse failures diagnosable without huge details', () => {
   const summary = summarizeAiReflectionText(`\n\nI cannot comply with JSON only. ${'x'.repeat(400)}`)
   assert.match(summary, /^"I cannot comply with JSON only\./)
@@ -201,6 +235,25 @@ test('buildReflectionGenerationConfig requests visible structured JSON', () => {
   assert.equal(config.responseMimeType, 'application/json')
   assert.ok(config.responseSchema)
   assert.deepEqual(config.thinkingConfig, { thinkingBudget: 0 })
+})
+
+test('shouldSkipUnchangedReflection only skips when no seed capacity remains', () => {
+  assert.equal(shouldSkipUnchangedReflection('abc123', 'abc123', 0), true)
+  assert.equal(shouldSkipUnchangedReflection('abc123', 'abc123', 1), false)
+  assert.equal(shouldSkipUnchangedReflection('abc123', 'def456', 0), false)
+})
+
+test('buildReflectionPromptInput requires a seed when capacity is open', () => {
+  const graph = makeGraph([makeNode('n1')])
+  const { payload } = buildReflectionPromptInput({
+    config: { environment: 'test', dataDir: '.', ruleSources: [], repositories: [], services: [] },
+    graph,
+    backlog: [],
+    recentIdeas: [],
+    dismissedAiIdeaTitles: [],
+    pendingAiIdeaCount: 0,
+  }, 2, computeReflectionSignature(graph, []))
+  assert.deepEqual((payload.caps as Record<string, unknown>).minNewIdeaSeeds, 1)
 })
 
 test('reflect skips when aiReflection is disabled', async () => {
@@ -251,7 +304,7 @@ test('reflect skips with reason=unchanged when previousSignature matches', async
       recentIdeas: [],
       previousSignature: signature,
       dismissedAiIdeaTitles: [],
-      pendingAiIdeaCount: 0,
+      pendingAiIdeaCount: 5,
     })
     assert.equal(result.skipped, true)
     assert.equal(result.skipped === true && result.reason, 'unchanged')

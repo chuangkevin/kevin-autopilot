@@ -358,6 +358,11 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
+v0.18.6 makes reflection less passive when AI idea slots are open. A previous
+successful reflection no longer blocks another attempt on the same graph if the
+pending AI idea cap has room, and the prompt now requires at least one grounded
+read-only seed whenever `maxNewIdeaSeeds` is greater than zero.
+
 v0.18.5 disables Gemini 2.5 thinking budget for AI reflection JSON calls. Live
 force-runs showed `application/json` plus schema could still return only a short
 truncated visible JSON response; reflection now spends its budget on the visible

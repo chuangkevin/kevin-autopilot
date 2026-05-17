@@ -105,8 +105,10 @@ export function computeReflectionSignature(graph: IdeaGraph, backlog: BacklogIte
 export function buildReflectionPromptInput(input: ReflectionInput, maxNewSeeds: number, signature: string): {
   payload: Record<string, unknown>
   knownNodeIds: Set<string>
+  knownEvidenceIds: Set<string>
 } {
   const knownNodeIds = new Set(input.graph.nodes.map((node) => node.id))
+  const knownEvidenceIds = new Set([...knownNodeIds, ...input.backlog.map((item) => item.id)])
   const nodesSummary = [...input.graph.nodes]
     .slice(0, PROMPT_MAX_NODES)
     .map((node) => summariseNode(node))
@@ -134,12 +136,14 @@ export function buildReflectionPromptInput(input: ReflectionInput, maxNewSeeds: 
 
   return {
     knownNodeIds,
+    knownEvidenceIds,
     payload: {
       promptVersion: PROMPT_VERSION,
-      task: 'Reflect on Kevin Autopilot\'s current graph. Output one-line minified JSON only: no Markdown, no code fences, no explanation. If unsure, return empty arrays.',
+      task: 'Reflect on Kevin Autopilot\'s current graph. Output one-line minified JSON only: no Markdown, no code fences, no explanation. If seed slots are open, propose grounded read-only seeds instead of returning empty arrays.',
       signature,
       caps: {
         maxNewIdeaSeeds: maxNewSeeds,
+        minNewIdeaSeeds: maxNewSeeds > 0 ? 1 : 0,
         maxNextExplorationRewrites: REWRITE_CAP,
         seedTitleMaxChars: SEED_TITLE_MAX,
         seedRawTextMaxChars: SEED_RAWTEXT_MAX,
@@ -208,6 +212,7 @@ function truncate(value: string, max: number): string {
 
 export interface ParseReflectionOutputOptions {
   knownNodeIds: Set<string>
+  knownEvidenceIds?: Set<string>
   maxNewSeeds: number
 }
 
@@ -223,6 +228,7 @@ export function parseReflectionOutput(text: string, options: ParseReflectionOutp
   const seedsRaw: unknown[] = Array.isArray(parsed.newIdeaSeeds) ? parsed.newIdeaSeeds : []
   const newIdeaSeeds: ReflectionIdeaSeed[] = []
   const seedCap = Math.min(SEED_CAP, Math.max(0, options.maxNewSeeds))
+  const knownEvidenceIds = options.knownEvidenceIds ?? options.knownNodeIds
   for (const entry of seedsRaw) {
     if (newIdeaSeeds.length >= seedCap) break
     if (!entry || typeof entry !== 'object') continue
@@ -233,6 +239,7 @@ export function parseReflectionOutput(text: string, options: ParseReflectionOutp
       ? obj.evidence
         .filter((item): item is string => typeof item === 'string')
         .map((item) => truncate(item.trim(), EVIDENCE_MAX_LEN))
+        .filter((item) => knownEvidenceIds.has(item))
         .filter((item) => item.length > 0)
         .slice(0, 4)
       : []
@@ -296,7 +303,7 @@ export async function reflect(input: ReflectionInput): Promise<ReflectionStateRe
   if (reflectionConfig.enabled !== true) {
     return baseSkip('disabled', 'aiReflection.enabled is not true')
   }
-  if (input.previousSignature && input.previousSignature === signature) {
+  if (shouldSkipUnchangedReflection(input.previousSignature, signature, maxNewSeeds)) {
     return baseSkip('unchanged', 'Graph signature matches previous successful reflection')
   }
   if (!aiConfig?.enabled || aiConfig.provider !== 'gemini') {
@@ -306,7 +313,7 @@ export async function reflect(input: ReflectionInput): Promise<ReflectionStateRe
     return baseSkip('offline', 'No Gemini key available in the configured key pool')
   }
 
-  const { payload, knownNodeIds } = buildReflectionPromptInput(input, maxNewSeeds, signature)
+  const { payload, knownNodeIds, knownEvidenceIds } = buildReflectionPromptInput(input, maxNewSeeds, signature)
   const maxOutputTokens = resolveReflectionMaxOutputTokens(reflectionConfig)
   const timeoutMs = aiConfig.timeoutMs ?? DEFAULT_TIMEOUT_MS
 
@@ -316,10 +323,10 @@ export async function reflect(input: ReflectionInput): Promise<ReflectionStateRe
     const personaPrefix = await safeBuildPersonaPrefix('reflection', input.config)
     const reflectionInstruction =
       '你是 Kevin Autopilot 的分身反思引擎。讀取 Kevin Autopilot 的目前圖、backlog 與最近想法，依規格輸出 JSON。' +
-      ' 只輸出 JSON，不要 Markdown，不要前後說明文字；若沒有高信心新方向，回傳空陣列。' +
+      ' 只輸出 JSON，不要 Markdown，不要前後說明文字。' +
       ' 不得提議新建 repo、deployment、production、讀 secrets、刪資料、API contract change；遇到這類 idea 必須將 approvalRequired 設 true 並改寫成 read-only 觀察任務。' +
       ' 不要再次提出與 dismissedAiIdeaTitles 中標題語意相同的 idea。' +
-      ' newIdeaSeeds 上限 2、若 caps.maxNewIdeaSeeds 為 0 則必須回 []；nextExplorationRewrites 上限 1。' +
+      ' newIdeaSeeds 上限 2；若 caps.maxNewIdeaSeeds 大於 0，必須至少回 1 個 grounded read-only seed；只有 caps.maxNewIdeaSeeds 為 0 才能回 []。nextExplorationRewrites 上限 1。' +
       ' newIdeaSeeds 每筆都必須有 evidence 引用 knownNodeIds 或 backlog id，否則整筆會被丟掉。'
     const response = await generateStructuredGeminiReflection(input.config, {
       model: aiConfig.model,
@@ -336,9 +343,12 @@ export async function reflect(input: ReflectionInput): Promise<ReflectionStateRe
 
   let parsed: { newIdeaSeeds: ReflectionIdeaSeed[]; nextExplorationRewrites: ReflectionNextExploration[] }
   try {
-    parsed = parseReflectionOutput(text, { knownNodeIds, maxNewSeeds })
+    parsed = parseReflectionOutput(text, { knownNodeIds, knownEvidenceIds, maxNewSeeds })
   } catch (error) {
     return baseSkip('error', `Failed to parse AI reflection output: ${error instanceof Error ? error.message : String(error)}; providerStatus=success/no-http-status-exposed; usage=${formatUsage(usage)}; responseSnippet=${summarizeAiReflectionText(text)}`)
+  }
+  if (maxNewSeeds > 0 && parsed.newIdeaSeeds.length === 0) {
+    return baseSkip('error', `AI reflection returned no valid idea seeds despite ${maxNewSeeds} open seed slot(s); usage=${formatUsage(usage)}; responseSnippet=${summarizeAiReflectionText(text)}`)
   }
 
   const record: ReflectionRecord = {
@@ -351,6 +361,14 @@ export async function reflect(input: ReflectionInput): Promise<ReflectionStateRe
     pendingAiIdeaCount: input.pendingAiIdeaCount,
   }
   return record
+}
+
+export function shouldSkipUnchangedReflection(
+  previousSignature: string | undefined,
+  signature: string,
+  maxNewSeeds: number,
+): boolean {
+  return maxNewSeeds <= 0 && previousSignature === signature
 }
 
 export function resolveReflectionMaxOutputTokens(reflectionConfig: AiReflectionConfig): number {
