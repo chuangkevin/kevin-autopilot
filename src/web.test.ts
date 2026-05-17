@@ -510,6 +510,15 @@ test('web server exposes health and idea intake', async () => {
     })
     assert.equal(runtimeOverridePutUntrusted.status, 403)
 
+    const forceObservationUntrusted = await fetch(`${baseUrl}/api/observation-loop/run`, {
+      method: 'POST',
+      headers: { 'x-forwarded-for': '8.8.8.8' },
+    })
+    assert.equal(forceObservationUntrusted.status, 403)
+
+    const forceObservationWithoutLoop = await fetch(`${baseUrl}/api/observation-loop/run`, { method: 'POST' })
+    assert.equal(forceObservationWithoutLoop.status, 503)
+
     const idea = await fetch(`${baseUrl}/api/ideas`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

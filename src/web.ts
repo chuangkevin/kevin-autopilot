@@ -118,6 +118,20 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
     return
   }
 
+  if (url.pathname === '/api/observation-loop/run' && request.method === 'POST') {
+    if (!isTrustedSettingsRequest(request)) {
+      writeText(response, '強制觀察需要 loopback、私有 LAN、Docker 或 Tailscale 連線', 403)
+      return
+    }
+    if (!observationLoop) {
+      writeJson(response, { status: 'unavailable' }, 503)
+      return
+    }
+    const report = await observationLoop.forceRun()
+    writeJson(response, { status: report ? 'completed' : 'skipped', loop: await observationLoop.getEffectiveState() }, report ? 200 : 202)
+    return
+  }
+
   if (url.pathname === '/api/deliberation/latest') {
     const record = await loadLatestDeliberation(config)
     const deliberationState: DeliberationState = {
