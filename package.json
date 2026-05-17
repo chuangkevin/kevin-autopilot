@@ -1,6 +1,6 @@
 {
   "name": "kevin-autopilot",
-  "version": "0.18.3",
+  "version": "0.18.4",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,6 +11,7 @@
     "test": "node --test dist/**/*.test.js"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.21.0",
     "@kevinsisi/ai-core": "git+https://github.com/kevinsisi/ai-core.git#f42e3f4ceb14886604bd0c7f248071018c85ff82"
   },
   "devDependencies": {

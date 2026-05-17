@@ -358,6 +358,12 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
+v0.18.4 makes AI reflection JSON generation provider-structured. Reflection now
+uses Gemini `application/json` response MIME type with a response schema while
+still leasing managed keys from the existing key pool, raises the safe default
+JSON token budget, and rejects runtime overrides below the minimum needed to
+avoid truncated reflection records.
+
 v0.18.3 adds problem-candidate evaluation to the `今日真實問題` flow. Accepted
 `ProblemBrief` records now get `worth_chasing`, `needs_evidence`, or `not_now`
 evaluations with ranking rationale, evidence gap, next validation step, and kill

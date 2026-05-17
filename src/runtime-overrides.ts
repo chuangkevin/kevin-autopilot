@@ -19,10 +19,10 @@ export const RUNTIME_OVERRIDE_SCHEMA: RuntimeOverrideSchema = {
   },
   'aiReflection.maxOutputTokens': {
     type: 'integer',
-    min: 100,
-    max: 2000,
+    min: 700,
+    max: 4000,
     label: 'AI reflection max output tokens',
-    description: '限制每次 AI reflection 的 Gemini 輸出 token budget。',
+    description: '限制每次 AI reflection 的 Gemini JSON 輸出 token budget；太低會讓結構化 JSON 被截斷。',
   },
   'aiReflection.maxPendingAiIdeas': {
     type: 'integer',

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { computeReflectionSignature, parseReflectionOutput, summarizeAiReflectionText } from './reflection.js'
+import { computeReflectionSignature, parseReflectionOutput, resolveReflectionMaxOutputTokens, summarizeAiReflectionText } from './reflection.js'
 import type {
   AutopilotConfig,
   BacklogItem,
@@ -181,6 +181,12 @@ test('parseReflectionOutput truncates over-long fields', () => {
   assert.equal(result.newIdeaSeeds[0].title.length <= 60, true)
   assert.equal(result.newIdeaSeeds[0].rawText.length <= 320, true)
   assert.equal(result.nextExplorationRewrites[0].nextExploration.length <= 140, true)
+})
+
+test('resolveReflectionMaxOutputTokens keeps a safe JSON floor', () => {
+  assert.equal(resolveReflectionMaxOutputTokens({}), 1200)
+  assert.equal(resolveReflectionMaxOutputTokens({ maxOutputTokens: 300 }), 700)
+  assert.equal(resolveReflectionMaxOutputTokens({ maxOutputTokens: 2000 }), 2000)
 })
 
 test('reflect skips when aiReflection is disabled', async () => {

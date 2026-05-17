@@ -40,7 +40,7 @@ test('loadRuntimeOverrides drops invalid and unknown hand-edited fields', async 
       aiReflection: {
         enabled: true,
         maxPendingAiIdeas: 'many',
-        maxOutputTokens: 3000,
+        maxOutputTokens: 80,
       },
       backgroundObservation: {
         enabled: false,
@@ -72,6 +72,18 @@ test('getEffectiveConfig merges whitelisted overrides without mutating file conf
     assert.equal(effective.backgroundObservation?.intervalMs, 120_000)
     assert.equal(config.aiReflection?.enabled, false)
     assert.equal(config.backgroundObservation?.intervalMs, 300_000)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('saveRuntimeOverrides allows larger reflection JSON budgets', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-overrides-reflection-budget-'))
+  try {
+    const config = baseConfig(dataDir)
+    await saveRuntimeOverrides(config, { aiReflection: { maxOutputTokens: 3000 } })
+    const effective = await getEffectiveConfig(config)
+    assert.equal(effective.aiReflection?.maxOutputTokens, 3000)
   } finally {
     await rm(dataDir, { recursive: true, force: true })
   }
