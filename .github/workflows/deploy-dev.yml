@@ -12,7 +12,6 @@ env:
   DEPLOY_PATH: D:/GitClone/_HomeProject/kevin-autopilot
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/kevin-autopilot
   IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
-  EXPECTED_APP_VERSION: "0.18.3"
   HEALTH_URL: http://100.83.112.20:3023/health
   DOMAIN_HEALTH_URL: https://kevin.sisihome.org/health
   TAILSCALE_BIND_ADDR: 100.83.112.20
@@ -33,6 +32,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Read expected app version
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $package = Get-Content -LiteralPath 'package.json' -Raw | ConvertFrom-Json
+          "EXPECTED_APP_VERSION=$($package.version)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Validate deploy inputs
         shell: powershell
