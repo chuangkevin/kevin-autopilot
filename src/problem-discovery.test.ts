@@ -15,6 +15,7 @@ import {
   listProblemSignals,
   recordProblemFeedback,
   upsertProblemSignals,
+  visibleProblemBriefs,
 } from './problem-discovery.js'
 import type { AutopilotConfig } from './types.js'
 
@@ -170,6 +171,10 @@ test('candidate evaluation tiers account for feedback and recover when new evide
     assert.equal(afterBoring?.feedbackSummary.boring, 1)
     assert.equal(isProblemCandidateDismissed(afterBoring), true)
 
+    const siblingBrief = { ...initialBrief, id: 'problem-same-topic', dedupKey: 'manual-workflow-bionic-persona-pkm', title: '仿生人格 PKM 仍然是同一類題目' }
+    const visibleAfterBoring = visibleProblemBriefs([initialBrief, siblingBrief], evaluateProblemCandidates([initialBrief, siblingBrief], await listProblemFeedback(config)))
+    assert.equal(visibleAfterBoring.some((brief) => brief.id === siblingBrief.id), false)
+
     const secondSignal = createProblemSignal({
       sourceType: 'kevin-input',
       sourceName: 'car-workflow-2',
@@ -214,6 +219,28 @@ test('daily pick skips candidates Kevin dismissed as boring', async () => {
     const nextPick = generateDailyProblemPick('2026-05-16', briefs, new Date('2026-05-16T01:01:00.000Z'), evaluations)
     assert.equal(nextPick.status, 'picked')
     assert.notEqual(nextPick.briefId, firstPick.briefId)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('visible problem candidates suppress the same dismissed topic', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-topic-dismiss-'))
+  try {
+    const config = testConfig(dataDir)
+    const signal = createProblemSignal({
+      sourceType: 'kevin-input',
+      sourceName: 'calm-pkm-1',
+      title: '仿生人格協助管理個人知識',
+      snippet: '仿生人格協助管理個人知識與 PKM 流程，但目前只能靠人工 workaround 整理筆記和專案。',
+      fetchedAt: '2026-05-16T01:00:00.000Z',
+    })
+    const original = buildProblemBriefs([signal])[0]
+    assert.ok(original)
+    const sameTopic = { ...original, id: 'problem-other-pkm', dedupKey: 'manual-workflow-other-pkm', title: 'PKM 與仿生人格流程仍在人工硬撐' }
+    await recordProblemFeedback(config, original.id, 'boring', new Date('2026-05-16T02:00:00.000Z'))
+    const evaluations = evaluateProblemCandidates([original, sameTopic], await listProblemFeedback(config))
+    assert.deepEqual(visibleProblemBriefs([original, sameTopic], evaluations), [])
   } finally {
     await rm(dataDir, { recursive: true, force: true })
   }

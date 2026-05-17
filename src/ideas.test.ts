@@ -135,11 +135,12 @@ test('countPendingAiIdeas counts ai-reflection ideas only', async () => {
       rawText: 'AI 反思產生的 idea',
       evidence: ['node:idea-foo'],
     }
-    const now = new Date()
+    const now = new Date('2026-05-17T00:00:00.000Z')
     await createAiIdeaFromSeed(config, seed, { generatedAt: now.toISOString(), model: 'gemini-flash' }, 0, now)
     await createAiIdeaFromSeed(config, seed, { generatedAt: now.toISOString(), model: 'gemini-flash' }, 1, now)
+    await createAiIdeaFromSeed(config, seed, { generatedAt: '2026-05-12T00:00:00.000Z', model: 'gemini-flash' }, 2, new Date('2026-05-12T00:00:00.000Z'))
     await createIdea(config, '使用者自己打的想法')
-    assert.equal(await countPendingAiIdeas(config), 2)
+    assert.equal(await countPendingAiIdeas(config, now), 2)
   } finally {
     await rm(root, { recursive: true, force: true })
   }

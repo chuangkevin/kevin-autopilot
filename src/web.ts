@@ -33,7 +33,7 @@ import { clearStoredGeminiKeys, getKeyStatus, importGeminiKeys } from './keys.js
 import { isBoostRunning, runBoost } from './boost.js'
 import { isDeliberationRunning, loadLatestDeliberation, runDeliberation } from './deliberation.js'
 import { recomputePreferences } from './preferences.js'
-import { createProblemBriefPrompt, getDailyProblemDiscovery, isProblemCandidateDismissed, isProblemFeedbackAction, recordProblemFeedback } from './problem-discovery.js'
+import { createProblemBriefPrompt, getDailyProblemDiscovery, isProblemFeedbackAction, recordProblemFeedback, visibleProblemBriefs } from './problem-discovery.js'
 import { createObservationLoop, readReflectionState, type ObservationLoop } from './observation-loop.js'
 import { isReflectionRewriteFresh } from './reflection.js'
 import { observe } from './observer.js'
@@ -1082,8 +1082,10 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
 .idea-card-meta { display: flex; flex-wrap: wrap; gap: 6px; color: #93c5fd; font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; }
 .idea-chip { display: inline-flex; align-items: center; border: 1px solid rgba(148,163,184,0.18); border-radius: 999px; padding: 2px 7px; background: rgba(15,23,42,0.6); color: #bae6fd; }
 .idea-card-text { color: #94a3b8; font-size: 15px; line-height: 1.42; margin: 0; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.idea-card-footer { margin-top: auto; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.idea-card-footer { margin-top: auto; display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
+.idea-card-footer .muted { margin-right: auto; min-width: 0; }
 .idea-card-link { border: 1px solid rgba(0,255,255,0.28); border-radius: 999px; padding: 5px 9px; text-decoration: none; font-size: 14px; }
+.idea-card-dismiss { border: 1px solid rgba(245,158,11,0.32); border-radius: 999px; padding: 5px 9px; background: rgba(120,53,15,0.16); color: #fde68a; font-family: 'Courier New', monospace; font-size: 14px; }
 .idea-empty-card { color: var(--muted); justify-content: center; }
 @media (min-width: 768px) { .idea-card { flex-basis: 32%; } }
 
@@ -2759,8 +2761,7 @@ function renderIdeaTab(ideas: IdeaRecord[]): string {
 }
 
 function visibleProblemCandidates(discovery: DailyProblemDiscovery): DailyProblemDiscovery['briefs'] {
-  const evaluations = new Map(discovery.evaluations.map((evaluation) => [evaluation.briefId, evaluation]))
-  return discovery.briefs.filter((brief) => !isProblemCandidateDismissed(evaluations.get(brief.id)))
+  return visibleProblemBriefs(discovery.briefs, discovery.evaluations)
 }
 
 function renderCpIdeaCard(idea: IdeaRecord): string {
@@ -2769,8 +2770,11 @@ function renderCpIdeaCard(idea: IdeaRecord): string {
   const project = idea.existingProjectAnalysis.recommendation === 'extend-existing'
     ? idea.existingProjectAnalysis.matches[0]?.projectName ?? 'existing project'
     : idea.existingProjectAnalysis.recommendation
+  const dismissButton = idea.aiSource === 'ai-reflection'
+    ? `<button type="button" class="idea-card-dismiss dismiss-ai-idea" data-id="${escapeHtmlAttr(idea.id)}" onclick="event.stopPropagation(); event.preventDefault();">略過</button>`
+    : ''
   return `
-<article class="idea-card" data-idea-card="${escapeHtmlAttr(idea.id)}">
+<article class="idea-card" id="idea-card-${escapeHtmlAttr(idea.id)}" data-idea-card="${escapeHtmlAttr(idea.id)}">
   <div class="idea-card-meta">
     <span class="idea-chip">${escapeHtml(idea.classification)}</span>
     <span class="idea-chip">${idea.approvalRequired ? 'needs gate' : 'read-only'}</span>
@@ -2779,6 +2783,7 @@ function renderCpIdeaCard(idea: IdeaRecord): string {
   <p class="idea-card-text">${escapeHtml(nextStep)}</p>
   <div class="idea-card-footer">
     <span class="muted" style="font-size:13px">${escapeHtml(project)}</span>
+    ${dismissButton}
     <a class="idea-card-link" href="/ideas/${encodeURIComponent(idea.id)}">打開</a>
   </div>
 </article>`

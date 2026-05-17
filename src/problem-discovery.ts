@@ -218,8 +218,7 @@ export function buildProblemBriefs(signals: ProblemSignal[], existingBriefs: Pro
 
 export function generateDailyProblemPick(date: string, briefs: ProblemBrief[], now: Date = new Date(), evaluations: ProblemCandidateEvaluation[] = []): DailyProblemPick {
   const evaluationsByBrief = new Map(evaluations.map((evaluation) => [evaluation.briefId, evaluation]))
-  const candidates = briefs
-    .filter((brief) => !isProblemCandidateDismissed(evaluationsByBrief.get(brief.id)))
+  const candidates = visibleProblemBriefs(briefs, evaluations)
     .filter((brief) => brief.confidence !== 'needs_evidence' && brief.score >= 60)
     .sort((a, b) => (evaluationsByBrief.get(a.id)?.rank ?? 999) - (evaluationsByBrief.get(b.id)?.rank ?? 999) || b.score - a.score || b.evidence.length - a.evidence.length || a.title.localeCompare(b.title))
   const generatedAt = now.toISOString()
@@ -250,6 +249,27 @@ export function isProblemCandidateDismissed(evaluation: ProblemCandidateEvaluati
   const feedback = evaluation?.feedbackSummary
   if (!feedback) return false
   return feedback.notAProblem > 0 || feedback.boring > feedback.interesting + feedback.findSimilar
+}
+
+export function visibleProblemBriefs(briefs: ProblemBrief[], evaluations: ProblemCandidateEvaluation[] = []): ProblemBrief[] {
+  const evaluationsByBrief = new Map(evaluations.map((evaluation) => [evaluation.briefId, evaluation]))
+  const dismissedTopicKeys = new Set(
+    briefs
+      .filter((brief) => isProblemCandidateDismissed(evaluationsByBrief.get(brief.id)))
+      .map(problemCandidateTopicKey),
+  )
+  return briefs.filter((brief) => {
+    const evaluation = evaluationsByBrief.get(brief.id)
+    if (isProblemCandidateDismissed(evaluation)) return false
+    return !dismissedTopicKeys.has(problemCandidateTopicKey(brief))
+  })
+}
+
+export function problemCandidateTopicKey(brief: ProblemBrief): string {
+  const lower = `${brief.dedupKey} ${brief.title} ${brief.people} ${brief.workflow} ${brief.pain} ${brief.workaround}`.toLowerCase()
+  const category = detectCategory(lower)
+  if (category) return `category:${category}`
+  return `brief:${brief.dedupKey}`
 }
 
 export function evaluateProblemCandidates(briefs: ProblemBrief[], feedback: ProblemFeedback[] = []): ProblemCandidateEvaluation[] {

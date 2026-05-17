@@ -13,6 +13,7 @@ import type {
 } from './types.js'
 
 const MAX_IDEA_LENGTH = 8000
+const PENDING_AI_IDEA_TTL_MS = 72 * 60 * 60 * 1000
 const BLOCKED_TERMS = ['刪資料', '重建資料', '正式環境', 'production', 'secret', '金鑰', '.env', 'credential', '部署']
 const PROTOTYPE_TERMS = ['prototype', '原型', '先做', 'mvp', '最小', '簡單']
 const PLAN_TERMS = ['架構', '規格', 'openspec', 'repo', '部屬', '部署', '開發', '測試']
@@ -288,7 +289,7 @@ export async function createAiIdeaFromSeed(
   return record
 }
 
-export async function countPendingAiIdeas(config: AutopilotConfig): Promise<number> {
+export async function countPendingAiIdeas(config: AutopilotConfig, now: Date = new Date()): Promise<number> {
   const dir = ideasDir(config)
   try {
     await mkdir(dir, { recursive: true })
@@ -297,7 +298,7 @@ export async function countPendingAiIdeas(config: AutopilotConfig): Promise<numb
     for (const file of files) {
       try {
         const parsed = JSON.parse(await readFile(join(dir, file), 'utf8')) as Partial<IdeaRecord>
-        if (parsed.aiSource === 'ai-reflection') count += 1
+        if (isPendingAiIdea(parsed, now)) count += 1
       } catch {
         continue
       }
@@ -306,6 +307,14 @@ export async function countPendingAiIdeas(config: AutopilotConfig): Promise<numb
   } catch {
     return 0
   }
+}
+
+export function isPendingAiIdea(record: Partial<IdeaRecord>, now: Date = new Date()): boolean {
+  if (record.aiSource !== 'ai-reflection') return false
+  if (typeof record.dismissedAt === 'string' && record.dismissedAt.trim()) return false
+  const createdAt = typeof record.createdAt === 'string' ? new Date(record.createdAt).getTime() : Number.NaN
+  if (!Number.isFinite(createdAt)) return true
+  return now.getTime() - createdAt <= PENDING_AI_IDEA_TTL_MS
 }
 
 export class DismissError extends Error {
