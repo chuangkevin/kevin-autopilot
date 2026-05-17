@@ -3,7 +3,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { computeReflectionSignature, parseReflectionOutput, resolveReflectionMaxOutputTokens, summarizeAiReflectionText } from './reflection.js'
+import {
+  buildReflectionGenerationConfig,
+  computeReflectionSignature,
+  parseReflectionOutput,
+  resolveReflectionMaxOutputTokens,
+  summarizeAiReflectionText,
+} from './reflection.js'
 import type {
   AutopilotConfig,
   BacklogItem,
@@ -187,6 +193,14 @@ test('resolveReflectionMaxOutputTokens keeps a safe JSON floor', () => {
   assert.equal(resolveReflectionMaxOutputTokens({}), 1200)
   assert.equal(resolveReflectionMaxOutputTokens({ maxOutputTokens: 300 }), 700)
   assert.equal(resolveReflectionMaxOutputTokens({ maxOutputTokens: 2000 }), 2000)
+})
+
+test('buildReflectionGenerationConfig requests visible structured JSON', () => {
+  const config = buildReflectionGenerationConfig(2000) as unknown as Record<string, unknown>
+  assert.equal(config.maxOutputTokens, 2000)
+  assert.equal(config.responseMimeType, 'application/json')
+  assert.ok(config.responseSchema)
+  assert.deepEqual(config.thinkingConfig, { thinkingBudget: 0 })
 })
 
 test('reflect skips when aiReflection is disabled', async () => {

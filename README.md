@@ -358,6 +358,11 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
+v0.18.5 disables Gemini 2.5 thinking budget for AI reflection JSON calls. Live
+force-runs showed `application/json` plus schema could still return only a short
+truncated visible JSON response; reflection now spends its budget on the visible
+structured payload.
+
 v0.18.4 makes AI reflection JSON generation provider-structured. Reflection now
 uses Gemini `application/json` response MIME type with a response schema while
 still leasing managed keys from the existing key pool, raises the safe default

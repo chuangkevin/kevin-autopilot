@@ -1,5 +1,5 @@
 import { KeyPool } from '@kevinsisi/ai-core'
-import { GoogleGenerativeAI, SchemaType, type ResponseSchema } from '@google/generative-ai'
+import { GoogleGenerativeAI, SchemaType, type GenerationConfig, type ResponseSchema } from '@google/generative-ai'
 import { FileKeyStorageAdapter, hasGeminiKeys } from './keys.js'
 import { stableHash6 } from './idea-graph.js'
 import { buildPersonaPrefix } from './persona.js'
@@ -25,6 +25,7 @@ const MIN_JSON_OUTPUT_TOKENS = 700
 const DEFAULT_MAX_PENDING_AI_IDEAS = 5
 const DEFAULT_TIMEOUT_MS = 25_000
 const PROMPT_VERSION = 'v1'
+const GEMINI_THINKING_BUDGET = 0
 
 async function safeBuildPersonaPrefix(mode: 'reflection' | 'boost', config: AutopilotConfig): Promise<string> {
   try {
@@ -356,6 +357,15 @@ export function resolveReflectionMaxOutputTokens(reflectionConfig: AiReflectionC
   return Math.max(MIN_JSON_OUTPUT_TOKENS, reflectionConfig.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS)
 }
 
+export function buildReflectionGenerationConfig(maxOutputTokens: number): GenerationConfig {
+  return {
+    maxOutputTokens,
+    responseMimeType: 'application/json',
+    responseSchema: REFLECTION_RESPONSE_SCHEMA,
+    thinkingConfig: { thinkingBudget: GEMINI_THINKING_BUDGET },
+  } as unknown as GenerationConfig
+}
+
 async function generateStructuredGeminiReflection(
   config: AutopilotConfig,
   params: {
@@ -379,11 +389,7 @@ async function generateStructuredGeminiReflection(
       const model = genai.getGenerativeModel({
         model: params.model,
         systemInstruction: params.systemInstruction,
-        generationConfig: {
-          maxOutputTokens: params.maxOutputTokens,
-          responseMimeType: 'application/json',
-          responseSchema: REFLECTION_RESPONSE_SCHEMA,
-        },
+        generationConfig: buildReflectionGenerationConfig(params.maxOutputTokens),
       })
       const result = await withTimeout(model.generateContent(params.prompt), params.timeoutMs)
       const response = result.response
