@@ -358,6 +358,10 @@ edit target repos, read unmanaged secrets, or commit/push other projects.
 
 ## Status
 
+v0.18.8 broadens the v0.18.7 reflection quality gate for live English car-listing
+workflow wording such as listing photography, cross-posting, 8891, and Facebook
+so valid real-world seeds are not dropped as missing workflow context.
+
 v0.18.7 rejects low-value AI reflection loops. Reflection now filters out
 Autopilot self-monitoring, mood/interaction-pattern tracking, prompt/dashboard
 hygiene, and internal repo/CI/deploy/unit-test ideas unless they name a

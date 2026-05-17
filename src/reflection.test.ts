@@ -241,6 +241,34 @@ test('getReflectionSeedQualityRejection rejects approval and missing workflow se
     rawText: 'A customer-related concept without a concrete operational task.',
   }), 'missing-real-world-workflow')
   assert.equal(getReflectionSeedQualityRejection({
+    title: 'Facebook car post',
+    rawText: 'Idea about a Facebook car post.',
+  }), 'missing-real-world-workflow')
+  assert.equal(getReflectionSeedQualityRejection({
+    title: 'Facebook edit',
+    rawText: 'Facebook edit.',
+  }), 'missing-real-world-workflow')
+  assert.equal(getReflectionSeedQualityRejection({
+    title: 'Facebook car editing',
+    rawText: 'Facebook car editing idea.',
+  }), 'missing-real-world-workflow')
+  assert.equal(getReflectionSeedQualityRejection({
+    title: 'Car listing editing idea',
+    rawText: 'Car listing editing idea.',
+  }), 'missing-real-world-workflow')
+  assert.equal(getReflectionSeedQualityRejection({
+    title: 'Users manually manage platforms',
+    rawText: 'Users manually manage platforms.',
+  }), 'missing-real-world-workflow')
+  assert.equal(getReflectionSeedQualityRejection({
+    title: 'Users manually manage Facebook',
+    rawText: 'Users manually manage Facebook.',
+  }), 'missing-real-world-workflow')
+  assert.equal(getReflectionSeedQualityRejection({
+    title: 'Users manually manage cars',
+    rawText: 'Users manually manage cars.',
+  }), 'missing-real-world-workflow')
+  assert.equal(getReflectionSeedQualityRejection({
     title: 'Needs approval',
     rawText: '車商業務每次手動整理 LINE 照片。',
     approvalRequired: true,
@@ -268,6 +296,10 @@ test('getReflectionSeedQualityRejection rejects approval and missing workflow se
   assert.equal(getReflectionSeedQualityRejection({
     title: 'Invoice PDF email to ERP handoff',
     rawText: 'Accountant manually copies invoice PDFs from email to ERP.',
+  }), undefined)
+  assert.equal(getReflectionSeedQualityRejection({
+    title: 'Watch for friction in car listing photo workflow',
+    rawText: 'Observe the manual steps involved in car listing photography, editing, and cross-posting to various platforms like 8891 and Facebook, looking for repetitive pain points.',
   }), undefined)
 })
 
