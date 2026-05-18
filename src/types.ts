@@ -158,7 +158,7 @@ export interface UserSupplement {
   appliesTo: 'next_observation'
 }
 
-export type ProblemSignalSourceType = 'web-search' | 'news' | 'forum' | 'review' | 'github-issue' | 'kevin-input' | 'homeproject'
+export type ProblemSignalSourceType = 'web-search' | 'news' | 'forum' | 'review' | 'github-issue' | 'kevin-input' | 'homeproject' | 'hacker-news' | 'reddit' | 'threads-tw'
 
 export interface ProblemSignal {
   id: string
@@ -209,6 +209,7 @@ export interface ProblemBrief {
   createdAt: string
   updatedAt: string
   sourceSignalIds: string[]
+  primarySourceType?: ProblemSignalSourceType
 }
 
 export type ProblemCandidateTier = 'worth_chasing' | 'needs_evidence' | 'not_now'
