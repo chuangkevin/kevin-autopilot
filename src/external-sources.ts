@@ -18,23 +18,26 @@ export async function fetchHackerNewsSignals(options: { timeout?: number } = {})
       try {
         const ctrl = new AbortController()
         const timer = setTimeout(() => ctrl.abort(), timeout)
-        const res = await fetch(`${HN_BASE}?query=${encodeURIComponent(query)}&tags=${tag}&hitsPerPage=10`, { signal: ctrl.signal })
-        clearTimeout(timer)
-        if (!res.ok) continue
-        const data = await res.json() as { hits?: unknown[] }
-        for (const hit of data.hits ?? []) {
-          const h = hit as Record<string, unknown>
-          const text = [String(h.story_text ?? ''), String(h.comment_text ?? '')].filter(Boolean).join(' ').trim()
-          if (text.length < 80) continue
-          signals.push(createProblemSignal({
-            sourceType: 'hacker-news',
-            sourceName: `hacker-news:${String(h.objectID ?? 'unknown')}`,
-            title: String(h.title ?? query).slice(0, 180),
-            snippet: text.slice(0, 1200),
-            fetchedAt,
-            url: `https://news.ycombinator.com/item?id=${String(h.objectID ?? '')}`,
-            query,
-          }))
+        try {
+          const res = await fetch(`${HN_BASE}?query=${encodeURIComponent(query)}&tags=${tag}&hitsPerPage=10`, { signal: ctrl.signal })
+          if (!res.ok) continue
+          const data = await res.json() as { hits?: unknown[] }
+          for (const hit of data.hits ?? []) {
+            const h = hit as Record<string, unknown>
+            const text = [String(h.story_text ?? ''), String(h.comment_text ?? '')].filter(Boolean).join(' ').trim()
+            if (text.length < 80) continue
+            signals.push(createProblemSignal({
+              sourceType: 'hacker-news',
+              sourceName: `hacker-news:${String(h.objectID ?? 'unknown')}`,
+              title: String(h.title ?? query).slice(0, 180),
+              snippet: text.slice(0, 1200),
+              fetchedAt,
+              url: `https://news.ycombinator.com/item?id=${String(h.objectID ?? '')}`,
+              query,
+            }))
+          }
+        } finally {
+          clearTimeout(timer)
         }
       } catch { /* per-query failure: ignore and continue */ }
     }
