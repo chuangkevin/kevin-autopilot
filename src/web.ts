@@ -33,7 +33,7 @@ import { clearStoredGeminiKeys, getKeyStatus, importGeminiKeys } from './keys.js
 import { isBoostRunning, runBoost } from './boost.js'
 import { isDeliberationRunning, loadLatestDeliberation, runDeliberation } from './deliberation.js'
 import { recomputePreferences } from './preferences.js'
-import { createProblemBriefPrompt, createProblemSignal, getDailyProblemDiscovery, isProblemFeedbackAction, recordProblemFeedback, upsertProblemSignals, visibleProblemBriefs } from './problem-discovery.js'
+import { createProblemSignal, getDailyProblemDiscovery, isProblemFeedbackAction, recordProblemFeedback, upsertProblemSignals, visibleProblemBriefs } from './problem-discovery.js'
 import { createObservationLoop, readReflectionState, type ObservationLoop } from './observation-loop.js'
 import { isReflectionRewriteFresh } from './reflection.js'
 import { observe } from './observer.js'
@@ -1070,6 +1070,56 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
 .feedback-actions button:disabled { opacity: 0.45; cursor: wait; }
 .rejected-summary { margin-top: 12px; border: 1px solid rgba(245,158,11,0.25); border-radius: 12px; padding: 10px; background: rgba(120,53,15,0.12); }
 .rejected-summary summary { cursor: pointer; color: #fde68a; }
+.problem-stack { width: 100%; padding-bottom: 8px; }
+.ps-nav { display: flex; align-items: center; justify-content: space-between; padding: 0 4px 8px; }
+.ps-dots { display: flex; gap: 5px; align-items: center; }
+.ps-dot { width: 8px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.15); transition: all 180ms; }
+.ps-dot.active { width: 22px; }
+.ps-dot.active.tier-pick { background: #4ade80; }
+.ps-dot.active.tier-worth { background: #818cf8; }
+.ps-dot.active.tier-evidence { background: #fbbf24; }
+.ps-dot.active.tier-notnow { background: #64748b; }
+.ps-nav-btn { background: transparent; border: 1px solid rgba(148,163,184,.2); border-radius: 999px; color: #64748b; padding: 4px 12px; font-size: 14px; cursor: pointer; }
+.ps-nav-btn:disabled { opacity: .3; cursor: default; }
+.ps-card-wrap { position: relative; }
+.ps-card { border-radius: 22px; padding: 20px; display: flex; flex-direction: column; gap: 12px; transition: transform 220ms ease, opacity 220ms ease; }
+.ps-card[hidden] { display: none; }
+.ps-card.tier-pick { background: linear-gradient(160deg, rgba(20,83,45,.85), rgba(15,23,42,.95)); border: 1px solid rgba(34,197,94,.5); }
+.ps-card.tier-worth { background: linear-gradient(160deg, rgba(30,58,138,.8), rgba(15,23,42,.95)); border: 1px solid rgba(99,102,241,.5); }
+.ps-card.tier-evidence { background: linear-gradient(160deg, rgba(120,53,15,.7), rgba(15,23,42,.9)); border: 1px solid rgba(245,158,11,.4); }
+.ps-card.tier-notnow { background: rgba(15,23,42,.7); border: 1px solid rgba(148,163,184,.18); opacity: .72; }
+.ps-badges { display: flex; gap: 7px; flex-wrap: wrap; }
+.ps-badge { font-size: 10px; border: 1px solid; border-radius: 999px; padding: 3px 9px; letter-spacing: .06em; text-transform: uppercase; }
+.ps-badge.tier-pick { color: #86efac; border-color: rgba(34,197,94,.4); }
+.ps-badge.tier-worth { color: #a5b4fc; border-color: rgba(99,102,241,.4); }
+.ps-badge.tier-evidence { color: #fcd34d; border-color: rgba(245,158,11,.4); }
+.ps-badge.tier-notnow { color: #94a3b8; border-color: rgba(148,163,184,.25); }
+.ps-badge.src-hn { color: #fdba74; border-color: rgba(249,115,22,.3); }
+.ps-badge.src-reddit { color: #fca5a5; border-color: rgba(239,68,68,.3); }
+.ps-badge.src-threads { color: #d8b4fe; border-color: rgba(168,85,247,.3); }
+.ps-badge.src-manual { color: #86efac; border-color: rgba(34,197,94,.25); }
+.ps-title { margin: 0; font-size: clamp(18px, 5vw, 26px); font-weight: 700; color: #f0fdf4; line-height: 1.25; }
+.ps-lede { margin: 0; font-size: 14px; color: #bbf7d0; line-height: 1.45; }
+.ps-score { font-size: 12px; color: #64748b; }
+.ps-expand-hint { text-align: center; font-size: 11px; color: #475569; padding: 4px 0; cursor: pointer; user-select: none; letter-spacing: .04em; }
+.ps-expand { overflow: hidden; max-height: 0; transition: max-height 360ms ease; }
+.ps-card.expanded .ps-expand { max-height: 900px; }
+.ps-card.expanded .ps-expand-hint { display: none; }
+.ps-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px; margin-top: 4px; }
+.ps-detail-box { background: rgba(2,6,23,.6); border: 1px solid rgba(148,163,184,.12); border-radius: 12px; padding: 10px; }
+.ps-detail-box strong { display: block; color: #64748b; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; font-weight: 400; }
+.ps-detail-box.full { grid-column: 1 / -1; }
+.ps-evidence { margin-top: 8px; background: rgba(2,6,23,.5); border: 1px solid rgba(148,163,184,.1); border-radius: 12px; padding: 10px; }
+.ps-evidence-label { font-size: 10px; color: #475569; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
+.ps-evidence-quote { font-size: 12px; color: #94a3b8; line-height: 1.5; border-left: 2px solid rgba(99,102,241,.35); padding-left: 8px; margin-bottom: 6px; }
+.ps-evidence-source { font-size: 11px; color: #475569; }
+.ps-feedback { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.ps-feedback button { padding: 9px; border-radius: 13px; font-size: 13px; cursor: pointer; }
+.ps-paste { display: flex; gap: 8px; margin-top: 8px; }
+.ps-paste-input { flex: 1; background: rgba(15,23,42,.7); border: 1px solid rgba(148,163,184,.2); border-radius: 12px; padding: 10px 14px; color: #e2e8f0; font-size: 14px; min-width: 0; }
+.ps-paste-input::placeholder { color: #334155; }
+.ps-paste-btn { background: rgba(30,27,75,.4); border: 1px solid rgba(99,102,241,.4); border-radius: 12px; color: #a5b4fc; font-size: 13px; padding: 10px 16px; cursor: pointer; white-space: nowrap; }
+.ps-empty { padding: 28px 0; text-align: center; }
 
 /* Labels */
 .sys-label { font-size: 16px; color: rgba(0,255,255,0.4); letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 6px; }
@@ -1354,7 +1404,7 @@ summary { cursor: pointer; color: #bfdbfe; font-weight: 700; }
 
   <!-- Mobile: individual tab panels; default tab = today's real problem -->
   <div id="mobile-panels" class="tab-panels">
-    <div class="tab-panel" id="tab-problem">${renderProblemTab(dailyProblem)}</div>
+    <div class="tab-panel" id="tab-problem">${renderProblemStack(dailyProblem)}</div>
     <div class="tab-panel" id="tab-graph" hidden>${renderGraphTab(graph, loopState)}</div>
     <div class="tab-panel" id="tab-brain" hidden>${renderBrainTab(loopState, graph, deliberationState)}</div>
     <div class="tab-panel" id="tab-backlog" hidden>${renderBacklogTab(backlog)}</div>
@@ -1363,7 +1413,7 @@ summary { cursor: pointer; color: #bfdbfe; font-weight: 700; }
   <!-- Desktop: always-visible three-column layout -->
   <div id="desktop-panels" class="desktop-layout" style="display:none">
     <div>${renderBrainTab(loopState, graph, deliberationState)}</div>
-    <div>${renderProblemTab(dailyProblem)}<div style="margin-top:10px">${renderGraphTab(graph, loopState)}</div></div>
+    <div>${renderProblemStack(dailyProblem)}<div style="margin-top:10px">${renderGraphTab(graph, loopState)}</div></div>
     <div>
       ${renderBacklogTab(backlog)}
       <div style="margin-top:10px">${renderIdeaTab(ideas)}</div>
@@ -2075,143 +2125,199 @@ function switchTab(name) {
 </html>`
 }
 
-function renderProblemTab(discovery: DailyProblemDiscovery): string {
-  const { pick, brief } = discovery
-  if (!brief || pick.status !== 'picked') {
-    const missing = pick.missingEvidence.length > 0 ? pick.missingEvidence : ['需要更多可稽核的真實工作流片段。']
-    const whyNot = pick.whyNotOthers.length > 0
-      ? `<div class="problem-grid">${pick.whyNotOthers.map((item) => `<div class="problem-box">${escapeHtml(item)}</div>`).join('')}</div>`
-      : ''
-    const candidatePool = renderProblemCandidatePool(discovery)
-    return `
-<section class="cp-card problem-empty">
-  <div class="sys-label">/// 今日真實問題 · ${escapeHtml(pick.date)}</div>
-  <h2 class="problem-title">今天還沒有足夠真實問題證據</h2>
-  <p class="problem-lede">第一個問題不是「有什麼新技術」，而是：今天哪群人的哪個流程正在被爛工具、人工繞路、資訊混亂、平台限制拖累？</p>
-  <div class="problem-grid">
-    ${missing.map((item) => `<div class="problem-box"><strong>缺的證據</strong>${escapeHtml(item)}</div>`).join('')}
-  </div>
-  ${whyNot}
-  ${candidatePool}
-  <form method="post" action="/api/problem-discovery/run" onsubmit="event.preventDefault();fetch('/api/problem-discovery/run',{method:'POST'}).then(function(){location.reload();});">
-    <button type="submit" class="secondary">重新整理 Kevin-owned signals</button>
-  </form>
-</section>`
-  }
-
-  const prompt = createProblemBriefPrompt(brief)
-  const evidenceHtml = brief.evidence.length === 0
-    ? '<p class="muted">沒有證據片段。</p>'
-    : `<ul class="radar-signals">${brief.evidence.slice(0, 5).map((entry) => `<li>${escapeHtml(entry.sourceName)}: ${escapeHtml(entry.quote)}</li>`).join('')}</ul>`
-  const whyNot = pick.whyNotOthers.length > 0
-    ? `<div class="problem-grid">${pick.whyNotOthers.map((item) => `<div class="problem-box"><strong>今天沒選</strong>${escapeHtml(item)}</div>`).join('')}</div>`
-    : ''
-  const candidatePool = renderProblemCandidatePool(discovery, brief.id)
-  return `
-<section class="cp-card problem-hero">
-  <div class="sys-label">/// 今日真實問題 · ${escapeHtml(pick.date)}</div>
-  <h2 class="problem-title">${escapeHtml(brief.title)}</h2>
-  <div class="problem-score">score ${brief.score}/100 · ${escapeHtml(brief.confidence)} · ${brief.evidence.length} evidence</div>
-  <p class="muted">今天哪群人的哪個流程正在被爛工具、人工繞路、資訊混亂、平台限制拖累？</p>
-  <p class="problem-lede">${escapeHtml(brief.people)}正在處理「${escapeHtml(brief.workflow)}」，但被人工繞路、資訊混亂或平台限制拖慢。</p>
-  <div class="problem-grid">
-    <div class="problem-box"><strong>誰痛</strong>${escapeHtml(brief.people)}</div>
-    <div class="problem-box"><strong>什麼流程</strong>${escapeHtml(brief.workflow)}</div>
-    <div class="problem-box"><strong>痛在哪</strong>${escapeHtml(brief.pain)}</div>
-    <div class="problem-box"><strong>現在怎麼硬撐</strong>${escapeHtml(brief.workaround)}</div>
-    <div class="problem-box"><strong>現有方案缺口</strong>${escapeHtml(brief.existingSolutionsGap)}</div>
-    <div class="problem-box"><strong>Kevin fit</strong>${escapeHtml(brief.kevinFit.rationale)}</div>
-    <div class="problem-box"><strong>一週內 MVP</strong>${escapeHtml(brief.mvp)}</div>
-    <div class="problem-box"><strong>驗證方式</strong>${escapeHtml(brief.validationPlan)}</div>
-  </div>
-  <div class="problem-box" style="margin-top:12px"><strong>為什麼今天選它</strong>${escapeHtml(pick.whyThis)}</div>
-  ${candidatePool}
-  <div class="problem-box" style="margin-top:12px"><strong>證據片段</strong>${evidenceHtml}</div>
-  <div class="problem-box" style="margin-top:12px"><strong>Kill criteria</strong><ul class="radar-signals">${brief.killCriteria.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul></div>
-  ${whyNot}
-  <details class="problem-prompt prompt-block">
-    <summary>OpenCode read-only research/spec prompt</summary>
-    <button type="button" class="secondary copy-prompt">複製 Prompt</button><span class="copy-status" aria-live="polite"></span>
-    <pre>${escapeHtml(prompt)}</pre>
-  </details>
-</section>`
-}
-
-function renderProblemCandidatePool(discovery: DailyProblemDiscovery, selectedBriefId?: string): string {
-  const evaluations = new Map(discovery.evaluations.map((evaluation) => [evaluation.briefId, evaluation]))
-  const candidates = visibleProblemCandidates(discovery)
+function renderProblemStack(discovery: DailyProblemDiscovery): string {
+  const evaluations = new Map(discovery.evaluations.map((e) => [e.briefId, e]))
+  const visible = visibleProblemCandidates(discovery)
     .sort((a, b) => (evaluations.get(a.id)?.rank ?? 999) - (evaluations.get(b.id)?.rank ?? 999))
-    .slice(0, 6)
-  if (candidates.length === 0) {
-    return `
-  <section class="problem-candidates">
-    <h3>候選問題池</h3>
-    <p class="muted">目前只有 daily pick 這一個可用候選；需要更多 Kevin-owned 真實工作流訊號。</p>
-    ${renderRejectedSummary(discovery.rejectedSummary)}
-  </section>`
+
+  const cards: Array<{ brief: DailyProblemDiscovery['briefs'][number]; evaluation: ProblemCandidateEvaluation | undefined; isPick: boolean }> = []
+  if (discovery.brief && discovery.pick.status === 'picked') {
+    cards.push({ brief: discovery.brief, evaluation: evaluations.get(discovery.brief.id), isPick: true })
   }
-  const tiers: Array<{ tier: ProblemCandidateEvaluation['tier']; label: string }> = [
-    { tier: 'worth_chasing', label: '值得追' },
-    { tier: 'needs_evidence', label: '先補證據' },
-    { tier: 'not_now', label: '暫時不追' },
-  ]
-  const tierHtml = tiers.map(({ tier, label }) => {
-    const tierCandidates = candidates.filter((brief) => (evaluations.get(brief.id)?.tier ?? 'needs_evidence') === tier)
-    return `<div class="problem-tier ${tier}">
-      <h4>${escapeHtml(label)} · ${tierCandidates.length}</h4>
-      ${tierCandidates.length === 0 ? '<p class="muted">目前沒有這一層的可見候選。</p>' : `<div class="problem-candidate-grid">
-        ${tierCandidates.map((brief, index) => renderProblemCandidateCard(brief, evaluations.get(brief.id), index + 1, brief.id === selectedBriefId)).join('')}
-      </div>`}
-    </div>`
+  for (const brief of visible) {
+    if (discovery.brief && brief.id === discovery.brief.id) continue
+    cards.push({ brief, evaluation: evaluations.get(brief.id), isPick: false })
+  }
+
+  if (cards.length === 0) {
+    return `<section class="cp-card problem-empty problem-stack" data-ps-stack>
+  <div class="sys-label">/// 今日真實問題</div>
+  <div class="ps-empty">
+    <h2 class="problem-title" style="font-size:22px">還沒有足夠的真實問題證據</h2>
+    <p class="muted">今天哪群人的哪個流程正在被爛工具、人工繞路、資訊混亂、平台限制拖累？</p>
+    <form onsubmit="event.preventDefault();fetch('/api/problem-discovery/run',{method:'POST'}).then(function(){location.reload();});">
+      <button type="submit" class="secondary">重新整理 signals</button>
+    </form>
+  </div>
+  ${renderPsRejectedSummary(discovery.rejectedSummary)}
+  ${renderPsPasteBar()}
+</section>`
+  }
+
+  const dotHtml = cards.map((c, i) => {
+    const tierClass = c.isPick ? 'tier-pick' : tierCssClass(c.evaluation?.tier)
+    return `<div class="ps-dot${i === 0 ? ` active ${tierClass}` : ''}" data-ps-dot="${i}"></div>`
   }).join('')
-  return `
-  <section class="problem-candidates">
-    <h3>候選問題池</h3>
-    <p class="muted">不是只看一個答案；下面把候選分成值得追、先補證據、暫時不追。按「無聊 / 不是問題」會把該候選從可見池移走，feedback 只改 Autopilot-owned ranking metadata。</p>
-    ${tierHtml}
-    ${renderRejectedSummary(discovery.rejectedSummary)}
-  </section>`
+
+  const cardHtml = cards.map((c, i) => renderPsCard(c.brief, c.evaluation, c.isPick, i)).join('\n')
+
+  return `<section class="problem-stack" data-ps-stack>
+  <div class="ps-nav">
+    <button class="ps-nav-btn" data-ps-prev disabled>← 上一張</button>
+    <div class="ps-dots">${dotHtml}</div>
+    <button class="ps-nav-btn" data-ps-next ${cards.length <= 1 ? 'disabled' : ''}>下一張 →</button>
+  </div>
+  <div class="ps-card-wrap">
+    ${cardHtml}
+  </div>
+  ${renderPsRejectedSummary(discovery.rejectedSummary)}
+  ${renderPsPasteBar()}
+</section>
+<script>
+(function() {
+  var stack = document.querySelector('[data-ps-stack]');
+  if (!stack) return;
+  var cards = stack.querySelectorAll('[data-ps-card]');
+  var dots = stack.querySelectorAll('[data-ps-dot]');
+  var prevBtn = stack.querySelector('[data-ps-prev]');
+  var nextBtn = stack.querySelector('[data-ps-next]');
+  var total = cards.length;
+  var current = 0;
+  var startX = 0;
+
+  function showCard(index) {
+    current = Math.max(0, Math.min(total - 1, index));
+    cards.forEach(function(card, i) { card.hidden = i !== current; });
+    dots.forEach(function(dot, i) {
+      dot.className = 'ps-dot' + (i === current ? ' active ' + (cards[i] ? (cards[i].getAttribute('data-ps-tier') || '') : '') : '');
+    });
+    if (prevBtn) prevBtn.disabled = current === 0;
+    if (nextBtn) nextBtn.disabled = current === total - 1;
+  }
+
+  if (prevBtn) prevBtn.addEventListener('click', function() { showCard(current - 1); });
+  if (nextBtn) nextBtn.addEventListener('click', function() { showCard(current + 1); });
+
+  stack.addEventListener('touchstart', function(e) { startX = e.touches[0].clientX; }, { passive: true });
+  stack.addEventListener('touchend', function(e) {
+    var dx = e.changedTouches[0].clientX - startX;
+    if (Math.abs(dx) > 44) showCard(dx < 0 ? current + 1 : current - 1);
+  }, { passive: true });
+
+  stack.addEventListener('click', function(e) {
+    var trigger = e.target.closest('[data-ps-expand-trigger]');
+    if (!trigger) return;
+    if (e.target.closest('[data-ps-no-expand]')) return;
+    trigger.classList.toggle('expanded');
+  });
+
+  showCard(0);
+})();
+</script>`
 }
 
-function renderProblemCandidateCard(brief: DailyProblemDiscovery['briefs'][number], evaluation: ProblemCandidateEvaluation | undefined, index: number, selected: boolean): string {
-  const missing = evaluation?.evidenceGap ?? brief.missingEvidence[0] ?? '需要更多直接使用者證據。'
-  const tier = evaluation?.tier ?? 'needs_evidence'
-  const kill = brief.killCriteria[0] ?? evaluation?.rejectionReasons[0] ?? '如果無法找到真實樣本，就先不追。'
-  return `<article class="problem-candidate ${tier === 'not_now' ? 'not-now' : ''}${selected ? ' selected' : ''}">
-    <div class="problem-candidate-meta">candidate ${index} · ${tierLabel(tier)} · rank ${evaluation?.rank ?? index} · ${brief.score}/100 · ${brief.evidence.length} evidence</div>
-    <h4>${escapeHtml(brief.title)}</h4>
-    <p class="muted"><strong>人群</strong> ${escapeHtml(brief.people)}</p>
-    <p class="muted"><strong>流程</strong> ${escapeHtml(brief.workflow)}</p>
-    <div class="validation-card">
-      <p class="muted"><strong>排序理由</strong> ${escapeHtml(evaluation?.rankingRationale ?? brief.kevinFit.rationale)}</p>
-      <p class="muted"><strong>最強證據</strong> ${escapeHtml(evaluation?.strongestEvidence ?? `${brief.evidence.length} evidence signal(s)`)}</p>
-      <p class="muted"><strong>還缺</strong> ${escapeHtml(missing)}</p>
-      <p class="muted"><strong>下一步驗證</strong> ${escapeHtml(evaluation?.nextValidationStep ?? brief.validationPlan)}</p>
-      <p class="muted"><strong>Kill / 暫停條件</strong> ${escapeHtml(kill)}</p>
+function renderPsCard(
+  brief: DailyProblemDiscovery['briefs'][number],
+  evaluation: ProblemCandidateEvaluation | undefined,
+  isPick: boolean,
+  index: number,
+): string {
+  const tier = evaluation?.tier
+  const tierClass = isPick ? 'tier-pick' : tierCssClass(tier)
+  const tierLabel = isPick ? '★ 今日精選' : (tier === 'worth_chasing' ? '值得追' : tier === 'not_now' ? '暫時不追' : '先補證據')
+  const sourceClass = sourceCssClass(brief.primarySourceType)
+  const sourceLabel = sourceDisplayLabel(brief.primarySourceType)
+
+  const detailHtml = `<div class="ps-expand">
+    <div class="ps-detail-grid">
+      <div class="ps-detail-box"><strong>誰痛</strong>${escapeHtml(brief.people)}</div>
+      <div class="ps-detail-box"><strong>痛在哪</strong>${escapeHtml(brief.pain)}</div>
+      <div class="ps-detail-box"><strong>現在怎麼撐</strong>${escapeHtml(brief.workaround)}</div>
+      <div class="ps-detail-box"><strong>一週 MVP</strong>${escapeHtml(brief.mvp)}</div>
+      <div class="ps-detail-box full"><strong>驗證方式</strong>${escapeHtml(brief.validationPlan)}</div>
     </div>
-    <div class="feedback-actions" aria-label="problem candidate feedback">
-      <button type="button" onclick="problemFeedback('${escapeHtmlAttr(brief.id)}','interesting',this)">有趣 ${evaluation?.feedbackSummary.interesting ?? 0}</button>
-      <button type="button" onclick="problemFeedback('${escapeHtmlAttr(brief.id)}','boring',this)">無聊 ${evaluation?.feedbackSummary.boring ?? 0}</button>
-      <button type="button" onclick="problemFeedback('${escapeHtmlAttr(brief.id)}','not-a-problem',this)">不是問題 ${evaluation?.feedbackSummary.notAProblem ?? 0}</button>
-      <button type="button" onclick="problemFeedback('${escapeHtmlAttr(brief.id)}','find-similar',this)">再找類似 ${evaluation?.feedbackSummary.findSimilar ?? 0}</button>
-    </div>
-  </article>`
+    ${brief.evidence.length > 0 ? `<div class="ps-evidence">
+      <div class="ps-evidence-label">證據片段</div>
+      ${brief.evidence.slice(0, 3).map((entry) => `<div class="ps-evidence-quote">${escapeHtml(entry.quote.slice(0, 200))}<div class="ps-evidence-source">${escapeHtml(entry.sourceName)}${entry.url ? ` · <a href="${escapeHtmlAttr(entry.url)}" target="_blank" rel="noopener">連結</a>` : ''}</div></div>`).join('')}
+    </div>` : ''}
+    ${evaluation?.rankingRationale ? `<div class="ps-detail-box full" style="margin-top:6px"><strong>${isPick ? '為何今天選它' : '排序理由'}</strong>${escapeHtml(evaluation.rankingRationale)}</div>` : ''}
+  </div>`
+
+  return `<div class="ps-card ${tierClass}" data-ps-card="${index}" data-ps-tier="${tierClass}" data-ps-expand-trigger>
+  <div class="ps-badges">
+    <span class="ps-badge ${tierClass}">${escapeHtml(tierLabel)}</span>
+    ${sourceLabel ? `<span class="ps-badge ${sourceClass}">${escapeHtml(sourceLabel)}</span>` : ''}
+  </div>
+  <h2 class="ps-title">${escapeHtml(brief.title)}</h2>
+  <p class="ps-lede">${escapeHtml(brief.people)}正在處理「${escapeHtml(brief.workflow)}」被拖慢。</p>
+  <div class="ps-score">${brief.score}/100 · ${brief.evidence.length} evidence · ${escapeHtml(brief.confidence)}</div>
+  <div class="ps-expand-hint" data-ps-no-expand>↑ 點卡片看詳情</div>
+  ${detailHtml}
+  <div class="ps-feedback" data-ps-no-expand>
+    <button type="button" onclick="problemFeedback('${escapeHtmlAttr(brief.id)}','interesting',this)" style="border:1px solid rgba(74,222,128,.3);background:rgba(20,83,45,.2);color:#86efac">有趣 ★ ${evaluation?.feedbackSummary.interesting ?? 0}</button>
+    <button type="button" onclick="problemFeedback('${escapeHtmlAttr(brief.id)}','boring',this)" style="border:1px solid rgba(248,113,113,.3);background:rgba(127,29,29,.18);color:#fca5a5">無聊 ${evaluation?.feedbackSummary.boring ?? 0}</button>
+    <button type="button" onclick="problemFeedback('${escapeHtmlAttr(brief.id)}','not-a-problem',this)" style="border:1px solid rgba(148,163,184,.2);background:transparent;color:#94a3b8">不是問題 ${evaluation?.feedbackSummary.notAProblem ?? 0}</button>
+    <button type="button" onclick="problemFeedback('${escapeHtmlAttr(brief.id)}','find-similar',this)" style="border:1px solid rgba(148,163,184,.2);background:transparent;color:#94a3b8">再找類似 ${evaluation?.feedbackSummary.findSimilar ?? 0}</button>
+  </div>
+</div>`
 }
 
-function renderRejectedSummary(rejectedSummary: RejectedProblemSummary[]): string {
+function renderPsPasteBar(): string {
+  return `<div class="ps-paste">
+  <input class="ps-paste-input" id="ps-paste-input" placeholder="貼入 URL 或文字 (Threads / HN / Reddit 都可以)..." autocomplete="off">
+  <button class="ps-paste-btn" onclick="psIngest()">送出</button>
+</div>
+<script>
+function psIngest() {
+  var input = document.getElementById('ps-paste-input');
+  var btn = document.querySelector('.ps-paste-btn');
+  if (!input || !btn) return;
+  var val = input.value.trim();
+  if (!val) return;
+  btn.disabled = true; btn.textContent = '處理中…';
+  fetch('/api/problem-signal/ingest', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ input: val })
+  }).then(function(r) {
+    if (r.ok) { input.value = ''; btn.textContent = '✓ 已加入'; setTimeout(function() { location.reload(); }, 800); }
+    else { r.text().then(function(t) { btn.textContent = '失敗: ' + t.slice(0, 40); btn.disabled = false; }); }
+  }).catch(function(e) { btn.textContent = '失敗'; btn.disabled = false; });
+}
+</script>`
+}
+
+function renderPsRejectedSummary(rejectedSummary: RejectedProblemSummary[]): string {
   if (rejectedSummary.length === 0) return ''
-  return `<details class="rejected-summary">
-    <summary>暫時不追 / 已排除訊號 ${rejectedSummary.reduce((sum, item) => sum + item.count, 0)} 筆</summary>
-    <div class="problem-grid">
-      ${rejectedSummary.map((item) => `<div class="problem-box"><strong>${escapeHtml(rejectedReasonLabel(item.reason))} · ${item.count}</strong>${item.examples.map((example) => escapeHtml(`${example.sourceType}: ${example.title}`)).join('<br>')}</div>`).join('')}
-    </div>
-  </details>`
+  const total = rejectedSummary.reduce((s, item) => s + item.count, 0)
+  return `<details style="margin-top:8px">
+  <summary style="font-size:12px;color:#475569;cursor:pointer">已排除訊號 ${total} 筆 ▸</summary>
+  <div class="problem-grid" style="margin-top:8px">
+    ${rejectedSummary.map((item) => `<div class="problem-box"><strong>${escapeHtml(rejectedReasonLabel(item.reason))} · ${item.count}</strong>${item.examples.map((ex) => escapeHtml(`${ex.sourceType}: ${ex.title}`)).join('<br>')}</div>`).join('')}
+  </div>
+</details>`
 }
 
-function tierLabel(tier: ProblemCandidateEvaluation['tier']): string {
-  if (tier === 'worth_chasing') return '值得追'
-  if (tier === 'needs_evidence') return '先補證據'
-  return '暫時不追'
+function tierCssClass(tier: ProblemCandidateEvaluation['tier'] | undefined): string {
+  if (tier === 'worth_chasing') return 'tier-worth'
+  if (tier === 'not_now') return 'tier-notnow'
+  return 'tier-evidence'
+}
+
+function sourceCssClass(sourceType: ProblemSignalSourceType | undefined): string {
+  if (sourceType === 'hacker-news') return 'src-hn'
+  if (sourceType === 'reddit') return 'src-reddit'
+  if (sourceType === 'threads-tw') return 'src-threads'
+  if (sourceType === 'kevin-input') return 'src-manual'
+  return ''
+}
+
+function sourceDisplayLabel(sourceType: ProblemSignalSourceType | undefined): string {
+  if (sourceType === 'hacker-news') return 'HN'
+  if (sourceType === 'reddit') return 'Reddit'
+  if (sourceType === 'threads-tw') return 'Threads'
+  if (sourceType === 'kevin-input') return '手動'
+  return ''
 }
 
 function rejectedReasonLabel(reason: RejectedProblemSummary['reason']): string {

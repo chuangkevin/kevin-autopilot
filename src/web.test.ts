@@ -63,15 +63,13 @@ test('dashboard shows a sanitized candidate problem pool', async () => {
     const page = await fetch(`${baseUrl}/`)
     assert.equal(page.status, 200)
     const pageBody = await page.text()
-    assert.equal(pageBody.includes('候選問題池'), true)
-    assert.equal(pageBody.includes('problem-candidate'), true)
-    assert.equal(pageBody.includes('不是只看一個答案'), true)
-    assert.equal(pageBody.includes('值得追'), true)
-    assert.equal(pageBody.includes('先補證據'), true)
-    assert.equal(pageBody.includes('validation-card'), true)
+    assert.equal(pageBody.includes('候選問題池'), false) // replaced by swipeable card stack
+    assert.equal(pageBody.includes('不是只看一個答案'), false) // replaced by swipeable card stack
     assert.equal(pageBody.includes('有趣'), true)
     assert.equal(pageBody.includes('不是問題'), true)
-    assert.equal(pageBody.includes('暫時不追 / 已排除訊號'), true)
+    assert.equal(pageBody.includes('暫時不追 / 已排除訊號'), false) // replaced by renderPsRejectedSummary
+    assert.equal(pageBody.includes('data-ps-stack'), true) // swipeable card stack present
+    assert.equal(pageBody.includes('ps-paste-input'), true) // paste bar present
 
     const dailyProblem = await fetch(`${baseUrl}/api/problem-discovery/daily`)
     assert.equal(dailyProblem.status, 200)
@@ -233,7 +231,8 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(pageBody.includes('這不是模型私有 chain-of-thought'), false) // moved to stub
     assert.equal(pageBody.includes('像 Kevin 嗎？'), false) // moved to stub
     assert.equal(pageBody.includes('差在哪'), false) // moved to stub
-    assert.equal(pageBody.includes('候選問題池'), true) // daily problem tab still carries candidate-pool guidance when evidence is thin
+    assert.equal(pageBody.includes('候選問題池'), false) // replaced by swipeable card stack (ps-card)
+    assert.equal(pageBody.includes('data-ps-stack'), true) // swipeable problem card stack present
     assert.equal(pageBody.includes('/api/main-agent/thinking'), false) // moved to stub
     assert.equal(pageBody.includes('分身現在在想'), false) // was in neural cockpit HTML; moved to stub
     assert.equal(pageBody.includes('💭 分身怎麼想這個'), true) // still in JS renderNodeDrawer (was: 我怎麼理解它 before v0.16.0)
@@ -1126,3 +1125,26 @@ function changedFiles(before: Map<string, string>, after: Map<string, string>): 
   const files = new Set([...before.keys(), ...after.keys()])
   return [...files].filter((file) => before.get(file) !== after.get(file)).sort()
 }
+
+test('problem tab renders swipeable card stack', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-ps-'))
+  const config: AutopilotConfig = { environment: 'test', dataDir, ruleSources: [], repositories: [], services: [] }
+  const server = createWebServer(config)
+  try {
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const address = server.address()
+    assert.ok(address && typeof address === 'object' && 'port' in address)
+    const baseUrl = `http://127.0.0.1:${address.port}`
+
+    const res = await fetch(baseUrl)
+    const html = await res.text()
+
+    assert.ok(html.includes('data-ps-stack'), 'problem stack container should be present')
+    assert.ok(html.includes('ps-paste-input'), 'paste input should be present')
+    assert.ok(html.includes('/api/problem-signal/ingest'), 'ingest endpoint reference should be present')
+  } finally {
+    server.close()
+    await rm(dataDir, { recursive: true })
+  }
+})
