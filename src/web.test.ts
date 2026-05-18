@@ -46,17 +46,17 @@ test('dashboard shows a sanitized candidate problem pool', async () => {
     assert.ok(address && typeof address === 'object' && 'port' in address)
     const baseUrl = `http://127.0.0.1:${address.port}`
 
-    for (const rawText of [
-      'Idea intake should plan repo architecture spec and tests. Plan repo architecture spec and tests for a safe idea handoff assistant before implementation.',
-      '中古車業務每次刊登都要從 LINE 收照片，用 Excel 整理車輛規格，再截圖確認欄位，手動複製貼上到 8891 和 Facebook 很耗時。',
+    for (const input of [
+      '中古車業務每次刊登都要從 LINE 收照片，用 Excel 整理車輛規格，再截圖確認欄位，手動複製貼上到平台很耗時。',
       '小型品牌創作者每週做短影音都要手動挑素材、截圖、命名和轉檔，在剪輯工具之間切換很耗時。',
+      '房仲每次帶客看房都要手動整理比價 PDF，沒有工具可以即時比較多個物件規格和貸款條件。',
     ]) {
-      const created = await fetch(`${baseUrl}/api/ideas`, {
+      const ingested = await fetch(`${baseUrl}/api/problem-signal/ingest`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ rawText }),
+        body: JSON.stringify({ input }),
       })
-      assert.equal(created.status, 201)
+      assert.equal(ingested.status, 201)
       await new Promise((resolve) => setTimeout(resolve, 2))
     }
 
@@ -83,8 +83,8 @@ test('dashboard shows a sanitized candidate problem pool', async () => {
     assert.equal(dailyProblemBody.candidates.every((candidate: { evaluation?: { tier?: unknown; strongestEvidence?: string } }) => typeof candidate.evaluation?.tier === 'string'), true)
     assert.equal(JSON.stringify(dailyProblemBody.candidates).includes('full quotes stay out of the public daily API'), true)
     assert.equal(dailyProblemBody.brief && 'evidence' in dailyProblemBody.brief, false)
-    assert.equal(JSON.stringify(dailyProblemBody.brief).includes('手動複製貼上到 8891 和 Facebook 很耗時'), false)
-    assert.equal(JSON.stringify(dailyProblemBody.candidates).includes('safe idea handoff assistant'), false)
+    assert.equal(JSON.stringify(dailyProblemBody.brief).includes('手動複製貼上到平台很耗時'), false)
+    assert.equal(JSON.stringify(dailyProblemBody.candidates).includes('手動複製貼上到平台很耗時'), false)
 
     const candidateId = dailyProblemBody.candidates[0].id
     const feedback = await fetch(`${baseUrl}/api/problem-discovery/${encodeURIComponent(candidateId)}/feedback`, {
