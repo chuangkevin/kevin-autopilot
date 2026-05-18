@@ -86,6 +86,8 @@ export async function fetchRedditSignals(options: { timeout?: number } = {}): Pr
   return signals
 }
 
+// Note: threads-tw signals are not auto-fetched here (Meta Threads has no public API).
+// They enter via the manual-paste ingest endpoint (POST /api/problem-signal/ingest).
 export async function fetchExternalSignals(options: { timeout?: number } = {}): Promise<ProblemSignal[]> {
   const [hn, reddit] = await Promise.all([
     fetchHackerNewsSignals(options).catch((): ProblemSignal[] => []),

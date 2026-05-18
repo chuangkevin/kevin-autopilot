@@ -363,7 +363,7 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
     let resolvedUrl: string | undefined
     let sourceType: ProblemSignalSourceType = 'kevin-input'
 
-    if (/^https?:\/\//.test(input)) {
+    if (/^https:\/\//i.test(input)) {
       resolvedUrl = input
       if (/threads\.net/i.test(input)) sourceType = 'threads-tw'
       else if (/reddit\.com/i.test(input)) sourceType = 'reddit'
@@ -2293,7 +2293,7 @@ function renderPsRejectedSummary(rejectedSummary: RejectedProblemSummary[]): str
   return `<details style="margin-top:8px">
   <summary style="font-size:12px;color:#475569;cursor:pointer">已排除訊號 ${total} 筆 ▸</summary>
   <div class="problem-grid" style="margin-top:8px">
-    ${rejectedSummary.map((item) => `<div class="problem-box"><strong>${escapeHtml(rejectedReasonLabel(item.reason))} · ${item.count}</strong>${item.examples.map((ex) => escapeHtml(`${ex.sourceType}: ${ex.title}`)).join('<br>')}</div>`).join('')}
+    ${rejectedSummary.map((item) => `<div class="problem-box"><strong>${escapeHtml(rejectedReasonLabel(item.reason))} · ${item.count}</strong>${item.examples.map((ex) => `<div>${escapeHtml(`${ex.sourceType}: ${ex.title}`)}</div>`).join('')}</div>`).join('')}
   </div>
 </details>`
 }
