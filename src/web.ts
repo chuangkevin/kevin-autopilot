@@ -1082,12 +1082,13 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
 .ps-nav-btn { background: transparent; border: 1px solid rgba(148,163,184,.2); border-radius: 999px; color: #64748b; padding: 4px 12px; font-size: 14px; cursor: pointer; }
 .ps-nav-btn:disabled { opacity: .3; cursor: default; }
 .ps-card-wrap { position: relative; }
-.ps-card { border-radius: 22px; padding: 20px; display: flex; flex-direction: column; gap: 12px; transition: transform 220ms ease, opacity 220ms ease; }
-.ps-card[hidden] { display: none; }
+.ps-card { border-radius: 22px; padding: 20px; display: flex; flex-direction: column; gap: 12px; transition: opacity 220ms ease; opacity: 0; position: absolute; top: 0; left: 0; right: 0; pointer-events: none; }
+.ps-card.ps-active { opacity: 1; position: relative; pointer-events: auto; }
 .ps-card.tier-pick { background: linear-gradient(160deg, rgba(20,83,45,.85), rgba(15,23,42,.95)); border: 1px solid rgba(34,197,94,.5); }
 .ps-card.tier-worth { background: linear-gradient(160deg, rgba(30,58,138,.8), rgba(15,23,42,.95)); border: 1px solid rgba(99,102,241,.5); }
 .ps-card.tier-evidence { background: linear-gradient(160deg, rgba(120,53,15,.7), rgba(15,23,42,.9)); border: 1px solid rgba(245,158,11,.4); }
-.ps-card.tier-notnow { background: rgba(15,23,42,.7); border: 1px solid rgba(148,163,184,.18); opacity: .72; }
+.ps-card.tier-notnow { background: rgba(15,23,42,.7); border: 1px solid rgba(148,163,184,.18); }
+.ps-card.tier-notnow.ps-active { opacity: .72; }
 .ps-badges { display: flex; gap: 7px; flex-wrap: wrap; }
 .ps-badge { font-size: 10px; border: 1px solid; border-radius: 999px; padding: 3px 9px; letter-spacing: .06em; text-transform: uppercase; }
 .ps-badge.tier-pick { color: #86efac; border-color: rgba(34,197,94,.4); }
@@ -1102,8 +1103,8 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
 .ps-lede { margin: 0; font-size: 14px; color: #bbf7d0; line-height: 1.45; }
 .ps-score { font-size: 12px; color: #64748b; }
 .ps-expand-hint { text-align: center; font-size: 11px; color: #475569; padding: 4px 0; cursor: pointer; user-select: none; letter-spacing: .04em; }
-.ps-expand { overflow: hidden; max-height: 0; transition: max-height 360ms ease; }
-.ps-card.expanded .ps-expand { max-height: 900px; }
+.ps-expand { display: none; }
+.ps-card.expanded .ps-expand { display: block; }
 .ps-card.expanded .ps-expand-hint { display: none; }
 .ps-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px; margin-top: 4px; }
 .ps-detail-box { background: rgba(2,6,23,.6); border: 1px solid rgba(148,163,184,.12); border-radius: 12px; padding: 10px; }
@@ -2183,11 +2184,11 @@ function renderProblemStack(discovery: DailyProblemDiscovery): string {
   var nextBtn = stack.querySelector('[data-ps-next]');
   var total = cards.length;
   var current = 0;
-  var startX = 0;
+  var startX = 0, startY = 0, swiping = false;
 
   function showCard(index) {
     current = Math.max(0, Math.min(total - 1, index));
-    cards.forEach(function(card, i) { card.hidden = i !== current; });
+    cards.forEach(function(card, i) { card.classList.toggle('ps-active', i === current); });
     dots.forEach(function(dot, i) {
       dot.className = 'ps-dot' + (i === current ? ' active ' + (cards[i] ? (cards[i].getAttribute('data-ps-tier') || '') : '') : '');
     });
@@ -2198,10 +2199,21 @@ function renderProblemStack(discovery: DailyProblemDiscovery): string {
   if (prevBtn) prevBtn.addEventListener('click', function() { showCard(current - 1); });
   if (nextBtn) nextBtn.addEventListener('click', function() { showCard(current + 1); });
 
-  stack.addEventListener('touchstart', function(e) { startX = e.touches[0].clientX; }, { passive: true });
+  stack.addEventListener('touchstart', function(e) {
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    swiping = false;
+  }, { passive: true });
+  stack.addEventListener('touchmove', function(e) {
+    var dx = Math.abs(e.touches[0].clientX - startX);
+    var dy = Math.abs(e.touches[0].clientY - startY);
+    if (dx > dy && dx > 8) { swiping = true; e.preventDefault(); }
+  }, { passive: false });
   stack.addEventListener('touchend', function(e) {
+    if (!swiping) return;
     var dx = e.changedTouches[0].clientX - startX;
     if (Math.abs(dx) > 44) showCard(dx < 0 ? current + 1 : current - 1);
+    swiping = false;
   }, { passive: true });
 
   stack.addEventListener('click', function(e) {
@@ -2251,7 +2263,7 @@ function renderPsCard(
   <h2 class="ps-title">${escapeHtml(brief.title)}</h2>
   <p class="ps-lede">${escapeHtml(brief.people)}正在處理「${escapeHtml(brief.workflow)}」被拖慢。</p>
   <div class="ps-score">${brief.score}/100 · ${brief.evidence.length} evidence · ${escapeHtml(brief.confidence)}</div>
-  <div class="ps-expand-hint" data-ps-no-expand>↑ 點卡片看詳情</div>
+  <div class="ps-expand-hint">↑ 點卡片看詳情</div>
   ${detailHtml}
   <div class="ps-feedback" data-ps-no-expand>
     <button type="button" onclick="problemFeedback('${escapeHtmlAttr(brief.id)}','interesting',this)" style="border:1px solid rgba(74,222,128,.3);background:rgba(20,83,45,.2);color:#86efac">有趣 ★ ${evaluation?.feedbackSummary.interesting ?? 0}</button>
