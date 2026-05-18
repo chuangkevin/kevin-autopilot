@@ -12,6 +12,7 @@ import { listBacklog, mergeCandidatesIntoBacklog, openBacklogDatabase } from './
 import { reflect } from './reflection.js'
 import { computeMood, persistMoodState } from './mood.js'
 import { getDailyProblemDiscovery } from './problem-discovery.js'
+import { fetchExternalSignals } from './external-sources.js'
 import { getEffectiveConfig } from './runtime-overrides.js'
 import type {
   AutopilotConfig,
@@ -291,7 +292,8 @@ export class ObservationLoop {
 
   private async runProblemDiscoverySafely(config: AutopilotConfig, report: ObservationReport): Promise<{ at: string; briefCount: number; error?: string } | undefined> {
     try {
-      const discovery = await getDailyProblemDiscovery(config, { report })
+      const externalSignals = await fetchExternalSignals({ timeout: 10_000 }).catch(() => [])
+      const discovery = await getDailyProblemDiscovery(config, { report, externalSignals })
       return { at: discovery.generatedAt, briefCount: discovery.briefs.length }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
