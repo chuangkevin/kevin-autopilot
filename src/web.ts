@@ -30,6 +30,7 @@ import {
   unarchiveIdeaGraphNode,
 } from './idea-graph.js'
 import { clearStoredGeminiKeys, getKeyStatus, importGeminiKeys } from './keys.js'
+import { fetchExternalSignals } from './external-sources.js'
 import { isBoostRunning, runBoost } from './boost.js'
 import { isDeliberationRunning, loadLatestDeliberation, runDeliberation } from './deliberation.js'
 import { recomputePreferences } from './preferences.js'
@@ -307,8 +308,11 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
       writeText(response, 'Problem discovery run requires loopback, private LAN, Docker, or Tailscale access', 403)
       return
     }
-    const report = await getVisibleReport(config, observationLoop)
-    writeJson(response, await getDailyProblemDiscovery(config, { report, force: true }), 201)
+    const [report, externalSignals] = await Promise.all([
+      getVisibleReport(config, observationLoop),
+      fetchExternalSignals({ timeout: 10_000 }).catch(() => []),
+    ])
+    writeJson(response, await getDailyProblemDiscovery(config, { report, force: true, externalSignals }), 201)
     return
   }
 
@@ -1079,11 +1083,13 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
 .ps-dot.active.tier-worth { background: #818cf8; }
 .ps-dot.active.tier-evidence { background: #fbbf24; }
 .ps-dot.active.tier-notnow { background: #64748b; }
-.ps-nav-btn { background: transparent; border: 1px solid rgba(148,163,184,.2); border-radius: 999px; color: #64748b; padding: 4px 12px; font-size: 14px; cursor: pointer; }
-.ps-nav-btn:disabled { opacity: .3; cursor: default; }
-.ps-card-wrap { position: relative; }
-.ps-card { border-radius: 22px; padding: 20px; display: flex; flex-direction: column; gap: 12px; transition: opacity 220ms ease; opacity: 0; position: absolute; top: 0; left: 0; right: 0; pointer-events: none; }
-.ps-card.ps-active { opacity: 1; position: relative; pointer-events: auto; }
+.ps-nav-btn { background: transparent; border: 1px solid rgba(148,163,184,.2); border-radius: 999px; color: #94a3b8; padding: 6px 16px; font-size: 15px; cursor: pointer; }
+.ps-nav-btn:disabled { opacity: .25; cursor: default; }
+.ps-card-wrap { position: relative; padding-bottom: 12px; }
+.ps-card-wrap::after { content: ''; position: absolute; bottom: 4px; left: 8px; right: 8px; height: 16px; background: rgba(148,163,184,.07); border-radius: 18px; z-index: 0; }
+.ps-card-wrap::before { content: ''; position: absolute; bottom: 0; left: 16px; right: 16px; height: 12px; background: rgba(148,163,184,.04); border-radius: 16px; z-index: 0; }
+.ps-card { border-radius: 22px; padding: 20px; display: flex; flex-direction: column; gap: 12px; transition: opacity 220ms ease; opacity: 0; position: absolute; top: 0; left: 0; right: 0; pointer-events: none; z-index: 1; }
+.ps-card.ps-active { opacity: 1; position: relative; pointer-events: auto; z-index: 1; }
 .ps-card.tier-pick { background: linear-gradient(160deg, rgba(20,83,45,.85), rgba(15,23,42,.95)); border: 1px solid rgba(34,197,94,.5); }
 .ps-card.tier-worth { background: linear-gradient(160deg, rgba(30,58,138,.8), rgba(15,23,42,.95)); border: 1px solid rgba(99,102,241,.5); }
 .ps-card.tier-evidence { background: linear-gradient(160deg, rgba(120,53,15,.7), rgba(15,23,42,.9)); border: 1px solid rgba(245,158,11,.4); }
@@ -2164,9 +2170,12 @@ function renderProblemStack(discovery: DailyProblemDiscovery): string {
 
   return `<section class="problem-stack" data-ps-stack>
   <div class="ps-nav">
-    <button class="ps-nav-btn" data-ps-prev disabled>← 上一張</button>
-    <div class="ps-dots">${dotHtml}</div>
-    <button class="ps-nav-btn" data-ps-next ${cards.length <= 1 ? 'disabled' : ''}>下一張 →</button>
+    <button class="ps-nav-btn" data-ps-prev disabled>‹ 上一個</button>
+    <div style="display:flex;align-items:center;gap:8px">
+      <div class="ps-dots">${dotHtml}</div>
+      <span class="ps-counter" data-ps-counter style="font-size:12px;color:#475569">1 / ${cards.length}</span>
+    </div>
+    <button class="ps-nav-btn" data-ps-next ${cards.length <= 1 ? 'disabled' : ''}>下一個 ›</button>
   </div>
   <div class="ps-card-wrap">
     ${cardHtml}
@@ -2182,6 +2191,7 @@ function renderProblemStack(discovery: DailyProblemDiscovery): string {
   var dots = stack.querySelectorAll('[data-ps-dot]');
   var prevBtn = stack.querySelector('[data-ps-prev]');
   var nextBtn = stack.querySelector('[data-ps-next]');
+  var counter = stack.querySelector('[data-ps-counter]');
   var total = cards.length;
   var current = 0;
   var startX = 0, startY = 0, swiping = false;
@@ -2192,6 +2202,7 @@ function renderProblemStack(discovery: DailyProblemDiscovery): string {
     dots.forEach(function(dot, i) {
       dot.className = 'ps-dot' + (i === current ? ' active ' + (cards[i] ? (cards[i].getAttribute('data-ps-tier') || '') : '') : '');
     });
+    if (counter) counter.textContent = (current + 1) + ' / ' + total;
     if (prevBtn) prevBtn.disabled = current === 0;
     if (nextBtn) nextBtn.disabled = current === total - 1;
   }
