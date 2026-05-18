@@ -66,12 +66,13 @@ interface ProblemPattern {
 
 export async function getDailyProblemDiscovery(
   config: AutopilotConfig,
-  options: { force?: boolean; report?: ObservationReport; now?: Date } = {},
+  options: { force?: boolean; report?: ObservationReport; now?: Date; externalSignals?: ProblemSignal[] } = {},
 ): Promise<DailyProblemDiscovery> {
   const now = options.now ?? new Date()
   const date = taipeiDateKey(now)
-  const collected = await collectKevinOwnedSignals(config, options.report, now)
-  await upsertProblemSignals(config, collected)
+  const kevinOwned = await collectKevinOwnedSignals(config, options.report, now)
+  const allCollected = [...kevinOwned, ...(options.externalSignals ?? [])]
+  await upsertProblemSignals(config, allCollected)
   const signals = await listProblemSignals(config)
   const existingBriefs = await listProblemBriefs(config)
   const briefs = buildProblemBriefs(signals, existingBriefs, now)
@@ -571,6 +572,7 @@ function buildProblemBrief(pattern: ProblemPattern, signal: ProblemSignal, exist
     createdAt,
     updatedAt: now.toISOString(),
     sourceSignalIds,
+    primarySourceType: signal.sourceType,
   }
 }
 
