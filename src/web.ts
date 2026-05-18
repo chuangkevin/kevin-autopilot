@@ -33,7 +33,7 @@ import { clearStoredGeminiKeys, getKeyStatus, importGeminiKeys } from './keys.js
 import { isBoostRunning, runBoost } from './boost.js'
 import { isDeliberationRunning, loadLatestDeliberation, runDeliberation } from './deliberation.js'
 import { recomputePreferences } from './preferences.js'
-import { createProblemSignal, getDailyProblemDiscovery, isProblemFeedbackAction, recordProblemFeedback, upsertProblemSignals, visibleProblemBriefs } from './problem-discovery.js'
+import { createProblemSignal, evaluateProblemCandidates, getDailyProblemDiscovery, isProblemFeedbackAction, listProblemBriefs, listProblemFeedback, recordProblemFeedback, upsertProblemSignals, visibleProblemBriefs } from './problem-discovery.js'
 import { createObservationLoop, readReflectionState, type ObservationLoop } from './observation-loop.js'
 import { isReflectionRewriteFresh } from './reflection.js'
 import { observe } from './observer.js'
@@ -331,17 +331,17 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
       writeText(response, 'feedback action must be interesting, boring, not-a-problem, or find-similar', 400)
       return
     }
-    const report = await getVisibleReport(config, observationLoop)
-    const discovery = await getDailyProblemDiscovery(config, { report })
-    const brief = discovery.briefs.find((item) => item.id === briefId)
+    const briefs = await listProblemBriefs(config)
+    const brief = briefs.find((item) => item.id === briefId)
     if (!brief) {
       writeText(response, 'Problem brief not found', 404)
       return
     }
-    const feedback = await recordProblemFeedback(config, briefId, body.action)
-    const updated = await getDailyProblemDiscovery(config, { report })
-    const evaluation = updated.evaluations.find((item) => item.briefId === briefId)
-    writeJson(response, { feedback, candidate: toPublicProblemCandidate(brief, evaluation), evaluation }, 201)
+    await recordProblemFeedback(config, briefId, body.action)
+    const allFeedback = await listProblemFeedback(config)
+    const evaluations = evaluateProblemCandidates(briefs, allFeedback)
+    const evaluation = evaluations.find((item) => item.briefId === briefId)
+    writeJson(response, { ok: true, evaluation }, 201)
     return
   }
 
