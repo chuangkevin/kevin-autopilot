@@ -700,7 +700,7 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
     const ideas = await listIdeas(config, 32)
     const graph = await getIdeaGraph(config, report, ideas)
     const backlog = loadBacklogResponse(config, 'active')
-    const dailyProblem = await getDailyProblemDiscovery(config, { report })
+    const dailyProblem = await getDailyProblemDiscovery(config)
     const latestDeliberation = await loadLatestDeliberation(config)
     const deliberationState: DeliberationState = {
       status: isDeliberationRunning() ? 'running' : 'idle',

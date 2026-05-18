@@ -70,49 +70,56 @@ export async function getDailyProblemDiscovery(
 ): Promise<DailyProblemDiscovery> {
   const now = options.now ?? new Date()
   const date = taipeiDateKey(now)
+
+  // Fast path: today's pick already exists and caller provides no new signals to ingest.
+  // Skip signal collection, upsert, and brief rebuild — just read stored data.
+  // Callers that want fresh collection must pass `report` or `externalSignals`.
+  if (!options.force && !options.report && !options.externalSignals?.length) {
+    const stored = await readDailyPick(config)
+    if (stored?.date === date) {
+      const [briefs, feedback, signals] = await Promise.all([
+        listProblemBriefs(config),
+        listProblemFeedback(config),
+        listProblemSignals(config),
+      ])
+      const evaluations = evaluateProblemCandidates(briefs, feedback)
+      const rejectedSummary = buildRejectedProblemSummary(signals, briefs)
+      const storedBrief = stored.briefId ? briefs.find((b) => b.id === stored.briefId) ?? null : null
+      const storedEvaluation = stored.briefId ? evaluations.find((e) => e.briefId === stored.briefId) : undefined
+      if (!(stored.status === 'picked' && (!storedBrief || isProblemCandidateDismissed(storedEvaluation)))) {
+        return { date, generatedAt: stored.generatedAt, pick: stored, brief: storedBrief, briefs, evaluations, rejectedSummary, signalCount: signals.length }
+      }
+    }
+  }
+
+  // Full path: collect signals, rebuild briefs, then generate or load today's pick.
   const kevinOwned = await collectKevinOwnedSignals(config, options.report, now)
   const allCollected = [...kevinOwned, ...(options.externalSignals ?? [])]
   await upsertProblemSignals(config, allCollected)
-  const signals = await listProblemSignals(config)
-  const existingBriefs = await listProblemBriefs(config)
+  const [signals, existingBriefs, feedback] = await Promise.all([
+    listProblemSignals(config),
+    listProblemBriefs(config),
+    listProblemFeedback(config),
+  ])
   const briefs = buildProblemBriefs(signals, existingBriefs, now)
   await writeProblemBriefs(config, briefs)
-  const feedback = await listProblemFeedback(config)
   const evaluations = evaluateProblemCandidates(briefs, feedback)
   const rejectedSummary = buildRejectedProblemSummary(signals, briefs)
 
   if (!options.force) {
     const stored = await readDailyPick(config)
     if (stored?.date === date) {
-      const storedBrief = stored.briefId ? briefs.find((brief) => brief.id === stored.briefId) ?? null : null
-      const storedEvaluation = stored.briefId ? evaluations.find((evaluation) => evaluation.briefId === stored.briefId) : undefined
+      const storedBrief = stored.briefId ? briefs.find((b) => b.id === stored.briefId) ?? null : null
+      const storedEvaluation = stored.briefId ? evaluations.find((e) => e.briefId === stored.briefId) : undefined
       if (!(stored.status === 'picked' && (!storedBrief || isProblemCandidateDismissed(storedEvaluation)))) {
-        return {
-          date,
-          generatedAt: stored.generatedAt,
-          pick: stored,
-          brief: storedBrief,
-          briefs,
-          evaluations,
-          rejectedSummary,
-          signalCount: signals.length,
-        }
+        return { date, generatedAt: stored.generatedAt, pick: stored, brief: storedBrief, briefs, evaluations, rejectedSummary, signalCount: signals.length }
       }
     }
   }
 
   const pick = generateDailyProblemPick(date, briefs, now, evaluations)
   await writeDailyPick(config, pick)
-  return {
-    date,
-    generatedAt: pick.generatedAt,
-    pick,
-    brief: pick.briefId ? briefs.find((brief) => brief.id === pick.briefId) ?? null : null,
-    briefs,
-    evaluations,
-    rejectedSummary,
-    signalCount: signals.length,
-  }
+  return { date, generatedAt: pick.generatedAt, pick, brief: pick.briefId ? briefs.find((b) => b.id === pick.briefId) ?? null : null, briefs, evaluations, rejectedSummary, signalCount: signals.length }
 }
 
 export async function listProblemSignals(config: AutopilotConfig): Promise<ProblemSignal[]> {
