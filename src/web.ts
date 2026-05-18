@@ -337,11 +337,11 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
       writeText(response, 'Problem brief not found', 404)
       return
     }
-    await recordProblemFeedback(config, briefId, body.action)
+    const feedback = await recordProblemFeedback(config, briefId, body.action)
     const allFeedback = await listProblemFeedback(config)
     const evaluations = evaluateProblemCandidates(briefs, allFeedback)
     const evaluation = evaluations.find((item) => item.briefId === briefId)
-    writeJson(response, { ok: true, evaluation }, 201)
+    writeJson(response, { feedback, evaluation }, 201)
     return
   }
 
