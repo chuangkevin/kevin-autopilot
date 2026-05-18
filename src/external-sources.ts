@@ -44,3 +44,52 @@ export async function fetchHackerNewsSignals(options: { timeout?: number } = {})
   }
   return signals
 }
+
+const REDDIT_SUBREDDITS = ['smallbusiness', 'freelance', 'productivity', 'SideProject']
+const REDDIT_AGENT = 'kevin-autopilot/1.0 (personal research tool)'
+
+export async function fetchRedditSignals(options: { timeout?: number } = {}): Promise<ProblemSignal[]> {
+  const timeout = options.timeout ?? 10_000
+  const signals: ProblemSignal[] = []
+  const fetchedAt = new Date().toISOString()
+  for (const sub of REDDIT_SUBREDDITS) {
+    try {
+      const ctrl = new AbortController()
+      const timer = setTimeout(() => ctrl.abort(), timeout)
+      try {
+        const res = await fetch(`https://www.reddit.com/r/${sub}/new.json?limit=25`, {
+          signal: ctrl.signal,
+          headers: { 'User-Agent': REDDIT_AGENT },
+        })
+        if (!res.ok) continue
+        const data = await res.json() as { data?: { children?: unknown[] } }
+        for (const child of data.data?.children ?? []) {
+          const post = (child as { data?: Record<string, unknown> }).data
+          if (!post) continue
+          const text = String(post.selftext ?? '').trim()
+          if (text.length < 80) continue
+          signals.push(createProblemSignal({
+            sourceType: 'reddit',
+            sourceName: `reddit:${sub}:${String(post.id ?? 'unknown')}`,
+            title: String(post.title ?? '').slice(0, 180),
+            snippet: text.slice(0, 1200),
+            fetchedAt,
+            url: `https://www.reddit.com${String(post.permalink ?? '')}`,
+            query: sub,
+          }))
+        }
+      } finally {
+        clearTimeout(timer)
+      }
+    } catch { /* per-subreddit failure: ignore */ }
+  }
+  return signals
+}
+
+export async function fetchExternalSignals(options: { timeout?: number } = {}): Promise<ProblemSignal[]> {
+  const [hn, reddit] = await Promise.all([
+    fetchHackerNewsSignals(options).catch((): ProblemSignal[] => []),
+    fetchRedditSignals(options).catch((): ProblemSignal[] => []),
+  ])
+  return [...hn, ...reddit]
+}
