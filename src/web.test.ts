@@ -845,6 +845,58 @@ test('POST /api/ideas/:id/dismiss rejects user ideas and missing ids', async () 
   }
 })
 
+test('POST /api/problem-signal/ingest creates a signal from trusted address', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-ingest-'))
+  const config: AutopilotConfig = { environment: 'test', dataDir, ruleSources: [], repositories: [], services: [] }
+  const server = createWebServer(config)
+  try {
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const address = server.address()
+    assert.ok(address && typeof address === 'object' && 'port' in address)
+    const baseUrl = `http://127.0.0.1:${address.port}`
+
+    const res = await fetch(`${baseUrl}/api/problem-signal/ingest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        input: 'Freelance designers spend three hours every project manually renaming and organizing Figma export files. Each client has a different naming convention and there is no tool that handles custom batch renaming patterns. The current workaround is fragile shell scripts that break when the export format changes.'
+      }),
+    })
+    assert.equal(res.status, 201)
+    const json = await res.json() as { signal: string; briefCount: number }
+    assert.equal(typeof json.signal, 'string')
+    assert.ok(json.signal.startsWith('signal-'), `signal id should start with signal- — got ${json.signal}`)
+    assert.equal(typeof json.briefCount, 'number')
+  } finally {
+    server.close()
+    await rm(dataDir, { recursive: true })
+  }
+})
+
+test('POST /api/problem-signal/ingest returns 400 for empty input', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-ingest2-'))
+  const config: AutopilotConfig = { environment: 'test', dataDir, ruleSources: [], repositories: [], services: [] }
+  const server = createWebServer(config)
+  try {
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const address = server.address()
+    assert.ok(address && typeof address === 'object' && 'port' in address)
+    const baseUrl = `http://127.0.0.1:${address.port}`
+
+    const res = await fetch(`${baseUrl}/api/problem-signal/ingest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ input: '   ' }),
+    })
+    assert.equal(res.status, 400)
+  } finally {
+    server.close()
+    await rm(dataDir, { recursive: true })
+  }
+})
+
 test('dashboard HTML uses cyberpunk CSS variables', async () => {
   const html = await getDashboardHtml()
   assert.ok(html.includes('--accent: #00ffff'), 'missing --accent CSS var')

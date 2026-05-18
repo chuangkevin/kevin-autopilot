@@ -33,7 +33,7 @@ import { clearStoredGeminiKeys, getKeyStatus, importGeminiKeys } from './keys.js
 import { isBoostRunning, runBoost } from './boost.js'
 import { isDeliberationRunning, loadLatestDeliberation, runDeliberation } from './deliberation.js'
 import { recomputePreferences } from './preferences.js'
-import { createProblemBriefPrompt, getDailyProblemDiscovery, isProblemFeedbackAction, recordProblemFeedback, visibleProblemBriefs } from './problem-discovery.js'
+import { createProblemBriefPrompt, createProblemSignal, getDailyProblemDiscovery, isProblemFeedbackAction, recordProblemFeedback, upsertProblemSignals, visibleProblemBriefs } from './problem-discovery.js'
 import { createObservationLoop, readReflectionState, type ObservationLoop } from './observation-loop.js'
 import { isReflectionRewriteFresh } from './reflection.js'
 import { observe } from './observer.js'
@@ -60,6 +60,7 @@ import type {
   ObservationLoopState,
   ObservationReport,
   ProblemCandidateEvaluation,
+  ProblemSignalSourceType,
   RejectedProblemSummary,
   RuntimeOverrides,
   UserSupplement,
@@ -341,6 +342,53 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
     const updated = await getDailyProblemDiscovery(config, { report })
     const evaluation = updated.evaluations.find((item) => item.briefId === briefId)
     writeJson(response, { feedback, candidate: toPublicProblemCandidate(brief, evaluation), evaluation }, 201)
+    return
+  }
+
+  if (url.pathname === '/api/problem-signal/ingest' && request.method === 'POST') {
+    if (!isTrustedSettingsRequest(request)) {
+      writeText(response, 'Problem signal ingest requires loopback, private LAN, Docker, or Tailscale access', 403)
+      return
+    }
+    let parsed: unknown
+    try { parsed = JSON.parse(await readBody(request)) } catch { writeText(response, 'invalid JSON', 400); return }
+    if (typeof parsed !== 'object' || !parsed || typeof (parsed as { input?: unknown }).input !== 'string') {
+      writeText(response, 'body must be { input: string }', 400); return
+    }
+    const input = ((parsed as { input: string }).input).trim()
+    if (!input) { writeText(response, 'input is empty', 400); return }
+
+    let snippet = input
+    let title = input.slice(0, 180)
+    let resolvedUrl: string | undefined
+    let sourceType: ProblemSignalSourceType = 'kevin-input'
+
+    if (/^https?:\/\//.test(input)) {
+      resolvedUrl = input
+      if (/threads\.net/i.test(input)) sourceType = 'threads-tw'
+      else if (/reddit\.com/i.test(input)) sourceType = 'reddit'
+      else if (/news\.ycombinator\.com/i.test(input)) sourceType = 'hacker-news'
+      try {
+        const ctrl = new AbortController()
+        const timer = setTimeout(() => ctrl.abort(), 5000)
+        try {
+          const pageRes = await fetch(input, { signal: ctrl.signal, headers: { 'User-Agent': 'kevin-autopilot/1.0' } })
+          if (pageRes.ok) {
+            const html = await pageRes.text()
+            snippet = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 2000)
+            const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i)
+            if (titleMatch?.[1]) title = titleMatch[1].trim().slice(0, 180)
+          }
+        } finally {
+          clearTimeout(timer)
+        }
+      } catch { /* use raw URL as snippet on fetch failure */ }
+    }
+
+    const signal = createProblemSignal({ sourceType, sourceName: `manual:${Date.now()}`, title, snippet, fetchedAt: new Date().toISOString(), url: resolvedUrl })
+    await upsertProblemSignals(config, [signal])
+    const discovery = await getDailyProblemDiscovery(config, { force: true })
+    writeJson(response, { signal: signal.id, briefCount: discovery.briefs.length }, 201)
     return
   }
 
