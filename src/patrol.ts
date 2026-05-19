@@ -4,7 +4,7 @@ import { buildPersonaPrefix } from './persona.js'
 import { listConversationMessages } from './conversation.js'
 import type { AutopilotConfig, ConversationMessage, ProblemBrief } from './types.js'
 
-const MAX_OUTPUT_TOKENS = 512
+const MAX_OUTPUT_TOKENS = 4096
 const TIMEOUT_MS = 20_000
 
 export async function runPatrol(config: AutopilotConfig, briefs: ProblemBrief[]): Promise<string | null> {
