@@ -2234,56 +2234,59 @@ function renderProblemStack(discovery: DailyProblemDiscovery): string {
 </section>
 <script>
 (function() {
-  var stack = document.querySelector('[data-ps-stack]');
-  if (!stack) return;
-  var cards = stack.querySelectorAll('[data-ps-card]');
-  var dots = stack.querySelectorAll('[data-ps-dot]');
-  var prevBtn = stack.querySelector('[data-ps-prev]');
-  var nextBtn = stack.querySelector('[data-ps-next]');
-  var counter = stack.querySelector('[data-ps-counter]');
-  var total = cards.length;
-  var current = 0;
-  var startX = 0, startY = 0, swiping = false;
+  function initPsStack(stack) {
+    if (stack.dataset.psInit) return;
+    stack.dataset.psInit = '1';
+    var cards = stack.querySelectorAll('[data-ps-card]');
+    var dots = stack.querySelectorAll('[data-ps-dot]');
+    var prevBtn = stack.querySelector('[data-ps-prev]');
+    var nextBtn = stack.querySelector('[data-ps-next]');
+    var counter = stack.querySelector('[data-ps-counter]');
+    var total = cards.length;
+    var current = 0;
+    var startX = 0, startY = 0, swiping = false;
 
-  function showCard(index) {
-    current = Math.max(0, Math.min(total - 1, index));
-    cards.forEach(function(card, i) { card.classList.toggle('ps-active', i === current); });
-    dots.forEach(function(dot, i) {
-      dot.className = 'ps-dot' + (i === current ? ' active ' + (cards[i] ? (cards[i].getAttribute('data-ps-tier') || '') : '') : '');
+    function showCard(index) {
+      current = Math.max(0, Math.min(total - 1, index));
+      cards.forEach(function(card, i) { card.classList.toggle('ps-active', i === current); });
+      dots.forEach(function(dot, i) {
+        dot.className = 'ps-dot' + (i === current ? ' active ' + (cards[i] ? (cards[i].getAttribute('data-ps-tier') || '') : '') : '');
+      });
+      if (counter) counter.textContent = (current + 1) + ' / ' + total;
+      if (prevBtn) prevBtn.disabled = current === 0;
+      if (nextBtn) nextBtn.disabled = current === total - 1;
+    }
+
+    if (prevBtn) prevBtn.addEventListener('click', function() { showCard(current - 1); });
+    if (nextBtn) nextBtn.addEventListener('click', function() { showCard(current + 1); });
+
+    stack.addEventListener('touchstart', function(e) {
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      swiping = false;
+    }, { passive: true });
+    stack.addEventListener('touchmove', function(e) {
+      var dx = Math.abs(e.touches[0].clientX - startX);
+      var dy = Math.abs(e.touches[0].clientY - startY);
+      if (dx > dy && dx > 8) { swiping = true; e.preventDefault(); }
+    }, { passive: false });
+    stack.addEventListener('touchend', function(e) {
+      if (!swiping) return;
+      var dx = e.changedTouches[0].clientX - startX;
+      if (Math.abs(dx) > 44) showCard(dx < 0 ? current + 1 : current - 1);
+      swiping = false;
+    }, { passive: true });
+
+    stack.addEventListener('click', function(e) {
+      var trigger = e.target.closest('[data-ps-expand-trigger]');
+      if (!trigger) return;
+      if (e.target.closest('[data-ps-no-expand]')) return;
+      trigger.classList.toggle('expanded');
     });
-    if (counter) counter.textContent = (current + 1) + ' / ' + total;
-    if (prevBtn) prevBtn.disabled = current === 0;
-    if (nextBtn) nextBtn.disabled = current === total - 1;
+
+    showCard(0);
   }
-
-  if (prevBtn) prevBtn.addEventListener('click', function() { showCard(current - 1); });
-  if (nextBtn) nextBtn.addEventListener('click', function() { showCard(current + 1); });
-
-  stack.addEventListener('touchstart', function(e) {
-    startX = e.touches[0].clientX;
-    startY = e.touches[0].clientY;
-    swiping = false;
-  }, { passive: true });
-  stack.addEventListener('touchmove', function(e) {
-    var dx = Math.abs(e.touches[0].clientX - startX);
-    var dy = Math.abs(e.touches[0].clientY - startY);
-    if (dx > dy && dx > 8) { swiping = true; e.preventDefault(); }
-  }, { passive: false });
-  stack.addEventListener('touchend', function(e) {
-    if (!swiping) return;
-    var dx = e.changedTouches[0].clientX - startX;
-    if (Math.abs(dx) > 44) showCard(dx < 0 ? current + 1 : current - 1);
-    swiping = false;
-  }, { passive: true });
-
-  stack.addEventListener('click', function(e) {
-    var trigger = e.target.closest('[data-ps-expand-trigger]');
-    if (!trigger) return;
-    if (e.target.closest('[data-ps-no-expand]')) return;
-    trigger.classList.toggle('expanded');
-  });
-
-  showCard(0);
+  document.querySelectorAll('[data-ps-stack]').forEach(initPsStack);
 })();
 </script>`
 }
@@ -2360,18 +2363,25 @@ function psIngest() {
 }
 
 function renderPatrolChat(): string {
-  return `<div class="patrol-chat" id="patrol-chat">
+  return `<div class="patrol-chat">
   <div class="patrol-chat-header">
     <span style="font-size:12px;color:#64748b;font-weight:600;letter-spacing:.05em">分身對話</span>
   </div>
-  <div class="patrol-chat-messages" id="patrol-chat-messages"></div>
+  <div class="patrol-chat-messages"></div>
   <div class="patrol-chat-input-row">
-    <input class="patrol-chat-input" id="patrol-chat-input" placeholder="跟分身說話…" autocomplete="off">
-    <button class="patrol-chat-send" id="patrol-chat-send" onclick="patrolSend()">送出</button>
+    <input class="patrol-chat-input" placeholder="跟分身說話…" autocomplete="off">
+    <button class="patrol-chat-send">送出</button>
   </div>
 </div>
 <script>
 (function() {
+  var all = document.querySelectorAll('.patrol-chat');
+  var container = all[all.length - 1];
+  if (!container || container.dataset.patrolInit) return;
+  container.dataset.patrolInit = '1';
+  var msgWrap = container.querySelector('.patrol-chat-messages');
+  var input = container.querySelector('.patrol-chat-input');
+  var btn = container.querySelector('.patrol-chat-send');
   var lastSince = '';
   var POLL_MS = 5000;
 
@@ -2379,8 +2389,7 @@ function renderPatrolChat(): string {
     var el = document.createElement('div');
     el.className = 'patrol-msg patrol-msg-' + msg.sender;
     el.textContent = msg.content;
-    var wrap = document.getElementById('patrol-chat-messages');
-    if (wrap) { wrap.appendChild(el); wrap.scrollTop = wrap.scrollHeight; }
+    if (msgWrap) { msgWrap.appendChild(el); msgWrap.scrollTop = msgWrap.scrollHeight; }
     if (msg.createdAt > lastSince) lastSince = msg.createdAt;
   }
 
@@ -2391,30 +2400,29 @@ function renderPatrolChat(): string {
     }).catch(function(){});
   }
 
+  function send() {
+    if (!input || !btn) return;
+    var val = input.value.trim();
+    if (!val) return;
+    input.disabled = true; btn.disabled = true; btn.textContent = '思考中…';
+    fetch('/api/conversation/reply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: val })
+    }).then(function(r) {
+      input.value = ''; input.disabled = false; btn.disabled = false; btn.textContent = '送出';
+      if (!r.ok) { btn.textContent = '失敗'; setTimeout(function(){ btn.textContent = '送出'; }, 2000); }
+    }).catch(function() { input.disabled = false; btn.disabled = false; btn.textContent = '送出'; });
+  }
+
+  if (btn) btn.addEventListener('click', send);
+  if (input) input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+  });
+
   poll();
   setInterval(poll, POLL_MS);
 })();
-
-function patrolSend() {
-  var input = document.getElementById('patrol-chat-input');
-  var btn = document.getElementById('patrol-chat-send');
-  if (!input || !btn) return;
-  var val = input.value.trim();
-  if (!val) return;
-  input.disabled = true; btn.disabled = true; btn.textContent = '思考中…';
-  fetch('/api/conversation/reply', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message: val })
-  }).then(function(r) {
-    input.value = ''; input.disabled = false; btn.disabled = false; btn.textContent = '送出';
-    if (!r.ok) { r.text().then(function(t) { btn.textContent = '失敗'; setTimeout(function(){ btn.textContent='送出'; }, 2000); }); }
-  }).catch(function() { input.disabled = false; btn.disabled = false; btn.textContent = '送出'; });
-}
-
-document.getElementById('patrol-chat-input').addEventListener('keydown', function(e) {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); patrolSend(); }
-});
 </script>`
 }
 
