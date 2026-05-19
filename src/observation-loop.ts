@@ -13,6 +13,8 @@ import { reflect } from './reflection.js'
 import { computeMood, persistMoodState } from './mood.js'
 import { getDailyProblemDiscovery } from './problem-discovery.js'
 import { fetchExternalSignals } from './external-sources.js'
+import { runPatrol } from './patrol.js'
+import { appendConversationMessage } from './conversation.js'
 import { getEffectiveConfig } from './runtime-overrides.js'
 import type {
   AutopilotConfig,
@@ -294,11 +296,23 @@ export class ObservationLoop {
     try {
       const externalSignals = await fetchExternalSignals({ timeout: 10_000 }).catch(() => [])
       const discovery = await getDailyProblemDiscovery(config, { report, externalSignals })
+      this.runPatrolSafely(config, discovery.briefs).catch(() => undefined)
       return { at: discovery.generatedAt, briefCount: discovery.briefs.length }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       console.warn('observation-loop: problem discovery failed:', message)
       return { at: new Date().toISOString(), briefCount: 0, error: message }
+    }
+  }
+
+  private async runPatrolSafely(config: AutopilotConfig, briefs: import('./types.js').ProblemBrief[]): Promise<void> {
+    try {
+      const message = await runPatrol(config, briefs)
+      if (message) {
+        await appendConversationMessage(config, { sender: 'ai', content: message })
+      }
+    } catch (error) {
+      console.warn('observation-loop: patrol failed:', error instanceof Error ? error.message : String(error))
     }
   }
 

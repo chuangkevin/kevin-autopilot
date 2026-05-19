@@ -1126,6 +1126,70 @@ function changedFiles(before: Map<string, string>, after: Map<string, string>): 
   return [...files].filter((file) => before.get(file) !== after.get(file)).sort()
 }
 
+test('conversation API GET returns messages and supports since filter', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-conv-'))
+  const config: AutopilotConfig = { environment: 'test', dataDir, ruleSources: [], repositories: [], services: [] }
+  const { appendConversationMessage } = await import('./conversation.js')
+  await appendConversationMessage(config, { sender: 'ai', content: 'first message' })
+  await new Promise((r) => setTimeout(r, 5))
+  const mid = new Date().toISOString()
+  await new Promise((r) => setTimeout(r, 5))
+  await appendConversationMessage(config, { sender: 'kevin', content: 'second message' })
+  const server = createWebServer(config)
+  try {
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const address = server.address() as { port: number }
+    const baseUrl = `http://127.0.0.1:${address.port}`
+
+    const all = await fetch(`${baseUrl}/api/conversation`)
+    assert.equal(all.status, 200)
+    const allBody = await all.json() as { messages: unknown[] }
+    assert.equal(allBody.messages.length, 2)
+
+    const sinceRes = await fetch(`${baseUrl}/api/conversation?since=${encodeURIComponent(mid)}`)
+    assert.equal(sinceRes.status, 200)
+    const sinceBody = await sinceRes.json() as { messages: Array<{ content: string }> }
+    assert.equal(sinceBody.messages.length, 1)
+    assert.equal(sinceBody.messages[0].content, 'second message')
+
+    const untrusted = await fetch(`${baseUrl}/api/conversation`, { headers: { 'x-forwarded-for': '8.8.8.8' } })
+    assert.equal(untrusted.status, 403)
+  } finally {
+    server.close()
+    await rm(dataDir, { recursive: true })
+  }
+})
+
+test('conversation reply API rejects untrusted and bad input', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-conv-reply-'))
+  const config: AutopilotConfig = { environment: 'test', dataDir, ruleSources: [], repositories: [], services: [] }
+  const server = createWebServer(config)
+  try {
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const address = server.address() as { port: number }
+    const baseUrl = `http://127.0.0.1:${address.port}`
+
+    const untrusted = await fetch(`${baseUrl}/api/conversation/reply`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-forwarded-for': '8.8.8.8' },
+      body: JSON.stringify({ message: 'hello' }),
+    })
+    assert.equal(untrusted.status, 403)
+
+    const empty = await fetch(`${baseUrl}/api/conversation/reply`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ message: '  ' }),
+    })
+    assert.equal(empty.status, 400)
+  } finally {
+    server.close()
+    await rm(dataDir, { recursive: true })
+  }
+})
+
 test('problem tab renders swipeable card stack', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-ps-'))
   const config: AutopilotConfig = { environment: 'test', dataDir, ruleSources: [], repositories: [], services: [] }

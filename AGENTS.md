@@ -76,6 +76,17 @@ counts, but not the full internal `briefs` array, evidence quotes, raw rejected
 snippets, unmanaged secrets, or any approval to build, deploy, spend, outreach,
 or mutate target repositories.
 
+Kevin approved v0.19.0 swipeable problem tab: replaced the static 問題 tab with
+a full-screen swipeable card stack powered by HN/Reddit external signals (not
+Kevin-owned backlog); added manual-paste ingest endpoint, 1/N counter, and stack
+depth affordance cues. Kevin approved v0.20.0 proactive patrol chat: after each
+observation loop run the system calls Gemini with PERSONA.md context to decide
+whether to proactively message Kevin; messages are stored in
+`data/conversation.json` (max 200); Kevin can reply from the chat UI in the
+problem tab and get an immediate AI response using full conversation history +
+persona context. The patrol call and reply both use `buildPersonaPrefix('patrol')`
+so the AI voice stays consistent with reflection and deliberation.
+
 Keep these versions read-only: they may observe, classify, report, and store
 Autopilot-owned reports/idea records/supplements, but they must not modify target
 repos, create repos, deploy, commit/push other projects, or perform destructive

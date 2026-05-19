@@ -83,7 +83,7 @@ export function _resetPersonaCache(): void {
   personaLoadAttempted = false
 }
 
-export async function buildPersonaPrefix(mode: 'reflection' | 'boost', config: AutopilotConfig): Promise<string> {
+export async function buildPersonaPrefix(mode: 'reflection' | 'boost' | 'patrol', config: AutopilotConfig): Promise<string> {
   const persona = await loadPersona()
   const moodState = await safeReadMood(config)
   const preferenceSummary = await safeReadPreferenceSummary(config)

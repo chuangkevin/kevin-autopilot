@@ -31,6 +31,8 @@ import {
 } from './idea-graph.js'
 import { clearStoredGeminiKeys, getKeyStatus, importGeminiKeys } from './keys.js'
 import { fetchExternalSignals } from './external-sources.js'
+import { appendConversationMessage, listConversationMessages } from './conversation.js'
+import { replyAsPatrol } from './patrol.js'
 import { isBoostRunning, runBoost } from './boost.js'
 import { isDeliberationRunning, loadLatestDeliberation, runDeliberation } from './deliberation.js'
 import { recomputePreferences } from './preferences.js'
@@ -393,6 +395,41 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
     await upsertProblemSignals(config, [signal])
     const discovery = await getDailyProblemDiscovery(config, { force: true })
     writeJson(response, { signal: signal.id, briefCount: discovery.briefs.length }, 201)
+    return
+  }
+
+  if (url.pathname === '/api/conversation' && request.method === 'GET') {
+    if (!isTrustedSettingsRequest(request)) {
+      writeText(response, 'Conversation requires loopback, private LAN, Docker, or Tailscale access', 403)
+      return
+    }
+    const since = typeof url.searchParams.get('since') === 'string' ? url.searchParams.get('since')! : undefined
+    const messages = await listConversationMessages(config, { since, limit: 50 })
+    writeJson(response, { messages })
+    return
+  }
+
+  if (url.pathname === '/api/conversation/reply' && request.method === 'POST') {
+    if (!isTrustedSettingsRequest(request)) {
+      writeText(response, 'Conversation reply requires loopback, private LAN, Docker, or Tailscale access', 403)
+      return
+    }
+    let parsed: unknown
+    try { parsed = JSON.parse(await readBody(request)) } catch { writeText(response, 'invalid JSON', 400); return }
+    const message = (parsed as { message?: unknown }).message
+    if (typeof message !== 'string' || !message.trim()) {
+      writeText(response, 'body must be { message: string }', 400); return
+    }
+    await appendConversationMessage(config, { sender: 'kevin', content: message.trim() })
+    try {
+      const briefs = await listProblemBriefs(config)
+      const history = await listConversationMessages(config, { limit: 20 })
+      const aiText = await replyAsPatrol(config, briefs, history)
+      const aiMessage = await appendConversationMessage(config, { sender: 'ai', content: aiText.trim() })
+      writeJson(response, { aiMessage }, 201)
+    } catch {
+      writeText(response, 'AI reply failed', 502)
+    }
     return
   }
 
@@ -1127,6 +1164,16 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
 .ps-paste-input::placeholder { color: #334155; }
 .ps-paste-btn { background: rgba(30,27,75,.4); border: 1px solid rgba(99,102,241,.4); border-radius: 12px; color: #a5b4fc; font-size: 13px; padding: 10px 16px; cursor: pointer; white-space: nowrap; }
 .ps-empty { padding: 28px 0; text-align: center; }
+.patrol-chat { margin-top: 16px; border: 1px solid rgba(148,163,184,.12); border-radius: 18px; overflow: hidden; background: rgba(15,23,42,.5); }
+.patrol-chat-header { padding: 10px 16px 6px; border-bottom: 1px solid rgba(148,163,184,.08); }
+.patrol-chat-messages { min-height: 80px; max-height: 320px; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.patrol-msg { max-width: 85%; padding: 9px 13px; border-radius: 14px; font-size: 14px; line-height: 1.5; word-break: break-word; white-space: pre-wrap; }
+.patrol-msg-ai { align-self: flex-start; background: rgba(30,27,75,.5); border: 1px solid rgba(99,102,241,.25); color: #c7d2fe; border-bottom-left-radius: 4px; }
+.patrol-msg-kevin { align-self: flex-end; background: rgba(20,83,45,.4); border: 1px solid rgba(34,197,94,.25); color: #bbf7d0; border-bottom-right-radius: 4px; }
+.patrol-chat-input-row { display: flex; gap: 8px; padding: 8px 12px 12px; }
+.patrol-chat-input { flex: 1; background: rgba(15,23,42,.7); border: 1px solid rgba(148,163,184,.2); border-radius: 12px; padding: 9px 13px; color: #e2e8f0; font-size: 14px; min-width: 0; }
+.patrol-chat-input::placeholder { color: #334155; }
+.patrol-chat-send { background: rgba(30,27,75,.4); border: 1px solid rgba(99,102,241,.4); border-radius: 12px; color: #a5b4fc; font-size: 13px; padding: 9px 16px; cursor: pointer; white-space: nowrap; }
 
 /* Labels */
 .sys-label { font-size: 16px; color: rgba(0,255,255,0.4); letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 6px; }
@@ -2158,6 +2205,7 @@ function renderProblemStack(discovery: DailyProblemDiscovery): string {
   </div>
   ${renderPsRejectedSummary(discovery.rejectedSummary)}
   ${renderPsPasteBar()}
+  ${renderPatrolChat()}
 </section>`
   }
 
@@ -2307,6 +2355,65 @@ function psIngest() {
     else { r.text().then(function(t) { btn.textContent = '失敗: ' + t.slice(0, 40); btn.disabled = false; }); }
   }).catch(function(e) { btn.textContent = '失敗'; btn.disabled = false; });
 }
+</script>`
+}
+
+function renderPatrolChat(): string {
+  return `<div class="patrol-chat" id="patrol-chat">
+  <div class="patrol-chat-header">
+    <span style="font-size:12px;color:#64748b;font-weight:600;letter-spacing:.05em">分身對話</span>
+  </div>
+  <div class="patrol-chat-messages" id="patrol-chat-messages"></div>
+  <div class="patrol-chat-input-row">
+    <input class="patrol-chat-input" id="patrol-chat-input" placeholder="跟分身說話…" autocomplete="off">
+    <button class="patrol-chat-send" id="patrol-chat-send" onclick="patrolSend()">送出</button>
+  </div>
+</div>
+<script>
+(function() {
+  var lastSince = '';
+  var POLL_MS = 5000;
+
+  function appendMsg(msg) {
+    var el = document.createElement('div');
+    el.className = 'patrol-msg patrol-msg-' + msg.sender;
+    el.textContent = msg.content;
+    var wrap = document.getElementById('patrol-chat-messages');
+    if (wrap) { wrap.appendChild(el); wrap.scrollTop = wrap.scrollHeight; }
+    if (msg.createdAt > lastSince) lastSince = msg.createdAt;
+  }
+
+  function poll() {
+    var url = '/api/conversation' + (lastSince ? '?since=' + encodeURIComponent(lastSince) : '');
+    fetch(url).then(function(r) { return r.json(); }).then(function(d) {
+      (d.messages || []).forEach(appendMsg);
+    }).catch(function(){});
+  }
+
+  poll();
+  setInterval(poll, POLL_MS);
+})();
+
+function patrolSend() {
+  var input = document.getElementById('patrol-chat-input');
+  var btn = document.getElementById('patrol-chat-send');
+  if (!input || !btn) return;
+  var val = input.value.trim();
+  if (!val) return;
+  input.disabled = true; btn.disabled = true; btn.textContent = '思考中…';
+  fetch('/api/conversation/reply', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: val })
+  }).then(function(r) {
+    input.value = ''; input.disabled = false; btn.disabled = false; btn.textContent = '送出';
+    if (!r.ok) { r.text().then(function(t) { btn.textContent = '失敗'; setTimeout(function(){ btn.textContent='送出'; }, 2000); }); }
+  }).catch(function() { input.disabled = false; btn.disabled = false; btn.textContent = '送出'; });
+}
+
+document.getElementById('patrol-chat-input').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); patrolSend(); }
+});
 </script>`
 }
 

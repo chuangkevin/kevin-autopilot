@@ -752,3 +752,10 @@ export interface KeyImportSummary {
   replace: boolean
   status: KeyStatusSummary
 }
+
+export interface ConversationMessage {
+  id: string
+  sender: 'ai' | 'kevin'
+  content: string
+  createdAt: string
+}
