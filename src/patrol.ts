@@ -9,24 +9,30 @@ const TIMEOUT_MS = 20_000
 
 export async function runPatrol(config: AutopilotConfig, briefs: ProblemBrief[]): Promise<string | null> {
   try {
+    if (briefs.length === 0) return null
     const systemInstruction = await buildPersonaPrefix('patrol', config)
     const history = await listConversationMessages(config, { limit: 20 })
-    const briefSummary = briefs
-      .slice(0, 3)
-      .map((b, i) => `${i + 1}. ${b.title}（${b.confidence}）`)
-      .join('\n')
+    const top = briefs[0]
+    const topDetail = [
+      `標題：${top.title}`,
+      `誰在痛：${top.people}`,
+      `痛點：${top.pain}`,
+      `Kevin 切入方向：${top.mvp}`,
+      `Kevin 適合度：${top.kevinFit.score}/100 — ${top.kevinFit.rationale}`,
+    ].join('\n')
+    const otherTitles = briefs.slice(1, 4).map((b, i) => `${i + 2}. ${b.title}`).join('\n')
     const historySummary = formatHistory(history)
     const prompt = [
-      '你是 Kevin 的 AI 分身，剛完成一輪外部訊號掃描。',
+      '你是 Kevin 的 AI 分身，剛完成一輪外部訊號掃描，現在主動告訴 Kevin 今天最值得看的問題。',
       '',
-      '今日問題候選（top 3）：',
-      briefSummary || '（目前沒有足夠的問題候選）',
+      '【今日頭號問題】',
+      topDetail,
       '',
-      historySummary ? `最近對話記錄：\n${historySummary}\n` : '',
-      '根據以上資訊，有沒有值得主動告訴 Kevin 的事？',
-      '如果有，用一到兩句完整的中文句子說清楚（不超過 80 字）。',
-      '必須是完整句子，不能只列關鍵字或標題片段。',
-      '如果沒有新的值得說的，只回傳空字串，不要說任何話。',
+      otherTitles ? `【其他候選】\n${otherTitles}` : '',
+      '',
+      historySummary ? `【最近對話】\n${historySummary}\n` : '',
+      '用兩句話告訴 Kevin 這個頭號問題的重點：第一句說清楚誰在痛、怎麼痛；第二句說為什麼 Kevin 值得追這個。',
+      '不要寒暄、不要說"您好"、不要重複標題文字、直接講重點。',
     ].filter(Boolean).join('\n')
 
     const text = await callGeminiWithTimeout(config, systemInstruction, prompt)
@@ -43,20 +49,23 @@ export async function replyAsPatrol(
   history: ConversationMessage[],
 ): Promise<string> {
   const systemInstruction = await buildPersonaPrefix('patrol', config)
-  const briefSummary = briefs
-    .slice(0, 3)
-    .map((b, i) => `${i + 1}. ${b.title}（${b.confidence}）`)
-    .join('\n')
+  const briefDetails = briefs.slice(0, 3).map((b, i) => [
+    `${i + 1}. ${b.title}`,
+    `   誰：${b.people}`,
+    `   痛：${b.pain}`,
+    `   缺口：${b.existingSolutionsGap}`,
+    `   MVP：${b.mvp}`,
+  ].join('\n')).join('\n\n')
   const historySummary = formatHistory(history)
   const prompt = [
-    '你是 Kevin 的 AI 分身，正在跟 Kevin 對話。',
+    '你是 Kevin 的 AI 分身，正在跟 Kevin 討論今天掃到的問題。',
     '',
-    '今日問題候選（top 3）：',
-    briefSummary || '（目前沒有足夠的問題候選）',
+    '【今日問題清單（含細節）】',
+    briefDetails || '（目前沒有足夠的問題候選）',
     '',
-    historySummary ? `對話記錄（最新的 Kevin 訊息在最後）：\n${historySummary}` : '',
+    historySummary ? `【對話記錄，Kevin 的最後一句在最後】\n${historySummary}` : '',
     '',
-    '直接回覆 Kevin 最後說的話。用完整中文句子，你的視角，不超過 150 字。不能只列關鍵字。',
+    '直接回覆 Kevin 最後說的話，結合上面的問題細節給出具體觀點。用完整中文句子，不超過 150 字，不要寒暄。',
   ].filter(Boolean).join('\n')
 
   return callGeminiWithTimeout(config, systemInstruction, prompt)
