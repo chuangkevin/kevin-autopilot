@@ -758,4 +758,5 @@ export interface ConversationMessage {
   sender: 'ai' | 'kevin'
   content: string
   createdAt: string
+  briefId?: string
 }

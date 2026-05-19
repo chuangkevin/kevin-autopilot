@@ -404,7 +404,8 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
       return
     }
     const since = typeof url.searchParams.get('since') === 'string' ? url.searchParams.get('since')! : undefined
-    const messages = await listConversationMessages(config, { since, limit: 50 })
+    const briefIdFilter = url.searchParams.get('briefId') ?? undefined
+    const messages = await listConversationMessages(config, { since, limit: 50, briefId: briefIdFilter })
     writeJson(response, { messages })
     return
   }
@@ -421,18 +422,17 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
     if (typeof message !== 'string' || !message.trim()) {
       writeText(response, 'body must be { message: string }', 400); return
     }
-    await appendConversationMessage(config, { sender: 'kevin', content: message.trim() })
+    const taggedBriefId = typeof focusedBriefId === 'string' && focusedBriefId ? focusedBriefId : undefined
+    await appendConversationMessage(config, { sender: 'kevin', content: message.trim(), briefId: taggedBriefId })
     try {
       const allBriefs = await listProblemBriefs(config)
-      const focusedIdx = typeof focusedBriefId === 'string' && focusedBriefId
-        ? allBriefs.findIndex((b) => b.id === focusedBriefId)
-        : -1
+      const focusedIdx = taggedBriefId ? allBriefs.findIndex((b) => b.id === taggedBriefId) : -1
       const briefs = focusedIdx > 0
         ? [allBriefs[focusedIdx], ...allBriefs.filter((_, i) => i !== focusedIdx)]
         : allBriefs
-      const history = await listConversationMessages(config, { limit: 20 })
+      const history = await listConversationMessages(config, { limit: 20, briefId: taggedBriefId })
       const aiText = await replyAsPatrol(config, briefs, history)
-      const aiMessage = await appendConversationMessage(config, { sender: 'ai', content: aiText.trim() })
+      const aiMessage = await appendConversationMessage(config, { sender: 'ai', content: aiText.trim(), briefId: taggedBriefId })
       writeJson(response, { aiMessage }, 201)
     } catch {
       writeText(response, 'AI reply failed', 502)
@@ -2255,7 +2255,9 @@ function renderProblemStack(discovery: DailyProblemDiscovery): string {
 
     function showCard(index) {
       current = Math.max(0, Math.min(total - 1, index));
-      stack.dataset.psBriefId = cards[current] ? (cards[current].dataset.psBriefId || '') : '';
+      var newBriefId = cards[current] ? (cards[current].dataset.psBriefId || '') : '';
+      stack.dataset.psBriefId = newBriefId;
+      stack.dispatchEvent(new CustomEvent('ps-card-change', { detail: { briefId: newBriefId } }));
       cards.forEach(function(card, i) { card.classList.toggle('ps-active', i === current); });
       dots.forEach(function(dot, i) {
         dot.className = 'ps-dot' + (i === current ? ' active ' + (cards[i] ? (cards[i].getAttribute('data-ps-tier') || '') : '') : '');
@@ -2391,7 +2393,11 @@ function renderPatrolChat(): string {
   var input = container.querySelector('.patrol-chat-input');
   var btn = container.querySelector('.patrol-chat-send');
   var lastSince = '';
+  var currentBriefId = '';
   var POLL_MS = 5000;
+
+  var psStack = container.closest('[data-ps-stack]');
+  if (psStack) currentBriefId = psStack.dataset.psBriefId || '';
 
   function appendMsg(msg) {
     var el = document.createElement('div');
@@ -2401,11 +2407,24 @@ function renderPatrolChat(): string {
     if (msg.createdAt > lastSince) lastSince = msg.createdAt;
   }
 
+  function buildPollUrl(since) {
+    var params = [];
+    if (since) params.push('since=' + encodeURIComponent(since));
+    if (currentBriefId) params.push('briefId=' + encodeURIComponent(currentBriefId));
+    return '/api/conversation' + (params.length ? '?' + params.join('&') : '');
+  }
+
   function poll() {
-    var url = '/api/conversation' + (lastSince ? '?since=' + encodeURIComponent(lastSince) : '');
-    fetch(url).then(function(r) { return r.json(); }).then(function(d) {
+    fetch(buildPollUrl(lastSince)).then(function(r) { return r.json(); }).then(function(d) {
       (d.messages || []).forEach(appendMsg);
     }).catch(function(){});
+  }
+
+  function loadForCard(briefId) {
+    currentBriefId = briefId;
+    lastSince = '';
+    if (msgWrap) msgWrap.innerHTML = '';
+    poll();
   }
 
   function send() {
@@ -2413,8 +2432,7 @@ function renderPatrolChat(): string {
     var val = input.value.trim();
     if (!val) return;
     input.disabled = true; btn.disabled = true; btn.textContent = '思考中…';
-    var stack = container.closest('[data-ps-stack]');
-    var focusedBriefId = stack ? (stack.dataset.psBriefId || '') : '';
+    var focusedBriefId = currentBriefId;
     fetch('/api/conversation/reply', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2424,6 +2442,8 @@ function renderPatrolChat(): string {
       if (!r.ok) { btn.textContent = '失敗'; setTimeout(function(){ btn.textContent = '送出'; }, 2000); }
     }).catch(function() { input.disabled = false; btn.disabled = false; btn.textContent = '送出'; });
   }
+
+  if (psStack) psStack.addEventListener('ps-card-change', function(e) { loadForCard(e.detail.briefId); });
 
   if (btn) btn.addEventListener('click', send);
   if (input) input.addEventListener('keydown', function(e) {

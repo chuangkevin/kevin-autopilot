@@ -308,8 +308,8 @@ export class ObservationLoop {
   private async runPatrolSafely(config: AutopilotConfig, briefs: import('./types.js').ProblemBrief[]): Promise<void> {
     try {
       const message = await runPatrol(config, briefs)
-      if (message) {
-        await appendConversationMessage(config, { sender: 'ai', content: message })
+      if (message && briefs[0]) {
+        await appendConversationMessage(config, { sender: 'ai', content: message, briefId: briefs[0].id })
       }
     } catch (error) {
       console.warn('observation-loop: patrol failed:', error instanceof Error ? error.message : String(error))

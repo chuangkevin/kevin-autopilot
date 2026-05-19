@@ -813,7 +813,7 @@ function inferWorkflow(snippet: string): string | undefined {
   if (/截圖|screenshot/i.test(snippet)) return '截圖與證據傳遞'
   if (/line|訊息|聊天/i.test(snippet)) return '訊息溝通與任務追蹤'
   if (/上傳|下載|轉檔|file/i.test(snippet)) return '檔案轉換與平台搬運'
-  return normalizeWhitespace(snippet).slice(0, 32)
+  return undefined
 }
 
 function createMissingEvidence(evidence: ProblemBrief['evidence'], pattern: ProblemPattern): string[] {

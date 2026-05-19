@@ -33,6 +33,7 @@ export async function appendConversationMessage(
     sender: msg.sender,
     content: msg.content,
     createdAt: new Date().toISOString(),
+    ...(msg.briefId ? { briefId: msg.briefId } : {}),
   }
   const existing = await readAll(config)
   const updated = [...existing, message].slice(-MAX_MESSAGES)
@@ -43,10 +44,11 @@ export async function appendConversationMessage(
 
 export async function listConversationMessages(
   config: AutopilotConfig,
-  opts: { since?: string; limit?: number } = {},
+  opts: { since?: string; limit?: number; briefId?: string } = {},
 ): Promise<ConversationMessage[]> {
   const all = await readAll(config)
-  const filtered = opts.since ? all.filter((m) => m.createdAt > opts.since!) : all
+  let filtered = opts.since ? all.filter((m) => m.createdAt > opts.since!) : all
+  if (opts.briefId) filtered = filtered.filter((m) => m.briefId === opts.briefId)
   const limit = opts.limit ?? MAX_MESSAGES
   return filtered.slice(-limit)
 }
