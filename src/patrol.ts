@@ -50,7 +50,7 @@ export async function replyAsPatrol(
 ): Promise<string> {
   const systemInstruction = await buildPersonaPrefix('patrol', config)
   const briefDetails = briefs.slice(0, 3).map((b, i) => [
-    `${i + 1}. ${b.title}`,
+    i === 0 ? `★【Kevin 目前在看這張】${b.title}` : `${i + 1}. ${b.title}`,
     `   誰：${b.people}`,
     `   痛：${b.pain}`,
     `   缺口：${b.existingSolutionsGap}`,
@@ -60,12 +60,12 @@ export async function replyAsPatrol(
   const prompt = [
     '你是 Kevin 的 AI 分身，正在跟 Kevin 討論今天掃到的問題。',
     '',
-    '【今日問題清單（含細節）】',
+    '【今日問題清單（★號是 Kevin 目前正在看的那張）】',
     briefDetails || '（目前沒有足夠的問題候選）',
     '',
     historySummary ? `【對話記錄，Kevin 的最後一句在最後】\n${historySummary}` : '',
     '',
-    '直接回覆 Kevin 最後說的話，結合上面的問題細節給出具體觀點。用完整中文句子，不超過 150 字，不要寒暄。',
+    'Kevin 正在看★號那張卡片。直接回覆 Kevin 最後說的話，優先圍繞★號卡片給出具體觀點。用完整中文句子，不超過 150 字，不要寒暄。',
   ].filter(Boolean).join('\n')
 
   return callGeminiWithTimeout(config, systemInstruction, prompt)

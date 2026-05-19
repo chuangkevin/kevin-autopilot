@@ -416,13 +416,20 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
     }
     let parsed: unknown
     try { parsed = JSON.parse(await readBody(request)) } catch { writeText(response, 'invalid JSON', 400); return }
-    const message = (parsed as { message?: unknown }).message
+    const message = (parsed as { message?: unknown; focusedBriefId?: unknown }).message
+    const focusedBriefId = (parsed as { focusedBriefId?: unknown }).focusedBriefId
     if (typeof message !== 'string' || !message.trim()) {
       writeText(response, 'body must be { message: string }', 400); return
     }
     await appendConversationMessage(config, { sender: 'kevin', content: message.trim() })
     try {
-      const briefs = await listProblemBriefs(config)
+      const allBriefs = await listProblemBriefs(config)
+      const focusedIdx = typeof focusedBriefId === 'string' && focusedBriefId
+        ? allBriefs.findIndex((b) => b.id === focusedBriefId)
+        : -1
+      const briefs = focusedIdx > 0
+        ? [allBriefs[focusedIdx], ...allBriefs.filter((_, i) => i !== focusedIdx)]
+        : allBriefs
       const history = await listConversationMessages(config, { limit: 20 })
       const aiText = await replyAsPatrol(config, briefs, history)
       const aiMessage = await appendConversationMessage(config, { sender: 'ai', content: aiText.trim() })
@@ -2248,6 +2255,7 @@ function renderProblemStack(discovery: DailyProblemDiscovery): string {
 
     function showCard(index) {
       current = Math.max(0, Math.min(total - 1, index));
+      stack.dataset.psBriefId = cards[current] ? (cards[current].dataset.psBriefId || '') : '';
       cards.forEach(function(card, i) { card.classList.toggle('ps-active', i === current); });
       dots.forEach(function(dot, i) {
         dot.className = 'ps-dot' + (i === current ? ' active ' + (cards[i] ? (cards[i].getAttribute('data-ps-tier') || '') : '') : '');
@@ -2318,7 +2326,7 @@ function renderPsCard(
     ${evaluation?.rankingRationale ? `<div class="ps-detail-box full" style="margin-top:6px"><strong>${isPick ? '為何今天選它' : '排序理由'}</strong>${escapeHtml(evaluation.rankingRationale)}</div>` : ''}
   </div>`
 
-  return `<div class="ps-card ${tierClass}" data-ps-card="${index}" data-ps-tier="${tierClass}" data-ps-expand-trigger>
+  return `<div class="ps-card ${tierClass}" data-ps-card="${index}" data-ps-tier="${tierClass}" data-ps-brief-id="${brief.id}" data-ps-expand-trigger>
   <div class="ps-badges">
     <span class="ps-badge ${tierClass}">${escapeHtml(tierLabel)}</span>
     ${sourceLabel ? `<span class="ps-badge ${sourceClass}">${escapeHtml(sourceLabel)}</span>` : ''}
@@ -2405,10 +2413,12 @@ function renderPatrolChat(): string {
     var val = input.value.trim();
     if (!val) return;
     input.disabled = true; btn.disabled = true; btn.textContent = '思考中…';
+    var stack = container.closest('[data-ps-stack]');
+    var focusedBriefId = stack ? (stack.dataset.psBriefId || '') : '';
     fetch('/api/conversation/reply', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: val })
+      body: JSON.stringify({ message: val, focusedBriefId: focusedBriefId })
     }).then(function(r) {
       input.value = ''; input.disabled = false; btn.disabled = false; btn.textContent = '送出';
       if (!r.ok) { btn.textContent = '失敗'; setTimeout(function(){ btn.textContent = '送出'; }, 2000); }

@@ -30,6 +30,6 @@
 
 ## 6. 版本更新與部署
 
-- [ ] 6.1 `src/version.ts` 版本號更新至 `0.20.0`
-- [ ] 6.2 `AGENTS.md` 記錄 v0.20.0 patrol-chat 功能
-- [ ] 6.3 `npm run build && npm test` 全過後 commit + push
+- [x] 6.1 `src/version.ts` 版本號更新至 `0.20.0`
+- [x] 6.2 `AGENTS.md` 記錄 v0.20.0 patrol-chat 功能
+- [x] 6.3 `npm run build && npm test` 全過後 commit + push
