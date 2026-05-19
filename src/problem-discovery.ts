@@ -87,7 +87,8 @@ export async function getDailyProblemDiscovery(
       const storedBrief = stored.briefId ? briefs.find((b) => b.id === stored.briefId) ?? null : null
       const storedEvaluation = stored.briefId ? evaluations.find((e) => e.briefId === stored.briefId) : undefined
       if (!(stored.status === 'picked' && (!storedBrief || isProblemCandidateDismissed(storedEvaluation)))) {
-        return { date, generatedAt: stored.generatedAt, pick: stored, brief: storedBrief, briefs, evaluations, rejectedSummary, signalCount: signals.length }
+        const extSigs = signals.filter((s) => s.sourceType === 'reddit' || s.sourceType === 'hacker-news' || s.sourceType === 'threads-tw').sort((a, b) => b.fetchedAt.localeCompare(a.fetchedAt))
+        return { date, generatedAt: stored.generatedAt, pick: stored, brief: storedBrief, briefs, evaluations, rejectedSummary, signalCount: signals.length, signals: extSigs }
       }
     }
   }
@@ -111,14 +112,16 @@ export async function getDailyProblemDiscovery(
       const storedBrief = stored.briefId ? briefs.find((b) => b.id === stored.briefId) ?? null : null
       const storedEvaluation = stored.briefId ? evaluations.find((e) => e.briefId === stored.briefId) : undefined
       if (!(stored.status === 'picked' && (!storedBrief || isProblemCandidateDismissed(storedEvaluation)))) {
-        return { date, generatedAt: stored.generatedAt, pick: stored, brief: storedBrief, briefs, evaluations, rejectedSummary, signalCount: signals.length }
+        const extSigs = signals.filter((s) => s.sourceType === 'reddit' || s.sourceType === 'hacker-news' || s.sourceType === 'threads-tw').sort((a, b) => b.fetchedAt.localeCompare(a.fetchedAt))
+        return { date, generatedAt: stored.generatedAt, pick: stored, brief: storedBrief, briefs, evaluations, rejectedSummary, signalCount: signals.length, signals: extSigs }
       }
     }
   }
 
   const pick = generateDailyProblemPick(date, briefs, now, evaluations)
   await writeDailyPick(config, pick)
-  return { date, generatedAt: pick.generatedAt, pick, brief: pick.briefId ? briefs.find((b) => b.id === pick.briefId) ?? null : null, briefs, evaluations, rejectedSummary, signalCount: signals.length }
+  const externalSignals = signals.filter((s) => s.sourceType === 'reddit' || s.sourceType === 'hacker-news' || s.sourceType === 'threads-tw').sort((a, b) => b.fetchedAt.localeCompare(a.fetchedAt))
+  return { date, generatedAt: pick.generatedAt, pick, brief: pick.briefId ? briefs.find((b) => b.id === pick.briefId) ?? null : null, briefs, evaluations, rejectedSummary, signalCount: signals.length, signals: externalSignals }
 }
 
 export async function listProblemSignals(config: AutopilotConfig): Promise<ProblemSignal[]> {

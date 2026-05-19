@@ -275,6 +275,7 @@ export interface DailyProblemDiscovery {
   evaluations: ProblemCandidateEvaluation[]
   rejectedSummary: RejectedProblemSummary[]
   signalCount: number
+  signals: ProblemSignal[]
 }
 
 export interface MainAgentBrief {

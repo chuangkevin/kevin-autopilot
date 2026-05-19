@@ -840,6 +840,7 @@ function toPublicDailyProblemDiscovery(discovery: DailyProblemDiscovery): Omit<D
     briefCount: discovery.briefs.length,
     candidates: visibleProblemCandidates(discovery).slice(0, 6).map((brief) => toPublicProblemCandidate(brief, discovery.evaluations.find((evaluation) => evaluation.briefId === brief.id))),
     rejectedSummary: discovery.rejectedSummary,
+    signals: discovery.signals,
   }
 }
 
@@ -1171,6 +1172,14 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
 .ps-paste-input::placeholder { color: #334155; }
 .ps-paste-btn { background: rgba(30,27,75,.4); border: 1px solid rgba(99,102,241,.4); border-radius: 12px; color: #a5b4fc; font-size: 13px; padding: 10px 16px; cursor: pointer; white-space: nowrap; }
 .ps-empty { padding: 28px 0; text-align: center; }
+.ps-signals { margin-top: 8px; }
+.ps-signals summary { font-size: 12px; color: #475569; cursor: pointer; padding: 4px 0; }
+.ps-signal-item { display: flex; flex-direction: column; gap: 2px; padding: 8px 0; border-bottom: 1px solid rgba(148,163,184,.07); }
+.ps-signal-item:last-child { border-bottom: none; }
+.ps-signal-title { font-size: 13px; color: #cbd5e1; line-height: 1.4; }
+.ps-signal-meta { font-size: 11px; color: #475569; display: flex; gap: 8px; align-items: center; }
+.ps-signal-meta a { color: #6366f1; text-decoration: none; }
+.ps-signal-meta a:hover { text-decoration: underline; }
 .patrol-chat { margin-top: 16px; border: 1px solid rgba(148,163,184,.12); border-radius: 18px; overflow: hidden; background: rgba(15,23,42,.5); }
 .patrol-chat-header { padding: 10px 16px 6px; border-bottom: 1px solid rgba(148,163,184,.08); }
 .patrol-chat-messages { min-height: 80px; max-height: 320px; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
@@ -2211,6 +2220,7 @@ function renderProblemStack(discovery: DailyProblemDiscovery): string {
     </form>
   </div>
   ${renderPsRejectedSummary(discovery.rejectedSummary)}
+  ${renderRawSignals(discovery.signals)}
   ${renderPsPasteBar()}
   ${renderPatrolChat()}
 </section>`
@@ -2236,6 +2246,7 @@ function renderProblemStack(discovery: DailyProblemDiscovery): string {
     ${cardHtml}
   </div>
   ${renderPsRejectedSummary(discovery.rejectedSummary)}
+  ${renderRawSignals(discovery.signals)}
   ${renderPsPasteBar()}
   ${renderPatrolChat()}
 </section>
@@ -2464,6 +2475,22 @@ function renderPsRejectedSummary(rejectedSummary: RejectedProblemSummary[]): str
   <div class="problem-grid" style="margin-top:8px">
     ${rejectedSummary.map((item) => `<div class="problem-box"><strong>${escapeHtml(rejectedReasonLabel(item.reason))} · ${item.count}</strong>${item.examples.map((ex) => `<div>${escapeHtml(`${ex.sourceType}: ${ex.title}`)}</div>`).join('')}</div>`).join('')}
   </div>
+</details>`
+}
+
+function renderRawSignals(signals: import('./types.js').ProblemSignal[]): string {
+  if (signals.length === 0) return ''
+  const recent = signals.slice(0, 60)
+  const items = recent.map((s) => {
+    const src = s.sourceName.replace(/^reddit:(\w+):.*/, 'r/$1').replace(/^hacker-news:.*/, 'HN')
+    return `<div class="ps-signal-item">
+  <div class="ps-signal-title">${escapeHtml(s.title)}</div>
+  <div class="ps-signal-meta"><span>${escapeHtml(src)}</span>${s.url ? `<a href="${escapeHtmlAttr(s.url)}" target="_blank" rel="noopener">連結 →</a>` : ''}</div>
+</div>`
+  }).join('')
+  return `<details class="ps-signals">
+  <summary>原始訊號 ${signals.length} 筆 ▸</summary>
+  <div style="margin-top:6px">${items}</div>
 </details>`
 }
 
