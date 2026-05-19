@@ -2230,6 +2230,7 @@ function renderProblemStack(discovery: DailyProblemDiscovery): string {
   </div>
   ${renderPsRejectedSummary(discovery.rejectedSummary)}
   ${renderPsPasteBar()}
+  ${renderPatrolChat()}
 </section>
 <script>
 (function() {
