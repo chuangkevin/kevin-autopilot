@@ -4,7 +4,7 @@ import { buildPersonaPrefix } from './persona.js'
 import { listConversationMessages } from './conversation.js'
 import type { AutopilotConfig, ConversationMessage, ProblemBrief } from './types.js'
 
-const MAX_OUTPUT_TOKENS = 300
+const MAX_OUTPUT_TOKENS = 512
 const TIMEOUT_MS = 20_000
 
 export async function runPatrol(config: AutopilotConfig, briefs: ProblemBrief[]): Promise<string | null> {
@@ -24,8 +24,9 @@ export async function runPatrol(config: AutopilotConfig, briefs: ProblemBrief[])
       '',
       historySummary ? `最近對話記錄：\n${historySummary}\n` : '',
       '根據以上資訊，有沒有值得主動告訴 Kevin 的事？',
-      '如果有，用一段話說清楚（不超過 120 字，直接說重點，不要寒暄）。',
-      '如果沒有新的值得說的，回傳空字串。',
+      '如果有，用一到兩句完整的中文句子說清楚（不超過 80 字）。',
+      '必須是完整句子，不能只列關鍵字或標題片段。',
+      '如果沒有新的值得說的，只回傳空字串，不要說任何話。',
     ].filter(Boolean).join('\n')
 
     const text = await callGeminiWithTimeout(config, systemInstruction, prompt)
@@ -55,7 +56,7 @@ export async function replyAsPatrol(
     '',
     historySummary ? `對話記錄（最新的 Kevin 訊息在最後）：\n${historySummary}` : '',
     '',
-    '直接回覆 Kevin 最後說的話。用你的視角，簡短有力（不超過 150 字）。',
+    '直接回覆 Kevin 最後說的話。用完整中文句子，你的視角，不超過 150 字。不能只列關鍵字。',
   ].filter(Boolean).join('\n')
 
   return callGeminiWithTimeout(config, systemInstruction, prompt)
