@@ -213,6 +213,7 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
   if (url.pathname === '/api/ideas' && request.method === 'POST') {
     const body = JSON.parse(await readBody(request)) as { rawText?: unknown }
     const idea = await createIdea(config, typeof body.rawText === 'string' ? body.rawText : '')
+    await getDailyProblemDiscovery(config, { force: true }).catch(() => undefined)
     writeJson(response, idea, 201)
     return
   }
@@ -235,6 +236,7 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
       writeText(response, error instanceof Error ? error.message : String(error), 400)
       return
     }
+    await getDailyProblemDiscovery(config, { force: true }).catch(() => undefined)
     writeJson(response, supplement, 201)
     return
   }
@@ -1539,9 +1541,9 @@ function switchTab(name) {
       return;
     }
     const supplement = await response.json();
-    result.textContent = '已納入下一輪推理：' + supplement.summary;
+    result.textContent = '已更新，正在重整…';
     document.getElementById('supplement-text').value = '';
-    setTimeout(() => location.reload(), 700);
+    setTimeout(() => location.reload(), 400);
   });
 
   const ideaForm = document.getElementById('idea-form');

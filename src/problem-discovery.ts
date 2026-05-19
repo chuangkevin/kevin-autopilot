@@ -94,7 +94,8 @@ export async function getDailyProblemDiscovery(
   }
 
   // Full path: collect signals, rebuild briefs, then generate or load today's pick.
-  const allCollected = [...(options.externalSignals ?? [])]
+  const kevinSignals = await collectKevinOwnedSignals(config, options.report, now)
+  const allCollected = [...kevinSignals, ...(options.externalSignals ?? [])]
   await upsertProblemSignals(config, allCollected)
   const [signals, existingBriefs, feedback] = await Promise.all([
     listProblemSignals(config),
