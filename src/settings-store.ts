@@ -19,6 +19,8 @@ export type SettingKey =
   | 'opencode_servers'
   | 'opencode_text_model'
   | 'opencode_vision_model'
+  | 'opencode_text_variant'
+  | 'opencode_vision_variant'
   | 'opencode_url' /* legacy, kept for back-compat with the v0.20.0 single-URL release */
   | 'opencode_server_password' /* legacy, kept for back-compat */
 

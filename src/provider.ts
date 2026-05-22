@@ -45,8 +45,30 @@ const ROUTE_POLICY: RoutePolicy = {
   allowSameProviderCredentialFallback: true,
 }
 
-export const DEFAULT_OPENCODE_TEXT_MODEL = 'google/gemini-2.5-flash'
-export const DEFAULT_OPENCODE_VISION_MODEL = 'google/gemini-2.5-flash'
+export const DEFAULT_OPENCODE_TEXT_MODEL = 'openai/gpt-5.5'
+export const DEFAULT_OPENCODE_VISION_MODEL = 'openai/gpt-5.5'
+export const DEFAULT_OPENCODE_TEXT_VARIANT = 'medium'
+export const DEFAULT_OPENCODE_VISION_VARIANT = 'medium'
+export const OPENCODE_VARIANTS = ['default', 'medium', 'high'] as const
+export type OpenCodeVariant = (typeof OPENCODE_VARIANTS)[number]
+
+function normalizeVariant(raw: string | null | undefined): OpenCodeVariant | null {
+  if (typeof raw !== 'string') return null
+  const trimmed = raw.trim()
+  return OPENCODE_VARIANTS.includes(trimmed as OpenCodeVariant) ? (trimmed as OpenCodeVariant) : null
+}
+
+export function getOpenCodeTextVariant(config: AutopilotConfig): OpenCodeVariant {
+  return normalizeVariant(getSetting(config, 'opencode_text_variant'))
+    ?? normalizeVariant(process.env.OPENCODE_TEXT_VARIANT)
+    ?? DEFAULT_OPENCODE_TEXT_VARIANT
+}
+
+export function getOpenCodeVisionVariant(config: AutopilotConfig): OpenCodeVariant {
+  return normalizeVariant(getSetting(config, 'opencode_vision_variant'))
+    ?? normalizeVariant(process.env.OPENCODE_VISION_VARIANT)
+    ?? DEFAULT_OPENCODE_VISION_VARIANT
+}
 
 export interface OpenCodeServer {
   id: string
@@ -149,6 +171,7 @@ function buildOpenCodeAdapters(config: AutopilotConfig): BuiltAdapter[] {
   const servers = getOpenCodeServers(config)
   if (servers.length === 0) return []
   const password = readOpenCodePassword()
+  const variant = getOpenCodeTextVariant(config)
   return servers.map((server) => ({
     server,
     adapter: new OpenCodeProviderAdapter(
@@ -162,6 +185,7 @@ function buildOpenCodeAdapters(config: AutopilotConfig): BuiltAdapter[] {
       {
         defaultModel: { providerID: 'google', id: 'gemini-2.5-flash' },
         basicAuth: !!password,
+        variant,
       },
     ),
   }))
@@ -182,7 +206,8 @@ function buildOpenCodeAdapters(config: AutopilotConfig): BuiltAdapter[] {
 export function getProvider(config: AutopilotConfig): MultiProviderClient {
   const servers = getOpenCodeServers(config)
   const password = readOpenCodePassword()
-  const signature = `${password}|${servers.map((s) => `${s.id}=${s.baseUrl}`).join('|')}|${config.dataDir}`
+  const variant = getOpenCodeTextVariant(config)
+  const signature = `${password}|${variant}|${servers.map((s) => `${s.id}=${s.baseUrl}`).join('|')}|${config.dataDir}`
   if (cachedClient && cachedSnapshot === signature) return cachedClient
 
   const adapters: ProviderAdapter[] = []

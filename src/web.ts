@@ -34,10 +34,14 @@ import { getSetting, setSetting } from './settings-store.js'
 import {
   getOpenCodeServers,
   getOpenCodeTextModel,
+  getOpenCodeTextVariant,
   getOpenCodeVisionModel,
+  getOpenCodeVisionVariant,
   invalidateProvider,
   listOpenCodeModels,
+  OPENCODE_VARIANTS,
   type OpenCodeServer,
+  type OpenCodeVariant,
 } from './provider.js'
 import { fetchExternalSignals } from './external-sources.js'
 import { appendConversationMessage, listConversationMessages } from './conversation.js'
@@ -313,7 +317,13 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
     // OpenCode settings are deployment-side configuration (server URLs +
     // model ids), not user secrets — no auth gate here. Server password
     // stays env-only via OPENCODE_SERVER_PASSWORD.
-    const body = JSON.parse(await readBody(request)) as { servers?: unknown; textModel?: unknown; visionModel?: unknown }
+    const body = JSON.parse(await readBody(request)) as {
+      servers?: unknown
+      textModel?: unknown
+      visionModel?: unknown
+      textVariant?: unknown
+      visionVariant?: unknown
+    }
     if (body.servers !== undefined) {
       const serialized = typeof body.servers === 'string' ? body.servers : JSON.stringify(body.servers)
       await setSetting(config, 'opencode_servers', serialized)
@@ -322,6 +332,14 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
     }
     if (typeof body.textModel === 'string') await setSetting(config, 'opencode_text_model', body.textModel)
     if (typeof body.visionModel === 'string') await setSetting(config, 'opencode_vision_model', body.visionModel)
+    if (typeof body.textVariant === 'string') {
+      const variant = OPENCODE_VARIANTS.includes(body.textVariant as OpenCodeVariant) ? body.textVariant : ''
+      await setSetting(config, 'opencode_text_variant', variant)
+    }
+    if (typeof body.visionVariant === 'string') {
+      const variant = OPENCODE_VARIANTS.includes(body.visionVariant as OpenCodeVariant) ? body.visionVariant : ''
+      await setSetting(config, 'opencode_vision_variant', variant)
+    }
     invalidateProvider()
     writeJson(response, { ok: true, status: getOpenCodeStatus(config) }, 201)
     return
@@ -331,6 +349,8 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
     await setSetting(config, 'opencode_servers', '')
     await setSetting(config, 'opencode_text_model', '')
     await setSetting(config, 'opencode_vision_model', '')
+    await setSetting(config, 'opencode_text_variant', '')
+    await setSetting(config, 'opencode_vision_variant', '')
     await setSetting(config, 'opencode_url', '')
     await setSetting(config, 'opencode_server_password', '')
     invalidateProvider()
@@ -3529,43 +3549,56 @@ function renderSettingsPage(config: AutopilotConfig, keyStatus: KeyStatusSummary
     setTimeout(() => location.reload(), 700);
   });
 
+  let opencodeAllModels = [];
+  function renderOpenCodeModelOptions(selectEl, search) {
+    const current = selectEl.value;
+    const defaultLabel = selectEl.querySelector('option[value=""]')?.textContent ?? '— 使用預設 —';
+    selectEl.innerHTML = '';
+    const def = document.createElement('option');
+    def.value = '';
+    def.textContent = defaultLabel;
+    selectEl.appendChild(def);
+    const q = (search ?? '').trim().toLowerCase();
+    const grouped = new Map();
+    for (const model of opencodeAllModels) {
+      if (q && !(model.id.toLowerCase().includes(q) || (model.name ?? '').toLowerCase().includes(q))) continue;
+      if (!grouped.has(model.provider)) grouped.set(model.provider, []);
+      grouped.get(model.provider).push(model);
+    }
+    const providers = Array.from(grouped.keys()).sort();
+    for (const provider of providers) {
+      const og = document.createElement('optgroup');
+      og.label = provider;
+      for (const model of grouped.get(provider)) {
+        const opt = document.createElement('option');
+        opt.value = model.id;
+        const tail = model.id.split('/').slice(1).join('/') || model.id;
+        opt.textContent = tail + (model.name && model.name !== tail ? ' — ' + model.name : '');
+        og.appendChild(opt);
+      }
+      selectEl.appendChild(og);
+    }
+    if (current && Array.from(selectEl.querySelectorAll('option')).some((o) => o.value === current)) {
+      selectEl.value = current;
+    }
+  }
   async function loadOpenCodeModels() {
     const status = document.getElementById('opencode-models-status');
     const textSelect = document.getElementById('opencode-text-model');
     const visionSelect = document.getElementById('opencode-vision-model');
+    const searchEl = document.getElementById('opencode-model-search');
     if (!textSelect || !visionSelect) return;
     if (status) status.textContent = '載入中…';
     try {
       const response = await fetch('/api/settings/opencode/models');
       const data = await response.json();
-      const models = Array.isArray(data.models) ? data.models : [];
-      const textCurrent = textSelect.value;
-      const visionCurrent = visionSelect.value;
-      const textDefaultLabel = textSelect.querySelector('option[value=""]')?.textContent ?? '— 使用預設 —';
-      const visionDefaultLabel = visionSelect.querySelector('option[value=""]')?.textContent ?? '— 使用預設 —';
-      const defaultOption = (label) => {
-        const opt = document.createElement('option');
-        opt.value = '';
-        opt.textContent = label;
-        return opt;
-      };
-      textSelect.innerHTML = '';
-      visionSelect.innerHTML = '';
-      textSelect.appendChild(defaultOption(textDefaultLabel));
-      visionSelect.appendChild(defaultOption(visionDefaultLabel));
-      for (const model of models) {
-        const textOpt = document.createElement('option');
-        textOpt.value = model.id;
-        textOpt.textContent = model.id + (model.name && !model.id.endsWith('/' + model.name) ? ' — ' + model.name : '');
-        textSelect.appendChild(textOpt);
-        const visionOpt = textOpt.cloneNode(true);
-        visionSelect.appendChild(visionOpt);
-      }
-      if (textCurrent && Array.from(textSelect.options).some((o) => o.value === textCurrent)) textSelect.value = textCurrent;
-      if (visionCurrent && Array.from(visionSelect.options).some((o) => o.value === visionCurrent)) visionSelect.value = visionCurrent;
+      opencodeAllModels = Array.isArray(data.models) ? data.models : [];
+      const q = searchEl ? searchEl.value : '';
+      renderOpenCodeModelOptions(textSelect, q);
+      renderOpenCodeModelOptions(visionSelect, q);
       if (status) {
-        if (models.length > 0) {
-          status.textContent = '從 ' + (data.sourceServerId ?? 'server') + ' 載入 ' + models.length + ' 個 model';
+        if (opencodeAllModels.length > 0) {
+          status.textContent = '從 ' + (data.sourceServerId ?? 'server') + ' 載入 ' + opencodeAllModels.length + ' 個 model';
         } else {
           status.textContent = data.warning ?? '無 model';
         }
@@ -3583,12 +3616,16 @@ function renderSettingsPage(config: AutopilotConfig, keyStatus: KeyStatusSummary
       const serversEl = document.getElementById('opencode-servers');
       const textModelEl = document.getElementById('opencode-text-model');
       const visionModelEl = document.getElementById('opencode-vision-model');
+      const textVariantEl = document.getElementById('opencode-text-variant');
+      const visionVariantEl = document.getElementById('opencode-vision-variant');
       const result = document.getElementById('opencode-result');
       if (!result) return;
       const body = {
         servers: serversEl ? serversEl.value : '',
         textModel: textModelEl ? textModelEl.value.trim() : '',
-        visionModel: visionModelEl ? visionModelEl.value.trim() : ''
+        visionModel: visionModelEl ? visionModelEl.value.trim() : '',
+        textVariant: textVariantEl ? textVariantEl.value : '',
+        visionVariant: visionVariantEl ? visionVariantEl.value : ''
       };
       result.textContent = '儲存中...';
       const response = await fetch('/api/settings/opencode', {
@@ -3606,6 +3643,15 @@ function renderSettingsPage(config: AutopilotConfig, keyStatus: KeyStatusSummary
   }
   const opencodeReload = document.getElementById('opencode-reload-models');
   if (opencodeReload) opencodeReload.addEventListener('click', loadOpenCodeModels);
+  const opencodeSearch = document.getElementById('opencode-model-search');
+  if (opencodeSearch) {
+    opencodeSearch.addEventListener('input', () => {
+      const textSelect = document.getElementById('opencode-text-model');
+      const visionSelect = document.getElementById('opencode-vision-model');
+      if (textSelect) renderOpenCodeModelOptions(textSelect, opencodeSearch.value);
+      if (visionSelect) renderOpenCodeModelOptions(visionSelect, opencodeSearch.value);
+    });
+  }
   const opencodeClear = document.getElementById('opencode-clear');
   if (opencodeClear) {
     opencodeClear.addEventListener('click', async () => {
@@ -3711,6 +3757,10 @@ interface OpenCodeStatus {
   textModelSource: SettingSource
   visionModel: string
   visionModelSource: SettingSource
+  textVariant: OpenCodeVariant
+  textVariantSource: SettingSource
+  visionVariant: OpenCodeVariant
+  visionVariantSource: SettingSource
 }
 
 function getOpenCodeStatus(config: AutopilotConfig): OpenCodeStatus {
@@ -3732,7 +3782,23 @@ function getOpenCodeStatus(config: AutopilotConfig): OpenCodeStatus {
   const visionModel = getOpenCodeVisionModel(config)
   const visionModelSource: SettingSource = visionFromSetting ? 'setting' : visionFromEnv ? 'env' : 'default'
 
-  return { servers, serversSource, textModel, textModelSource, visionModel, visionModelSource }
+  const textVariantFromSetting = getSetting(config, 'opencode_text_variant')
+  const textVariantFromEnv = process.env.OPENCODE_TEXT_VARIANT?.trim() || ''
+  const textVariant = getOpenCodeTextVariant(config)
+  const textVariantSource: SettingSource = textVariantFromSetting ? 'setting' : textVariantFromEnv ? 'env' : 'default'
+
+  const visionVariantFromSetting = getSetting(config, 'opencode_vision_variant')
+  const visionVariantFromEnv = process.env.OPENCODE_VISION_VARIANT?.trim() || ''
+  const visionVariant = getOpenCodeVisionVariant(config)
+  const visionVariantSource: SettingSource = visionVariantFromSetting ? 'setting' : visionVariantFromEnv ? 'env' : 'default'
+
+  return {
+    servers, serversSource,
+    textModel, textModelSource,
+    visionModel, visionModelSource,
+    textVariant, textVariantSource,
+    visionVariant, visionVariantSource,
+  }
 }
 
 function parseOpenCodeServersForUi(raw: string | null): OpenCodeServer[] {
@@ -3777,32 +3843,63 @@ function renderOpenCodeSection(status: OpenCodeStatus): string {
     : ''
   const textSelected = status.textModelSource === 'setting' ? status.textModel : ''
   const visionSelected = status.visionModelSource === 'setting' ? status.visionModel : ''
-  // The dropdown starts with the current effective model as the only option
-  // so the page is usable even before the /models fetch lands. Client JS
-  // (loadOpenCodeModels) repopulates both selects when the model list
-  // returns from /api/settings/opencode/models.
+  const textVariantSelected = status.textVariantSource === 'setting' ? status.textVariant : ''
+  const visionVariantSelected = status.visionVariantSource === 'setting' ? status.visionVariant : ''
+  // Each <select> opens with the current effective default and the currently
+  // selected DB value (if any) as the only options; loadOpenCodeModels()
+  // repopulates the two model dropdowns with provider-grouped <optgroup>s
+  // once GET /api/settings/opencode/models returns.
   const initialTextOptions = `<option value="">— 使用預設（${escapeHtml(status.textModel)}）—</option>${textSelected ? `<option value="${escapeHtml(textSelected)}" selected>${escapeHtml(textSelected)}</option>` : ''}`
   const initialVisionOptions = `<option value="">— 使用預設（${escapeHtml(status.visionModel)}）—</option>${visionSelected ? `<option value="${escapeHtml(visionSelected)}" selected>${escapeHtml(visionSelected)}</option>` : ''}`
+  const variantOptionsFor = (selected: string, fallback: OpenCodeVariant) => {
+    const opts: string[] = [`<option value="">— 使用預設（${escapeHtml(fallback)}）—</option>`]
+    for (const v of OPENCODE_VARIANTS) {
+      const isSel = selected === v ? ' selected' : ''
+      opts.push(`<option value="${escapeHtml(v)}"${isSel}>${escapeHtml(v)}</option>`)
+    }
+    return opts.join('')
+  }
   return `<section>
     <h2>OpenCode Provider</h2>
-    <p class="muted">AI 文字呼叫優先走 OpenCode，逐個 server 嘗試直到成功；全部失敗才 fallback 到 Gemini key pool。DB 設定優先於 env（<code>OPENCODE_SERVERS</code> / <code>OPENCODE_URL</code> / <code>OPENCODE_MODEL</code> / <code>OPENCODE_VISION_MODEL</code>）。canonical 部署為 no-auth；server 密碼由 env <code>OPENCODE_SERVER_PASSWORD</code> 控制。</p>
-    <p class="muted">目前 server 數：${status.servers.length}（來源：${escapeHtml(describeSettingSource(status.serversSource))}） · Text 模型：<code>${escapeHtml(status.textModel)}</code>（${escapeHtml(describeSettingSource(status.textModelSource))}） · Vision 模型：<code>${escapeHtml(status.visionModel)}</code>（${escapeHtml(describeSettingSource(status.visionModelSource))}）</p>
+    <p class="muted">AI 文字呼叫優先走 OpenCode，逐個 server 嘗試直到成功；全部失敗才 fallback 到 Gemini key pool。DB 設定優先於 env。Server 密碼由 env <code>OPENCODE_SERVER_PASSWORD</code> 控制。預設 model = <code>openai/gpt-5.5</code> · variant = <code>medium</code>。</p>
+    <p class="muted">Server 數：${status.servers.length}（${escapeRef(status.serversSource)}）· Text: <code>${escapeHtml(status.textModel)}</code> (${escapeHtml(status.textVariant)}) · Vision: <code>${escapeHtml(status.visionModel)}</code> (${escapeHtml(status.visionVariant)})</p>
     <form id="opencode-form">
       <label style="display: block; color: #cbd5e1; margin: 12px 0 4px; font-size: 15px;">OpenCode Servers（一行一個 URL）</label>
       <textarea id="opencode-servers" placeholder="https://provider-amd.sisihome.org&#10;https://provider-amd2.sisihome.org" style="${SETTINGS_INPUT_STYLE} min-height: 120px;">${escapeHtml(serversTextareaValue)}</textarea>
-      <div style="display: flex; align-items: center; gap: 10px; margin-top: 12px;">
+      <div style="display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap;">
         <label style="color: #cbd5e1; font-size: 15px;">Model 列表</label>
         <button id="opencode-reload-models" type="button" class="secondary">重新整理</button>
         <span id="opencode-models-status" class="muted" style="font-size: 14px;"></span>
       </div>
-      <label style="display: block; color: #cbd5e1; margin: 12px 0 4px; font-size: 15px;">Text Model</label>
-      <select id="opencode-text-model" style="${SETTINGS_INPUT_STYLE}">${initialTextOptions}</select>
-      <label style="display: block; color: #cbd5e1; margin: 12px 0 4px; font-size: 15px;">Vision Model</label>
-      <select id="opencode-vision-model" style="${SETTINGS_INPUT_STYLE}">${initialVisionOptions}</select>
-      <button type="submit">儲存到 DB</button><button id="opencode-clear" class="secondary" type="button">清除 DB 設定</button>
+      <input id="opencode-model-search" type="search" placeholder="搜尋 model id 或名稱…" autocomplete="off" style="margin-top: 8px; ${SETTINGS_INPUT_STYLE} padding: 10px;">
+      <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-top: 12px;">
+        <div>
+          <label style="display: block; color: #cbd5e1; margin: 0 0 4px; font-size: 15px;">Text Model</label>
+          <select id="opencode-text-model" style="${SETTINGS_INPUT_STYLE}">${initialTextOptions}</select>
+        </div>
+        <div>
+          <label style="display: block; color: #cbd5e1; margin: 0 0 4px; font-size: 15px;">Text Variant</label>
+          <select id="opencode-text-variant" style="${SETTINGS_INPUT_STYLE}">${variantOptionsFor(textVariantSelected, status.textVariant)}</select>
+        </div>
+        <div>
+          <label style="display: block; color: #cbd5e1; margin: 0 0 4px; font-size: 15px;">Vision Model</label>
+          <select id="opencode-vision-model" style="${SETTINGS_INPUT_STYLE}">${initialVisionOptions}</select>
+        </div>
+        <div>
+          <label style="display: block; color: #cbd5e1; margin: 0 0 4px; font-size: 15px;">Vision Variant</label>
+          <select id="opencode-vision-variant" style="${SETTINGS_INPUT_STYLE}">${variantOptionsFor(visionVariantSelected, status.visionVariant)}</select>
+        </div>
+      </div>
+      <div style="margin-top: 12px;">
+        <button type="submit">儲存到 DB</button><button id="opencode-clear" class="secondary" type="button">清除 DB 設定</button>
+      </div>
     </form>
     <div id="opencode-result" class="muted"></div>
   </section>`
+}
+
+function escapeRef(source: SettingSource): string {
+  return escapeHtml(describeSettingSource(source))
 }
 
 function renderKeySection(keyStatus: KeyStatusSummary): string {
