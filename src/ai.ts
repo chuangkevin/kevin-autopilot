@@ -1,5 +1,5 @@
-import { GeminiClient, KeyPool } from '@kevinsisi/ai-core'
-import { FileKeyStorageAdapter, hasGeminiKeys } from './keys.js'
+import { hasGeminiKeys } from './keys.js'
+import { getProvider, hasOpenCodeEnv } from './provider.js'
 import type { AutopilotConfig, IdeaClassification, IdeaRecord } from './types.js'
 
 export interface IdeaAnalysisResult {
@@ -11,7 +11,12 @@ export interface IdeaAnalysisResult {
 }
 
 export async function isAiThinkingAvailable(config: AutopilotConfig): Promise<boolean> {
-  return Boolean(config.ai?.enabled && config.ai.provider === 'gemini' && (await hasGeminiKeys(config)))
+  // OpenCode-primary: any of (OpenCode configured) OR (Gemini key in pool)
+  // makes the AI route reachable. We deliberately accept either path; the
+  // MultiProviderClient handles the routing.
+  if (!config.ai?.enabled) return false
+  if (hasOpenCodeEnv()) return true
+  return hasGeminiKeys(config)
 }
 
 export async function analyzeIdeaWithAiCore(config: AutopilotConfig, rawText: string): Promise<IdeaAnalysisResult> {
@@ -19,7 +24,7 @@ export async function analyzeIdeaWithAiCore(config: AutopilotConfig, rawText: st
     throw new Error('AI thinking is disabled or no Gemini API key is configured')
   }
 
-  const client = new GeminiClient(new KeyPool(new FileKeyStorageAdapter(config)), { maxRetries: 2 })
+  const client = getProvider(config)
   const response = await withTimeout(
     client.generateContent({
       model: config.ai.model,

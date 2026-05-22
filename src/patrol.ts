@@ -1,5 +1,5 @@
-import { GeminiClient, KeyPool } from '@kevinsisi/ai-core'
-import { FileKeyStorageAdapter, hasGeminiKeys } from './keys.js'
+import { hasGeminiKeys } from './keys.js'
+import { getProvider, hasOpenCodeEnv } from './provider.js'
 import { buildPersonaPrefix } from './persona.js'
 import { listConversationMessages } from './conversation.js'
 import type { AutopilotConfig, ConversationMessage, ProblemBrief } from './types.js'
@@ -76,9 +76,11 @@ function formatHistory(msgs: ConversationMessage[]): string {
 }
 
 async function callGeminiWithTimeout(config: AutopilotConfig, systemInstruction: string, prompt: string): Promise<string> {
-  if (!config.ai?.enabled || config.ai.provider !== 'gemini') throw new Error('patrol: AI not configured')
-  if (!(await hasGeminiKeys(config))) throw new Error('patrol: no Gemini key available')
-  const client = new GeminiClient(new KeyPool(new FileKeyStorageAdapter(config)), { maxRetries: 2 })
+  if (!config.ai?.enabled) throw new Error('patrol: AI not configured')
+  // OpenCode-primary: either OpenCode is configured OR a Gemini key is in
+  // the pool. The MultiProviderClient routes accordingly.
+  if (!hasOpenCodeEnv() && !(await hasGeminiKeys(config))) throw new Error('patrol: no AI provider available (OpenCode unconfigured and Gemini key pool empty)')
+  const client = getProvider(config)
   const result = await Promise.race([
     client.generateContent({ model: config.ai.model, maxOutputTokens: MAX_OUTPUT_TOKENS, systemInstruction, prompt }),
     new Promise<never>((_, reject) => setTimeout(() => reject(new Error('patrol: timeout')), TIMEOUT_MS)),

@@ -182,6 +182,12 @@ async function validateImportedKeys(config: AutopilotConfig, keys: string[]): Pr
 }
 
 async function validateGeminiKey(config: AutopilotConfig, key: string): Promise<boolean> {
+  // Validates a user-supplied specific Gemini key by hitting Gemini directly.
+  // Intentionally does NOT route through provider.ts/MultiProviderClient — the
+  // OpenCode-primary route or any cross-provider fallback would silently mask
+  // an invalid key (the request would still succeed via a different
+  // provider). Same exception as project-bridge settings.ts and mind-diary
+  // settings/key-validation paths.
   if (!config.ai) return true
   const client = new GeminiClient(new KeyPool(new SingleKeyStorageAdapter(key)), { maxRetries: 0 })
   try {
