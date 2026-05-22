@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
-    "@kevinsisi/ai-core": "github:kevinsisi/ai-core#v3.4.1"
+    "@kevinsisi/ai-core": "github:kevinsisi/ai-core#v3.4.2"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
