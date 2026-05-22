@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { listBacklog, openBacklogDatabase } from './backlog.js'
 import { listIdeas } from './ideas.js'
@@ -97,6 +97,7 @@ export async function getDailyProblemDiscovery(
   const kevinSignals = await collectKevinOwnedSignals(config, options.report, now)
   const allCollected = [...kevinSignals, ...(options.externalSignals ?? [])]
   await upsertProblemSignals(config, allCollected)
+  await pruneStaleInternalSignals(config, new Set(allCollected.map((s) => s.id)))
   const [signals, existingBriefs, feedback] = await Promise.all([
     listProblemSignals(config),
     listProblemBriefs(config),
@@ -184,6 +185,17 @@ export async function upsertProblemSignals(config: AutopilotConfig, signals: Pro
   return written
 }
 
+async function pruneStaleInternalSignals(config: AutopilotConfig, freshIds: Set<string>): Promise<void> {
+  const dir = problemSignalsDir(config)
+  const all = await listProblemSignals(config)
+  const stale = all.filter(
+    (s) =>
+      (s.sourceName.startsWith('idea:') || s.sourceName.startsWith('supplement:') || s.sourceName.startsWith('backlog:')) &&
+      !freshIds.has(s.id),
+  )
+  await Promise.all(stale.map((s) => unlink(join(dir, `${s.id}.json`)).catch(() => undefined)))
+}
+
 export function createProblemSignal(input: {
   sourceType: ProblemSignalSourceType
   sourceName: string
@@ -211,20 +223,26 @@ export function createProblemSignal(input: {
   }
 }
 
+const BRIEF_EXPIRY_MS = 14 * 24 * 60 * 60 * 1000
+
 export function buildProblemBriefs(signals: ProblemSignal[], existingBriefs: ProblemBrief[] = [], now: Date = new Date()): ProblemBrief[] {
   const byKey = new Map<string, ProblemBrief>()
   for (const brief of existingBriefs) {
     if (!isRejectedStoredProblemBrief(brief)) byKey.set(brief.dedupKey, brief)
   }
 
+  const touchedKeys = new Set<string>()
   for (const signal of signals) {
     const pattern = extractProblemPattern(signal)
     if (!pattern) continue
     const existing = byKey.get(pattern.key)
     byKey.set(pattern.key, buildProblemBrief(pattern, signal, existing, now))
+    touchedKeys.add(pattern.key)
   }
 
-  return [...byKey.values()].sort((a, b) => b.score - a.score || b.updatedAt.localeCompare(a.updatedAt))
+  return [...byKey.values()]
+    .filter((brief) => touchedKeys.has(brief.dedupKey) || now.getTime() - new Date(brief.updatedAt).getTime() < BRIEF_EXPIRY_MS)
+    .sort((a, b) => b.score - a.score || b.updatedAt.localeCompare(a.updatedAt))
 }
 
 export function generateDailyProblemPick(date: string, briefs: ProblemBrief[], now: Date = new Date(), evaluations: ProblemCandidateEvaluation[] = []): DailyProblemPick {
