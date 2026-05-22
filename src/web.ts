@@ -31,7 +31,13 @@ import {
 } from './idea-graph.js'
 import { clearStoredGeminiKeys, getKeyStatus, importGeminiKeys } from './keys.js'
 import { getSetting, setSetting } from './settings-store.js'
-import { invalidateProvider } from './provider.js'
+import {
+  getOpenCodeServers,
+  getOpenCodeTextModel,
+  getOpenCodeVisionModel,
+  invalidateProvider,
+  type OpenCodeServer,
+} from './provider.js'
 import { fetchExternalSignals } from './external-sources.js'
 import { appendConversationMessage, listConversationMessages } from './conversation.js'
 import { replyAsPatrol } from './patrol.js'
@@ -303,23 +309,27 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
   }
 
   if (url.pathname === '/api/settings/opencode' && request.method === 'POST') {
-    if (!isTrustedSettingsRequest(request)) {
-      writeText(response, 'Settings writes require loopback, private LAN, Docker, or Tailscale access', 403)
-      return
+    // OpenCode settings are deployment-side configuration (server URLs +
+    // model ids), not user secrets — no auth gate here. Server password
+    // stays env-only via OPENCODE_SERVER_PASSWORD.
+    const body = JSON.parse(await readBody(request)) as { servers?: unknown; textModel?: unknown; visionModel?: unknown }
+    if (body.servers !== undefined) {
+      const serialized = typeof body.servers === 'string' ? body.servers : JSON.stringify(body.servers)
+      await setSetting(config, 'opencode_servers', serialized)
+      // Clear the legacy single-URL setting so it doesn't shadow the new one.
+      await setSetting(config, 'opencode_url', '')
     }
-    const body = JSON.parse(await readBody(request)) as { url?: unknown; password?: unknown }
-    if (typeof body.url === 'string') await setSetting(config, 'opencode_url', body.url)
-    if (typeof body.password === 'string') await setSetting(config, 'opencode_server_password', body.password)
+    if (typeof body.textModel === 'string') await setSetting(config, 'opencode_text_model', body.textModel)
+    if (typeof body.visionModel === 'string') await setSetting(config, 'opencode_vision_model', body.visionModel)
     invalidateProvider()
     writeJson(response, { ok: true, status: getOpenCodeStatus(config) }, 201)
     return
   }
 
   if (url.pathname === '/api/settings/opencode' && request.method === 'DELETE') {
-    if (!isTrustedSettingsRequest(request)) {
-      writeText(response, 'Settings writes require loopback, private LAN, Docker, or Tailscale access', 403)
-      return
-    }
+    await setSetting(config, 'opencode_servers', '')
+    await setSetting(config, 'opencode_text_model', '')
+    await setSetting(config, 'opencode_vision_model', '')
     await setSetting(config, 'opencode_url', '')
     await setSetting(config, 'opencode_server_password', '')
     invalidateProvider()
@@ -3517,14 +3527,21 @@ function renderSettingsPage(config: AutopilotConfig, keyStatus: KeyStatusSummary
   if (opencodeForm) {
     opencodeForm.addEventListener('submit', async (event) => {
       event.preventDefault();
-      const url = document.getElementById('opencode-url').value.trim();
-      const password = document.getElementById('opencode-password').value;
+      const serversEl = document.getElementById('opencode-servers');
+      const textModelEl = document.getElementById('opencode-text-model');
+      const visionModelEl = document.getElementById('opencode-vision-model');
       const result = document.getElementById('opencode-result');
+      if (!result) return;
+      const body = {
+        servers: serversEl ? serversEl.value : '',
+        textModel: textModelEl ? textModelEl.value.trim() : '',
+        visionModel: visionModelEl ? visionModelEl.value.trim() : ''
+      };
       result.textContent = '儲存中...';
       const response = await fetch('/api/settings/opencode', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ url, password })
+        body: JSON.stringify(body)
       });
       if (!response.ok) {
         result.textContent = await response.text();
@@ -3538,6 +3555,7 @@ function renderSettingsPage(config: AutopilotConfig, keyStatus: KeyStatusSummary
   if (opencodeClear) {
     opencodeClear.addEventListener('click', async () => {
       const result = document.getElementById('opencode-result');
+      if (!result) return;
       result.textContent = '清除 DB 設定中...';
       const response = await fetch('/api/settings/opencode', { method: 'DELETE' });
       if (!response.ok) {
@@ -3629,40 +3647,92 @@ function renderSettingsPage(config: AutopilotConfig, keyStatus: KeyStatusSummary
 </html>`
 }
 
+type SettingSource = 'setting' | 'env' | 'default' | 'none'
+
 interface OpenCodeStatus {
-  url: string
-  source: 'setting' | 'env' | 'none'
-  envUrl: string
-  passwordConfigured: boolean
-  passwordSource: 'setting' | 'env' | 'none'
+  servers: OpenCodeServer[]
+  serversSource: SettingSource
+  textModel: string
+  textModelSource: SettingSource
+  visionModel: string
+  visionModelSource: SettingSource
 }
 
 function getOpenCodeStatus(config: AutopilotConfig): OpenCodeStatus {
-  const fromSetting = getSetting(config, 'opencode_url') ?? ''
-  const envUrl = (process.env.OPENCODE_URL ?? process.env.OPENCODE_BASE_URL ?? '').trim().replace(/\/+$/, '')
-  const url = fromSetting || envUrl
-  const source: 'setting' | 'env' | 'none' = fromSetting ? 'setting' : envUrl ? 'env' : 'none'
-  const passwordFromSetting = getSetting(config, 'opencode_server_password')
-  const envPassword = process.env.OPENCODE_SERVER_PASSWORD ?? ''
-  const passwordConfigured = !!(passwordFromSetting || envPassword)
-  const passwordSource: 'setting' | 'env' | 'none' = passwordFromSetting ? 'setting' : envPassword ? 'env' : 'none'
-  return { url, source, envUrl, passwordConfigured, passwordSource }
+  const dbServersRaw = getSetting(config, 'opencode_servers')
+  const dbServers = parseOpenCodeServersForUi(dbServersRaw)
+  const servers = getOpenCodeServers(config)
+  let serversSource: SettingSource = 'none'
+  if (dbServers.length > 0) serversSource = 'setting'
+  else if (getSetting(config, 'opencode_url')) serversSource = 'setting' /* legacy single-URL */
+  else if (servers.length > 0) serversSource = 'env'
+
+  const textFromSetting = getSetting(config, 'opencode_text_model')
+  const textFromEnv = process.env.OPENCODE_MODEL?.trim() || ''
+  const textModel = getOpenCodeTextModel(config)
+  const textModelSource: SettingSource = textFromSetting ? 'setting' : textFromEnv ? 'env' : 'default'
+
+  const visionFromSetting = getSetting(config, 'opencode_vision_model')
+  const visionFromEnv = process.env.OPENCODE_VISION_MODEL?.trim() || ''
+  const visionModel = getOpenCodeVisionModel(config)
+  const visionModelSource: SettingSource = visionFromSetting ? 'setting' : visionFromEnv ? 'env' : 'default'
+
+  return { servers, serversSource, textModel, textModelSource, visionModel, visionModelSource }
 }
 
-function describeSettingSource(source: 'setting' | 'env' | 'none'): string {
-  return source === 'setting' ? 'DB 設定' : source === 'env' ? '環境變數' : '未設定'
+function parseOpenCodeServersForUi(raw: string | null): OpenCodeServer[] {
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) {
+      return parsed
+        .map((item, index) => {
+          if (!item || typeof item !== 'object') return null
+          const record = item as Record<string, unknown>
+          const baseUrl = String(record.baseUrl ?? record.url ?? '').trim().replace(/\/+$/, '')
+          if (!baseUrl) return null
+          const id = String(record.id ?? '').trim() || `opencode-${index + 1}`
+          const label = String(record.label ?? '').trim() || `OpenCode ${index + 1}`
+          return { id, label, baseUrl } satisfies OpenCodeServer
+        })
+        .filter((server): server is OpenCodeServer => Boolean(server))
+    }
+  } catch {
+    /* fall through */
+  }
+  return raw
+    .split(/[\n,]+/)
+    .map((url, index) => {
+      const trimmed = url.trim().replace(/\/+$/, '')
+      if (!trimmed) return null
+      return { id: `opencode-${index + 1}`, label: `OpenCode ${index + 1}`, baseUrl: trimmed } satisfies OpenCodeServer
+    })
+    .filter((server): server is OpenCodeServer => Boolean(server))
+}
+
+function describeSettingSource(source: SettingSource): string {
+  return source === 'setting' ? 'DB 設定' : source === 'env' ? '環境變數' : source === 'default' ? '預設值' : '未設定'
 }
 
 const SETTINGS_INPUT_STYLE = 'width: 100%; box-sizing: border-box; border-radius: 14px; border: 1px solid rgba(148,163,184,0.28); background: rgba(15,23,42,0.86); color: #e5eefc; padding: 14px; font: inherit; font-size: 16px; line-height: 1.5;'
 
 function renderOpenCodeSection(status: OpenCodeStatus): string {
+  const serversTextareaValue = status.serversSource === 'setting'
+    ? status.servers.map((s) => s.baseUrl).join('\n')
+    : ''
+  const textInputValue = status.textModelSource === 'setting' ? status.textModel : ''
+  const visionInputValue = status.visionModelSource === 'setting' ? status.visionModel : ''
   return `<section>
-    <h2>OpenCode Endpoint</h2>
-    <p class="muted">AI 文字呼叫優先走 OpenCode，失敗才 fallback 到 Gemini key pool。DB 設定值優先於環境變數 (<code>OPENCODE_URL</code> / <code>OPENCODE_BASE_URL</code>)。canonical 部署 (<code>provider-amd.sisihome.org</code>) 為 no-auth，密碼留空即可。</p>
-    <p class="muted">目前 URL：<code>${escapeHtml(status.url || '(未設定)')}</code> · 來源：${escapeHtml(describeSettingSource(status.source))} · 密碼：${status.passwordConfigured ? '已設定' : '未設定'} (${escapeHtml(describeSettingSource(status.passwordSource))})</p>
+    <h2>OpenCode Provider</h2>
+    <p class="muted">AI 文字呼叫優先走 OpenCode，逐個 server 嘗試直到成功；全部失敗才 fallback 到 Gemini key pool。DB 設定優先於 env（<code>OPENCODE_SERVERS</code> / <code>OPENCODE_URL</code> / <code>OPENCODE_MODEL</code> / <code>OPENCODE_VISION_MODEL</code>）。canonical 部署為 no-auth；server 密碼由 env <code>OPENCODE_SERVER_PASSWORD</code> 控制。</p>
+    <p class="muted">目前 server 數：${status.servers.length}（來源：${escapeHtml(describeSettingSource(status.serversSource))}） · Text 模型：<code>${escapeHtml(status.textModel)}</code>（${escapeHtml(describeSettingSource(status.textModelSource))}） · Vision 模型：<code>${escapeHtml(status.visionModel)}</code>（${escapeHtml(describeSettingSource(status.visionModelSource))}）</p>
     <form id="opencode-form">
-      <input id="opencode-url" type="url" placeholder="https://provider-amd.sisihome.org" value="${escapeHtml(status.source === 'setting' ? status.url : '')}" style="${SETTINGS_INPUT_STYLE}">
-      <input id="opencode-password" type="password" placeholder="可選：OpenCode server password" autocomplete="off" style="margin-top: 10px; ${SETTINGS_INPUT_STYLE}">
+      <label style="display: block; color: #cbd5e1; margin: 12px 0 4px; font-size: 15px;">OpenCode Servers（一行一個 URL）</label>
+      <textarea id="opencode-servers" placeholder="https://provider-amd.sisihome.org&#10;https://provider-amd2.sisihome.org" style="${SETTINGS_INPUT_STYLE} min-height: 120px;">${escapeHtml(serversTextareaValue)}</textarea>
+      <label style="display: block; color: #cbd5e1; margin: 12px 0 4px; font-size: 15px;">Text Model</label>
+      <input id="opencode-text-model" type="text" placeholder="google/gemini-2.5-flash" value="${escapeHtml(textInputValue)}" style="${SETTINGS_INPUT_STYLE}">
+      <label style="display: block; color: #cbd5e1; margin: 12px 0 4px; font-size: 15px;">Vision Model</label>
+      <input id="opencode-vision-model" type="text" placeholder="google/gemini-2.5-flash" value="${escapeHtml(visionInputValue)}" style="${SETTINGS_INPUT_STYLE}">
       <button type="submit">儲存到 DB</button><button id="opencode-clear" class="secondary" type="button">清除 DB 設定</button>
     </form>
     <div id="opencode-result" class="muted"></div>

@@ -15,7 +15,12 @@ import { mkdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import type { AutopilotConfig } from './types.js'
 
-export type SettingKey = 'opencode_url' | 'opencode_server_password'
+export type SettingKey =
+  | 'opencode_servers'
+  | 'opencode_text_model'
+  | 'opencode_vision_model'
+  | 'opencode_url' /* legacy, kept for back-compat with the v0.20.0 single-URL release */
+  | 'opencode_server_password' /* legacy, kept for back-compat */
 
 let writeQueue: Promise<unknown> = Promise.resolve()
 
