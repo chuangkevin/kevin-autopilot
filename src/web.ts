@@ -36,6 +36,7 @@ import {
   getOpenCodeTextModel,
   getOpenCodeVisionModel,
   invalidateProvider,
+  listOpenCodeModels,
   type OpenCodeServer,
 } from './provider.js'
 import { fetchExternalSignals } from './external-sources.js'
@@ -334,6 +335,11 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
     await setSetting(config, 'opencode_server_password', '')
     invalidateProvider()
     writeJson(response, { ok: true, status: getOpenCodeStatus(config) })
+    return
+  }
+
+  if (url.pathname === '/api/settings/opencode/models' && request.method === 'GET') {
+    writeJson(response, await listOpenCodeModels(config))
     return
   }
 
@@ -3523,8 +3529,55 @@ function renderSettingsPage(config: AutopilotConfig, keyStatus: KeyStatusSummary
     setTimeout(() => location.reload(), 700);
   });
 
+  async function loadOpenCodeModels() {
+    const status = document.getElementById('opencode-models-status');
+    const textSelect = document.getElementById('opencode-text-model');
+    const visionSelect = document.getElementById('opencode-vision-model');
+    if (!textSelect || !visionSelect) return;
+    if (status) status.textContent = '載入中…';
+    try {
+      const response = await fetch('/api/settings/opencode/models');
+      const data = await response.json();
+      const models = Array.isArray(data.models) ? data.models : [];
+      const textCurrent = textSelect.value;
+      const visionCurrent = visionSelect.value;
+      const textDefaultLabel = textSelect.querySelector('option[value=""]')?.textContent ?? '— 使用預設 —';
+      const visionDefaultLabel = visionSelect.querySelector('option[value=""]')?.textContent ?? '— 使用預設 —';
+      const defaultOption = (label) => {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = label;
+        return opt;
+      };
+      textSelect.innerHTML = '';
+      visionSelect.innerHTML = '';
+      textSelect.appendChild(defaultOption(textDefaultLabel));
+      visionSelect.appendChild(defaultOption(visionDefaultLabel));
+      for (const model of models) {
+        const textOpt = document.createElement('option');
+        textOpt.value = model.id;
+        textOpt.textContent = model.id + (model.name && !model.id.endsWith('/' + model.name) ? ' — ' + model.name : '');
+        textSelect.appendChild(textOpt);
+        const visionOpt = textOpt.cloneNode(true);
+        visionSelect.appendChild(visionOpt);
+      }
+      if (textCurrent && Array.from(textSelect.options).some((o) => o.value === textCurrent)) textSelect.value = textCurrent;
+      if (visionCurrent && Array.from(visionSelect.options).some((o) => o.value === visionCurrent)) visionSelect.value = visionCurrent;
+      if (status) {
+        if (models.length > 0) {
+          status.textContent = '從 ' + (data.sourceServerId ?? 'server') + ' 載入 ' + models.length + ' 個 model';
+        } else {
+          status.textContent = data.warning ?? '無 model';
+        }
+      }
+    } catch (err) {
+      if (status) status.textContent = '載入失敗：' + (err && err.message ? err.message : String(err));
+    }
+  }
+
   const opencodeForm = document.getElementById('opencode-form');
   if (opencodeForm) {
+    void loadOpenCodeModels();
     opencodeForm.addEventListener('submit', async (event) => {
       event.preventDefault();
       const serversEl = document.getElementById('opencode-servers');
@@ -3551,6 +3604,8 @@ function renderSettingsPage(config: AutopilotConfig, keyStatus: KeyStatusSummary
       setTimeout(() => location.reload(), 700);
     });
   }
+  const opencodeReload = document.getElementById('opencode-reload-models');
+  if (opencodeReload) opencodeReload.addEventListener('click', loadOpenCodeModels);
   const opencodeClear = document.getElementById('opencode-clear');
   if (opencodeClear) {
     opencodeClear.addEventListener('click', async () => {
@@ -3720,8 +3775,14 @@ function renderOpenCodeSection(status: OpenCodeStatus): string {
   const serversTextareaValue = status.serversSource === 'setting'
     ? status.servers.map((s) => s.baseUrl).join('\n')
     : ''
-  const textInputValue = status.textModelSource === 'setting' ? status.textModel : ''
-  const visionInputValue = status.visionModelSource === 'setting' ? status.visionModel : ''
+  const textSelected = status.textModelSource === 'setting' ? status.textModel : ''
+  const visionSelected = status.visionModelSource === 'setting' ? status.visionModel : ''
+  // The dropdown starts with the current effective model as the only option
+  // so the page is usable even before the /models fetch lands. Client JS
+  // (loadOpenCodeModels) repopulates both selects when the model list
+  // returns from /api/settings/opencode/models.
+  const initialTextOptions = `<option value="">— 使用預設（${escapeHtml(status.textModel)}）—</option>${textSelected ? `<option value="${escapeHtml(textSelected)}" selected>${escapeHtml(textSelected)}</option>` : ''}`
+  const initialVisionOptions = `<option value="">— 使用預設（${escapeHtml(status.visionModel)}）—</option>${visionSelected ? `<option value="${escapeHtml(visionSelected)}" selected>${escapeHtml(visionSelected)}</option>` : ''}`
   return `<section>
     <h2>OpenCode Provider</h2>
     <p class="muted">AI 文字呼叫優先走 OpenCode，逐個 server 嘗試直到成功；全部失敗才 fallback 到 Gemini key pool。DB 設定優先於 env（<code>OPENCODE_SERVERS</code> / <code>OPENCODE_URL</code> / <code>OPENCODE_MODEL</code> / <code>OPENCODE_VISION_MODEL</code>）。canonical 部署為 no-auth；server 密碼由 env <code>OPENCODE_SERVER_PASSWORD</code> 控制。</p>
@@ -3729,10 +3790,15 @@ function renderOpenCodeSection(status: OpenCodeStatus): string {
     <form id="opencode-form">
       <label style="display: block; color: #cbd5e1; margin: 12px 0 4px; font-size: 15px;">OpenCode Servers（一行一個 URL）</label>
       <textarea id="opencode-servers" placeholder="https://provider-amd.sisihome.org&#10;https://provider-amd2.sisihome.org" style="${SETTINGS_INPUT_STYLE} min-height: 120px;">${escapeHtml(serversTextareaValue)}</textarea>
+      <div style="display: flex; align-items: center; gap: 10px; margin-top: 12px;">
+        <label style="color: #cbd5e1; font-size: 15px;">Model 列表</label>
+        <button id="opencode-reload-models" type="button" class="secondary">重新整理</button>
+        <span id="opencode-models-status" class="muted" style="font-size: 14px;"></span>
+      </div>
       <label style="display: block; color: #cbd5e1; margin: 12px 0 4px; font-size: 15px;">Text Model</label>
-      <input id="opencode-text-model" type="text" placeholder="google/gemini-2.5-flash" value="${escapeHtml(textInputValue)}" style="${SETTINGS_INPUT_STYLE}">
+      <select id="opencode-text-model" style="${SETTINGS_INPUT_STYLE}">${initialTextOptions}</select>
       <label style="display: block; color: #cbd5e1; margin: 12px 0 4px; font-size: 15px;">Vision Model</label>
-      <input id="opencode-vision-model" type="text" placeholder="google/gemini-2.5-flash" value="${escapeHtml(visionInputValue)}" style="${SETTINGS_INPUT_STYLE}">
+      <select id="opencode-vision-model" style="${SETTINGS_INPUT_STYLE}">${initialVisionOptions}</select>
       <button type="submit">儲存到 DB</button><button id="opencode-clear" class="secondary" type="button">清除 DB 設定</button>
     </form>
     <div id="opencode-result" class="muted"></div>

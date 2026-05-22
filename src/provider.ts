@@ -199,3 +199,90 @@ export function invalidateProvider(): void {
   cachedClient = null
   cachedSnapshot = ''
 }
+
+export type OpenCodeModelInfo = {
+  /** Fully-qualified id, e.g. "openai/gpt-5.5". Pass back as opencode_text_model / opencode_vision_model. */
+  id: string
+  name: string
+  provider: string
+}
+
+export type OpenCodeModelListResult = {
+  models: OpenCodeModelInfo[]
+  sourceServerId: string | null
+  warning: string | null
+}
+
+function authHeaders(password: string): Record<string, string> {
+  if (!password) return {}
+  return {
+    Authorization: `Basic ${Buffer.from(`opencode:${password}`).toString('base64')}`,
+  }
+}
+
+async function fetchProviderList(baseUrl: string, password: string): Promise<unknown> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 10_000)
+  try {
+    const response = await fetch(`${baseUrl}/provider`, {
+      headers: authHeaders(password),
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    return await response.json()
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+function flattenModelList(raw: unknown): OpenCodeModelInfo[] {
+  const providers: Array<{ id?: unknown; models?: unknown }> = Array.isArray(raw)
+    ? (raw as Array<{ id?: unknown; models?: unknown }>)
+    : Array.isArray((raw as { all?: unknown[] })?.all)
+      ? ((raw as { all: Array<{ id?: unknown; models?: unknown }> }).all)
+      : []
+  const out: OpenCodeModelInfo[] = []
+  for (const provider of providers) {
+    const pid = typeof provider.id === 'string' ? provider.id : ''
+    const modelMap = provider.models
+    if (!pid || !modelMap || typeof modelMap !== 'object' || Array.isArray(modelMap)) continue
+    for (const [modelId, info] of Object.entries(modelMap as Record<string, unknown>)) {
+      const name = info && typeof info === 'object' && typeof (info as { name?: unknown }).name === 'string'
+        ? (info as { name: string }).name
+        : modelId
+      out.push({ id: `${pid}/${modelId}`, name, provider: pid })
+    }
+  }
+  return out
+}
+
+/**
+ * Walk every configured OpenCode server, fetch `/provider`, flatten the
+ * response into `<providerID>/<modelID>` ids the UI can show in a dropdown.
+ * Returns the first non-empty result and the id of the server that answered.
+ */
+export async function listOpenCodeModels(config: AutopilotConfig): Promise<OpenCodeModelListResult> {
+  const servers = getOpenCodeServers(config)
+  if (servers.length === 0) {
+    return { models: [], sourceServerId: null, warning: '尚未設定 OpenCode server。' }
+  }
+  const password = readOpenCodePassword()
+  let lastError: unknown = null
+  for (const server of servers) {
+    try {
+      const raw = await fetchProviderList(server.baseUrl, password)
+      const models = flattenModelList(raw)
+      if (models.length > 0) {
+        return { models, sourceServerId: server.id, warning: null }
+      }
+    } catch (err) {
+      lastError = err
+    }
+  }
+  const detail = lastError instanceof Error ? lastError.message.slice(0, 160) : null
+  return {
+    models: [],
+    sourceServerId: null,
+    warning: detail ?? '無法從任何已設定的 OpenCode server 取得 model 列表。',
+  }
+}
