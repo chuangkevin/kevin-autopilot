@@ -15,7 +15,7 @@ export async function isAiThinkingAvailable(config: AutopilotConfig): Promise<bo
   // makes the AI route reachable. We deliberately accept either path; the
   // MultiProviderClient handles the routing.
   if (!config.ai?.enabled) return false
-  if (hasOpenCodeEnv()) return true
+  if (hasOpenCodeEnv(config)) return true
   return hasGeminiKeys(config)
 }
 

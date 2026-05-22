@@ -79,7 +79,7 @@ async function callGeminiWithTimeout(config: AutopilotConfig, systemInstruction:
   if (!config.ai?.enabled) throw new Error('patrol: AI not configured')
   // OpenCode-primary: either OpenCode is configured OR a Gemini key is in
   // the pool. The MultiProviderClient routes accordingly.
-  if (!hasOpenCodeEnv() && !(await hasGeminiKeys(config))) throw new Error('patrol: no AI provider available (OpenCode unconfigured and Gemini key pool empty)')
+  if (!hasOpenCodeEnv(config) && !(await hasGeminiKeys(config))) throw new Error('patrol: no AI provider available (OpenCode unconfigured and Gemini key pool empty)')
   const client = getProvider(config)
   const result = await Promise.race([
     client.generateContent({ model: config.ai.model, maxOutputTokens: MAX_OUTPUT_TOKENS, systemInstruction, prompt }),

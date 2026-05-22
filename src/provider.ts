@@ -29,6 +29,7 @@ import {
 } from '@kevinsisi/ai-core'
 import type { ProviderAdapter, RoutePolicy } from '@kevinsisi/ai-core'
 import { FileKeyStorageAdapter } from './keys.js'
+import { getSetting } from './settings-store.js'
 import type { AutopilotConfig } from './types.js'
 
 const ROUTE_POLICY: RoutePolicy = {
@@ -41,23 +42,38 @@ const ROUTE_POLICY: RoutePolicy = {
 let cachedClient: MultiProviderClient | null = null
 let cachedSnapshot = ''
 
-function readOpenCodeUrl(): string {
-  return (process.env.OPENCODE_URL ?? process.env.OPENCODE_BASE_URL ?? '').trim().replace(/\/+$/, '')
+/**
+ * Resolve the OpenCode endpoint URL. Settings (DB-backed, set via
+ * `/api/settings/opencode`) win over env vars so the admin can change the
+ * endpoint at runtime without restarting the container; env is the
+ * deploy-time fallback.
+ */
+function readOpenCodeUrl(config: AutopilotConfig): string {
+  const fromSetting = getSetting(config, 'opencode_url')
+  const fromEnv = process.env.OPENCODE_URL ?? process.env.OPENCODE_BASE_URL ?? ''
+  return (fromSetting ?? fromEnv).trim().replace(/\/+$/, '')
+}
+
+function readOpenCodePassword(config: AutopilotConfig): string {
+  const fromSetting = getSetting(config, 'opencode_server_password')
+  const fromEnv = process.env.OPENCODE_SERVER_PASSWORD ?? ''
+  return fromSetting ?? fromEnv
 }
 
 /**
- * True iff an OpenCode endpoint is configured in the environment. Callers
- * use this together with `hasGeminiKeys(config)` to decide whether at least
- * one AI route is available before invoking `getProvider().generateContent`.
+ * True iff an OpenCode endpoint is configured (either via DB settings or
+ * env). Callers use this together with `hasGeminiKeys(config)` to decide
+ * whether at least one AI route is available before invoking
+ * `getProvider().generateContent`.
  */
-export function hasOpenCodeEnv(): boolean {
-  return readOpenCodeUrl().length > 0
+export function hasOpenCodeEnv(config: AutopilotConfig): boolean {
+  return readOpenCodeUrl(config).length > 0
 }
 
-function buildOpenCodeAdapter(): OpenCodeProviderAdapter | null {
-  const url = readOpenCodeUrl()
+function buildOpenCodeAdapter(config: AutopilotConfig): OpenCodeProviderAdapter | null {
+  const url = readOpenCodeUrl(config)
   if (!url) return null
-  const password = process.env.OPENCODE_SERVER_PASSWORD ?? ''
+  const password = readOpenCodePassword(config)
   return new OpenCodeProviderAdapter(
     {
       type: 'api',
@@ -75,17 +91,19 @@ function buildOpenCodeAdapter(): OpenCodeProviderAdapter | null {
 
 /**
  * Get the singleton MultiProviderClient. Snapshot-based cache: rebuilt when
- * OPENCODE_URL / password / autopilot dataDir change (the dataDir captures
- * which Gemini key-pool DB the FileKeyStorageAdapter binds to).
+ * the resolved OpenCode URL / password / autopilot dataDir change (the
+ * dataDir captures which Gemini key-pool DB the FileKeyStorageAdapter binds
+ * to). DB-backed settings win over env so the admin can rotate either field
+ * at runtime; the next call sees the new snapshot and rebuilds.
  */
 export function getProvider(config: AutopilotConfig): MultiProviderClient {
-  const url = readOpenCodeUrl()
-  const password = process.env.OPENCODE_SERVER_PASSWORD ?? ''
+  const url = readOpenCodeUrl(config)
+  const password = readOpenCodePassword(config)
   const snapshot = `${url}|${password}|${config.dataDir}`
   if (cachedClient && cachedSnapshot === snapshot) return cachedClient
 
   const adapters: ProviderAdapter[] = []
-  const openCode = buildOpenCodeAdapter()
+  const openCode = buildOpenCodeAdapter(config)
   if (openCode) adapters.push(openCode)
   adapters.push(new GeminiProviderAdapter(new KeyPool(new FileKeyStorageAdapter(config))))
 
