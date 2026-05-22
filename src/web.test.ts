@@ -69,6 +69,8 @@ test('dashboard shows a sanitized candidate problem pool', async () => {
     assert.equal(pageBody.includes('不是問題'), true)
     assert.equal(pageBody.includes('暫時不追 / 已排除訊號'), false) // replaced by renderPsRejectedSummary
     assert.equal(pageBody.includes('data-ps-stack'), true) // swipeable card stack present
+    assert.equal(pageBody.includes('data-ps-rail'), true) // native horizontal rail present when cards exist
+    assert.equal(pageBody.includes('左右滑動瀏覽今日問題卡片'), true)
     assert.equal(pageBody.includes('ps-paste-input'), true) // paste bar present
 
     const dailyProblem = await fetch(`${baseUrl}/api/problem-discovery/daily`)
@@ -975,7 +977,9 @@ test('idea tab renders textarea and transmit button', async () => {
   assert.ok(html.includes('setIdeaIndex'), 'missing explicit carousel index handler')
   assert.ok(html.includes('pointerdown'), 'missing pointer swipe handler')
   assert.ok(html.includes('touchstart'), 'missing touch fallback handler')
-  assert.ok(html.includes('translateX'), 'missing transform-based slide movement')
+  assert.ok(html.includes('scroll-snap-type: x mandatory'), 'missing native horizontal snap behavior')
+  assert.ok(html.includes('.idea-card { flex: 0 0 calc(100% - 4px);'), 'missing viewport-safe mobile card sizing')
+  assert.ok(html.includes('scrollIntoView'), 'missing native scroll-based slide movement')
   assert.equal(html.includes('id="idea-card-rail"'), false)
   assert.equal(html.includes('id="idea-input"'), false)
   assert.equal(html.includes('id="idea-submit"'), false)
@@ -1205,6 +1209,8 @@ test('problem tab renders swipeable card stack', async () => {
     const html = await res.text()
 
     assert.ok(html.includes('data-ps-stack'), 'problem stack container should be present')
+    assert.ok(html.includes('.ps-card { flex: 0 0 calc(100% - 4px);'), 'problem cards should fit the mobile viewport')
+    assert.ok(html.includes('scroll-snap-stop: always'), 'problem cards should snap one card at a time')
     assert.ok(html.includes('ps-paste-input'), 'paste input should be present')
     assert.ok(html.includes('/api/problem-signal/ingest'), 'ingest endpoint reference should be present')
   } finally {

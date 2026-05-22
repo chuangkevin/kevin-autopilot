@@ -1121,9 +1121,11 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
 .feedback-actions button:disabled { opacity: 0.45; cursor: wait; }
 .rejected-summary { margin-top: 12px; border: 1px solid rgba(245,158,11,0.25); border-radius: 12px; padding: 10px; background: rgba(120,53,15,0.12); }
 .rejected-summary summary { cursor: pointer; color: #fde68a; }
-.problem-stack { width: 100%; padding-bottom: 8px; }
-.ps-nav { display: flex; align-items: center; justify-content: space-between; padding: 0 4px 8px; }
-.ps-dots { display: flex; gap: 5px; align-items: center; }
+.problem-stack { width: 100%; max-width: 100%; min-width: 0; padding-bottom: 8px; overflow: hidden; }
+.ps-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px 8px; }
+.ps-status { display: flex; align-items: center; justify-content: center; gap: 8px; min-width: 0; }
+.ps-dots { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; align-items: center; max-width: min(150px, 38vw); }
+.ps-counter { flex: 0 0 auto; font-size: 12px; color: #475569; }
 .ps-dot { width: 8px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.15); transition: all 180ms; }
 .ps-dot.active { width: 22px; }
 .ps-dot.active.tier-pick { background: #4ade80; }
@@ -1132,11 +1134,11 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
 .ps-dot.active.tier-notnow { background: #64748b; }
 .ps-nav-btn { background: transparent; border: 1px solid rgba(148,163,184,.2); border-radius: 999px; color: #94a3b8; padding: 6px 16px; font-size: 15px; cursor: pointer; }
 .ps-nav-btn:disabled { opacity: .25; cursor: default; }
-.ps-card-wrap { position: relative; padding-bottom: 12px; }
-.ps-card-wrap::after { content: ''; position: absolute; bottom: 4px; left: 8px; right: 8px; height: 16px; background: rgba(148,163,184,.07); border-radius: 18px; z-index: 0; }
-.ps-card-wrap::before { content: ''; position: absolute; bottom: 0; left: 16px; right: 16px; height: 12px; background: rgba(148,163,184,.04); border-radius: 16px; z-index: 0; }
-.ps-card { border-radius: 22px; padding: 20px; display: flex; flex-direction: column; gap: 12px; transition: opacity 220ms ease; opacity: 0; position: absolute; top: 0; left: 0; right: 0; pointer-events: none; z-index: 1; }
-.ps-card.ps-active { opacity: 1; position: relative; pointer-events: auto; z-index: 1; }
+.ps-card-wrap { display: flex; gap: 10px; max-width: 100%; min-width: 0; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scroll-padding-inline: 2px; -webkit-overflow-scrolling: touch; padding: 2px 2px 12px; touch-action: pan-x pan-y; }
+.ps-card-wrap::-webkit-scrollbar { display: none; }
+.ps-card-wrap { scrollbar-width: none; }
+.ps-card { flex: 0 0 calc(100% - 4px); min-width: 0; border-radius: 22px; padding: 20px; display: flex; flex-direction: column; gap: 12px; scroll-snap-align: start; scroll-snap-stop: always; transition: opacity 180ms ease, border-color 180ms ease; opacity: .66; }
+.ps-card.ps-active { opacity: 1; }
 .ps-card.tier-pick { background: linear-gradient(160deg, rgba(20,83,45,.85), rgba(15,23,42,.95)); border: 1px solid rgba(34,197,94,.5); }
 .ps-card.tier-worth { background: linear-gradient(160deg, rgba(30,58,138,.8), rgba(15,23,42,.95)); border: 1px solid rgba(99,102,241,.5); }
 .ps-card.tier-evidence { background: linear-gradient(160deg, rgba(120,53,15,.7), rgba(15,23,42,.9)); border: 1px solid rgba(245,158,11,.4); }
@@ -1258,10 +1260,11 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
 .idea-deck-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 12px 0 6px; }
 .idea-deck-actions { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 15px; }
 .idea-nav-btn { width: 34px; height: 30px; border-radius: 999px; border: 1px solid rgba(0,255,255,0.28); background: rgba(8,13,25,0.72); color: var(--accent); font-family: 'Courier New', monospace; }
-.idea-card-rail { position: relative; overflow: hidden; overscroll-behavior-x: contain; padding: 2px 2px 12px; touch-action: pan-y; max-height: 236px; cursor: grab; }
+.idea-card-rail { position: relative; max-width: 100%; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scroll-padding-inline: 2px; -webkit-overflow-scrolling: touch; padding: 2px 2px 12px; touch-action: pan-x pan-y; max-height: 236px; cursor: grab; scrollbar-width: none; }
+.idea-card-rail::-webkit-scrollbar { display: none; }
 .idea-card-rail.dragging { cursor: grabbing; }
-.idea-card-track { display: flex; gap: 10px; transition: transform 180ms ease; will-change: transform; }
-.idea-card { flex: 0 0 86%; border: 1px solid rgba(0,255,255,0.2); border-radius: 16px; height: 206px; padding: 12px; background: radial-gradient(circle at top right, rgba(255,0,255,0.12), transparent 42%), linear-gradient(180deg, rgba(15,23,42,0.82), rgba(2,6,23,0.62)); display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
+.idea-card-track { display: flex; gap: 10px; min-width: 100%; }
+.idea-card { flex: 0 0 calc(100% - 4px); min-width: 0; scroll-snap-align: start; scroll-snap-stop: always; border: 1px solid rgba(0,255,255,0.2); border-radius: 16px; height: 206px; padding: 12px; background: radial-gradient(circle at top right, rgba(255,0,255,0.12), transparent 42%), linear-gradient(180deg, rgba(15,23,42,0.82), rgba(2,6,23,0.62)); display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
 .idea-card h4 { margin: 0; color: #e0f2fe; font-size: 17px; line-height: 1.25; }
 .idea-card-meta { display: flex; flex-wrap: wrap; gap: 6px; color: #93c5fd; font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; }
 .idea-chip { display: inline-flex; align-items: center; border: 1px solid rgba(148,163,184,0.18); border-radius: 999px; padding: 2px 7px; background: rgba(15,23,42,0.6); color: #bae6fd; }
@@ -1271,7 +1274,7 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
 .idea-card-link { border: 1px solid rgba(0,255,255,0.28); border-radius: 999px; padding: 5px 9px; text-decoration: none; font-size: 14px; }
 .idea-card-dismiss { border: 1px solid rgba(245,158,11,0.32); border-radius: 999px; padding: 5px 9px; background: rgba(120,53,15,0.16); color: #fde68a; font-family: 'Courier New', monospace; font-size: 14px; }
 .idea-empty-card { color: var(--muted); justify-content: center; }
-@media (min-width: 768px) { .idea-card { flex-basis: 32%; } }
+@media (min-width: 768px) { .idea-card { flex-basis: calc((100% - 20px) / 3); } }
 
 /* Desktop sidebar layout */
 .desktop-layout { display: grid; grid-template-columns: 300px 1fr 300px; gap: 16px; align-items: start; }
@@ -2238,13 +2241,13 @@ function renderProblemStack(discovery: DailyProblemDiscovery): string {
   return `<section class="problem-stack" data-ps-stack>
   <div class="ps-nav">
     <button class="ps-nav-btn" data-ps-prev disabled>‹ 上一個</button>
-    <div style="display:flex;align-items:center;gap:8px">
+    <div class="ps-status">
       <div class="ps-dots">${dotHtml}</div>
-      <span class="ps-counter" data-ps-counter style="font-size:12px;color:#475569">1 / ${cards.length}</span>
+      <span class="ps-counter" data-ps-counter>1 / ${cards.length}</span>
     </div>
     <button class="ps-nav-btn" data-ps-next ${cards.length <= 1 ? 'disabled' : ''}>下一個 ›</button>
   </div>
-  <div class="ps-card-wrap">
+  <div class="ps-card-wrap" data-ps-rail aria-label="左右滑動瀏覽今日問題卡片">
     ${cardHtml}
   </div>
   ${renderPsRejectedSummary(discovery.rejectedSummary)}
@@ -2262,11 +2265,12 @@ function renderProblemStack(discovery: DailyProblemDiscovery): string {
     var prevBtn = stack.querySelector('[data-ps-prev]');
     var nextBtn = stack.querySelector('[data-ps-next]');
     var counter = stack.querySelector('[data-ps-counter]');
+    var rail = stack.querySelector('[data-ps-rail]');
     var total = cards.length;
     var current = 0;
-    var startX = 0, startY = 0, swiping = false;
+    var scrollTimer = 0;
 
-    function showCard(index) {
+    function syncCard(index, shouldScroll) {
       current = Math.max(0, Math.min(total - 1, index));
       var newBriefId = cards[current] ? (cards[current].dataset.psBriefId || '') : '';
       stack.dataset.psBriefId = newBriefId;
@@ -2278,26 +2282,27 @@ function renderProblemStack(discovery: DailyProblemDiscovery): string {
       if (counter) counter.textContent = (current + 1) + ' / ' + total;
       if (prevBtn) prevBtn.disabled = current === 0;
       if (nextBtn) nextBtn.disabled = current === total - 1;
+      if (shouldScroll && cards[current]) cards[current].scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
+    }
+
+    function showCard(index) {
+      syncCard(index, true);
     }
 
     if (prevBtn) prevBtn.addEventListener('click', function() { showCard(current - 1); });
     if (nextBtn) nextBtn.addEventListener('click', function() { showCard(current + 1); });
 
-    stack.addEventListener('touchstart', function(e) {
-      startX = e.touches[0].clientX;
-      startY = e.touches[0].clientY;
-      swiping = false;
-    }, { passive: true });
-    stack.addEventListener('touchmove', function(e) {
-      var dx = Math.abs(e.touches[0].clientX - startX);
-      var dy = Math.abs(e.touches[0].clientY - startY);
-      if (dx > dy && dx > 8) { swiping = true; e.preventDefault(); }
-    }, { passive: false });
-    stack.addEventListener('touchend', function(e) {
-      if (!swiping) return;
-      var dx = e.changedTouches[0].clientX - startX;
-      if (Math.abs(dx) > 44) showCard(dx < 0 ? current + 1 : current - 1);
-      swiping = false;
+    if (rail) rail.addEventListener('scroll', function() {
+      window.clearTimeout(scrollTimer);
+      scrollTimer = window.setTimeout(function() {
+        var closest = current;
+        var best = Infinity;
+        cards.forEach(function(card, i) {
+          var distance = Math.abs(card.offsetLeft - rail.scrollLeft);
+          if (distance < best) { best = distance; closest = i; }
+        });
+        syncCard(closest, false);
+      }, 80);
     }, { passive: true });
 
     stack.addEventListener('click', function(e) {
@@ -2307,7 +2312,7 @@ function renderProblemStack(discovery: DailyProblemDiscovery): string {
       trigger.classList.toggle('expanded');
     });
 
-    showCard(0);
+    syncCard(0, false);
   }
   document.querySelectorAll('[data-ps-stack]').forEach(initPsStack);
 })();
@@ -3045,12 +3050,14 @@ function renderIdeaTab(ideas: IdeaRecord[]): string {
     var cards = track ? Array.prototype.slice.call(track.querySelectorAll('[data-idea-card]')) : [];
     var position = deck.querySelector('[data-idea-position]');
     var index = 0;
-    function setIdeaIndex(next) {
+    var scrollTimer = 0;
+    function syncIdeaIndex(next, shouldScroll) {
       if (!track || cards.length === 0) return;
       index = Math.max(0, Math.min(cards.length - 1, next));
-      track.style.transform = 'translateX(' + (-cards[index].offsetLeft) + 'px)';
+      if (shouldScroll && cards[index]) cards[index].scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
       if (position) position.textContent = (index + 1) + '/' + cards.length + ' cards';
     }
+    function setIdeaIndex(next) { syncIdeaIndex(next, true); }
     if (!btn || !input) return;
     btn.addEventListener('click', function() {
       var text = input.value.trim();
@@ -3118,8 +3125,20 @@ function renderIdeaTab(ideas: IdeaRecord[]): string {
           endDrag(event.changedTouches[0].clientX, event.changedTouches[0].clientY);
         }, { passive: true });
       }
+      rail.addEventListener('scroll', function() {
+        window.clearTimeout(scrollTimer);
+        scrollTimer = window.setTimeout(function() {
+          var closest = index;
+          var best = Infinity;
+          cards.forEach(function(card, i) {
+            var distance = Math.abs(card.offsetLeft - rail.scrollLeft);
+            if (distance < best) { best = distance; closest = i; }
+          });
+          syncIdeaIndex(closest, false);
+        }, 80);
+      }, { passive: true });
       window.addEventListener('resize', function() { setIdeaIndex(index); });
-      setIdeaIndex(0);
+      syncIdeaIndex(0, false);
     }
   });
 })();
