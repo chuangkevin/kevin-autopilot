@@ -961,7 +961,8 @@ test('graph tab renders Cytoscape container', async () => {
   const html = await getDashboardHtml()
   assert.ok(html.includes('id="tab-graph"'), 'missing graph panel')
   assert.ok(html.includes('class="cy-container"'), 'missing cy-container div')
-  assert.ok(html.includes('cytoscape.min.js'), 'missing cytoscape CDN script')
+  assert.ok(html.includes("script.src = 'https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js'"), 'missing lazy cytoscape loader')
+  assert.equal(html.includes('<script src="https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js"></script>'), false)
   assert.ok(html.includes('refreshCyGraph'), 'missing refreshCyGraph function')
 })
 

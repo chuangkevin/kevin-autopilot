@@ -1533,7 +1533,6 @@ summary { cursor: pointer; color: #bfdbfe; font-weight: 700; }
 @media (max-width: 820px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .command-grid, .focus-grid, .agent-board, .thinking-grid, .neural-shell, .backlog-evidence { grid-template-columns: minmax(0, 1fr); } .neural-stage { min-height: 430px; } table { font-size: 16px; } }
 @media (max-width: 520px) { .grid { grid-template-columns: 1fr 1fr; } .value { font-size: 24px; } a.button, button { min-height: 44px; } .cockpit-panel { height: calc(100dvh - var(--cy-h, 48dvh) - 160px); max-height: none; overflow-y: auto; padding: 12px; } .node-action-bar { margin: 0 0 12px; } .tab-panels { padding: 10px; padding-bottom: 74px; } .cy-container { height: min(48dvh, 430px); min-height: 280px; border-radius: 10px; } .node-drawer { padding: 9px 12px; } }
   </style>
-  <script src="https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js"></script>
 </head>
 <body>
 <main>
@@ -2809,10 +2808,6 @@ function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): stri
 <script id="loop-data" type="application/json">${jsonForScript({ lastGraphAt: loopState.lastGraphAt ?? '', lastReportAt: loopState.lastReportAt ?? '' })}</script>
 <script>
 (function() {
-  if (typeof cytoscape === 'undefined') {
-    document.querySelectorAll('.cy-container:not([data-cy-init])').forEach(function(c) { c.textContent = '圖形載入失敗，請檢查網路'; });
-    return;
-  }
   var graphDataEl = document.getElementById('graph-data');
   if (!graphDataEl) return;
   var graph;
@@ -3051,11 +3046,39 @@ function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): stri
     });
   }
 
+  function ensureCytoscape(callback) {
+    if (typeof cytoscape !== 'undefined') { callback(); return; }
+    window._cyLoadQueue = window._cyLoadQueue || [];
+    window._cyLoadQueue.push(callback);
+    if (window._cyLoading) return;
+    window._cyLoading = true;
+    var script = document.createElement('script');
+    script.src = 'https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js';
+    script.async = true;
+    script.onload = function() {
+      var queue = window._cyLoadQueue || [];
+      window._cyLoadQueue = [];
+      queue.forEach(function(fn) { fn(); });
+    };
+    script.onerror = function() {
+      document.querySelectorAll('.cy-container:not([data-cy-init])').forEach(function(c) { if (c.offsetParent !== null) c.textContent = '圖形載入失敗，請檢查網路'; });
+    };
+    document.head.appendChild(script);
+  }
+
   function initAllContainers(savedPositions) {
     if (savedPositions) window._cySavedPositions = savedPositions;
+    var hasVisible = false;
     document.querySelectorAll('.cy-container:not([data-cy-init])').forEach(function(container) {
       if (container.offsetParent === null) return;
-      initContainer(container, savedPositions);
+      hasVisible = true;
+    });
+    if (!hasVisible) return;
+    ensureCytoscape(function() {
+      document.querySelectorAll('.cy-container:not([data-cy-init])').forEach(function(container) {
+        if (container.offsetParent === null) return;
+        initContainer(container, window._cySavedPositions || savedPositions || {});
+      });
     });
   }
   window._initCyContainers = function() { initAllContainers(window._cySavedPositions || {}); };
