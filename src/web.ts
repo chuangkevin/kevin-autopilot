@@ -1589,7 +1589,10 @@ function switchTab(name) {
   if (panel) panel.hidden = false;
   var btn = document.querySelector('[data-tab="' + name + '"]');
   if (btn) btn.classList.add('active');
-  setTimeout(function() { window.dispatchEvent(new Event('resize')); }, 0);
+  setTimeout(function() {
+    if (name === 'graph' && typeof window._initCyContainers === 'function') window._initCyContainers();
+    window.dispatchEvent(new Event('resize'));
+  }, 0);
   history.replaceState(null, '', '#' + name);
 }
 (function() {
@@ -3049,10 +3052,13 @@ function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): stri
   }
 
   function initAllContainers(savedPositions) {
+    if (savedPositions) window._cySavedPositions = savedPositions;
     document.querySelectorAll('.cy-container:not([data-cy-init])').forEach(function(container) {
+      if (container.offsetParent === null) return;
       initContainer(container, savedPositions);
     });
   }
+  window._initCyContainers = function() { initAllContainers(window._cySavedPositions || {}); };
 
   fetch('/api/graph/positions')
     .then(function(r) { return r.json(); })

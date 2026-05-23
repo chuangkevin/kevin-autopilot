@@ -259,6 +259,8 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(pageBody.includes('focusedNodeId = detail.node.id'), true)
     assert.equal(pageBody.includes('refreshGraphInPlace(focusedNodeId)'), true)
     assert.equal(pageBody.includes('createBrowserGraphLayout(graph, focusId)'), true)
+    assert.equal(pageBody.includes("name === 'graph' && typeof window._initCyContainers === 'function'"), true)
+    assert.equal(pageBody.includes('if (container.offsetParent === null) return;'), true)
     assert.equal(pageBody.includes('neural-hidden-chip'), true)
     assert.equal(pageBody.includes('neural-edge-label'), true)
     assert.equal(pageBody.includes('NEURAL_OUTER_RING_LIMIT'), true)
