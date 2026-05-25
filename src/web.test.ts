@@ -207,12 +207,11 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(pageBody.includes('Snooze 7 天'), true) // still in JS renderBacklogItem
     assert.equal(pageBody.includes('這裡不是重要性排名'), false) // moved to stub
     assert.equal(pageBody.includes('Priority Board'), false)
-    assert.equal(pageBody.includes('找更多關聯'), true) // still in embedded graph JSON (action labels)
-    assert.equal(pageBody.includes('變成 OpenCode 任務'), true) // still in embedded graph JSON (action labels)
-    assert.equal(pageBody.includes('標記有趣'), true) // still in embedded graph JSON (action labels)
-    assert.equal(pageBody.includes('⚡ 多想一點'), true) // new primary action
-    assert.equal(pageBody.includes('🧠 深度辯論'), true) // new primary action
-    assert.equal(pageBody.includes('❄ 先不要想'), true) // new primary action (replaces 先不要想這條)
+    assert.equal(pageBody.includes('找更多關聯'), false) // graph action labels load after graph fetch
+    assert.equal(pageBody.includes('變成 OpenCode 任務'), false) // graph action labels load after graph fetch
+    assert.equal(pageBody.includes('標記有趣'), false) // graph action labels load after graph fetch
+    assert.equal(pageBody.includes('🧠 深度辯論'), false) // graph action labels load after graph fetch
+    assert.equal(pageBody.includes('❄ 先不要想'), false) // graph action labels load after graph fetch
     assert.equal(pageBody.includes('尚未開放關聯搜尋'), false)
     assert.equal(pageBody.includes('缺 prompt 或證據太弱'), false)
     assert.equal(pageBody.includes('打開分身的大腦'), false) // moved to stub
@@ -249,7 +248,7 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(pageBody.includes('Project Radar'), false) // moved to stub
     assert.equal(pageBody.includes('所有專案都在雷達上'), false) // moved to stub
     assert.equal(pageBody.includes('不替你判斷哪個想法比較重要'), false) // moved to stub
-    assert.equal(pageBody.includes('missing-repo'), true) // still in embedded graph JSON (node source/id)
+    assert.equal(pageBody.includes('missing-repo'), true) // still present in lightweight repo/status text
     assert.equal(pageBody.includes('navigator.clipboard'), true)
     assert.equal(pageBody.includes("document.execCommand('copy')"), true)
     assert.equal(pageBody.includes('Prompt 已複製'), true)
@@ -261,6 +260,8 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(pageBody.includes('createBrowserGraphLayout(graph, focusId)'), true)
     assert.equal(pageBody.includes("name === 'graph' && typeof window._initCyContainers === 'function'"), true)
     assert.equal(pageBody.includes('if (container.offsetParent === null) return;'), true)
+    assert.equal(pageBody.includes('id="graph-data"'), false)
+    assert.equal(pageBody.includes('id="loop-data"'), false)
     assert.equal(pageBody.includes('neural-hidden-chip'), true)
     assert.equal(pageBody.includes('neural-edge-label'), true)
     assert.equal(pageBody.includes('NEURAL_OUTER_RING_LIMIT'), true)
@@ -546,7 +547,7 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(pageAfterIdeaBody.includes('id="idea-submit"'), false)
     assert.equal(pageAfterIdeaBody.includes(`href="/ideas/${ideaBody.id}"`), true)
     assert.equal(pageAfterIdeaBody.includes('分身狀態：'), false)
-    assert.equal(pageAfterIdeaBody.includes('目前沒有明顯相似的既有專案'), true) // still in embedded graph JSON (idea node thinking.whyItMatters)
+    assert.equal(pageAfterIdeaBody.includes('目前沒有明顯相似的既有專案'), false) // graph JSON is fetched only after graph load
 
     const ideaDetail = await fetch(`${baseUrl}/ideas/${ideaBody.id}`)
     assert.equal(ideaDetail.status, 200)

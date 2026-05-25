@@ -1264,6 +1264,7 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
 .ps-badge.src-manual { color: #86efac; border-color: rgba(34,197,94,.25); }
 .ps-title { margin: 0; font-size: clamp(18px, 5vw, 26px); font-weight: 700; color: #f0fdf4; line-height: 1.25; }
 .ps-lede { margin: 0; font-size: 14px; color: #bbf7d0; line-height: 1.45; }
+.ps-title, .ps-lede, .ps-score { overflow-wrap: anywhere; }
 .ps-score { font-size: 12px; color: #64748b; }
 .ps-expand-hint { text-align: center; font-size: 11px; color: #475569; padding: 4px 0; cursor: pointer; user-select: none; letter-spacing: .04em; }
 .ps-expand { display: none; }
@@ -1392,7 +1393,8 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
 @media (min-width: 768px) { .idea-card { flex-basis: calc((100% - 20px) / 3); } }
 
 /* Desktop sidebar layout */
-.desktop-layout { display: grid; grid-template-columns: 260px 1fr 240px; gap: 12px; align-items: start; }
+.desktop-layout { display: grid; grid-template-columns: 260px minmax(0, 1fr) 240px; gap: 12px; align-items: start; max-width: 100%; overflow: hidden; }
+.desktop-layout > * { min-width: 0; }
 
 /* 640px–1023px: expand mobile layout to full viewport width */
 @media (min-width: 640px) and (max-width: 1023px) {
@@ -1407,19 +1409,19 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
   .tab-bar { display: none; }
 }
 @media (min-width: 1300px) {
-  .desktop-layout { grid-template-columns: 300px 1fr 280px; gap: 16px; }
+  .desktop-layout { grid-template-columns: 300px minmax(0, 1fr) 280px; gap: 16px; }
 }
 @media (min-width: 1600px) {
   main { max-width: 1700px; }
-  .desktop-layout { grid-template-columns: 340px 1fr 320px; gap: 20px; }
+  .desktop-layout { grid-template-columns: 340px minmax(0, 1fr) 320px; gap: 20px; }
 }
 @media (min-width: 1920px) {
   main { max-width: 2000px; }
-  .desktop-layout { grid-template-columns: 380px 1fr 380px; gap: 24px; }
+  .desktop-layout { grid-template-columns: 380px minmax(0, 1fr) 380px; gap: 24px; }
 }
 @media (min-width: 2560px) {
   main { max-width: 2600px; }
-  .desktop-layout { grid-template-columns: 440px 1fr 440px; gap: 28px; }
+  .desktop-layout { grid-template-columns: 440px minmax(0, 1fr) 440px; gap: 28px; }
 }
 
 /* Muted / utilities */
@@ -2954,24 +2956,65 @@ function renderCpBacklogItem(item: BacklogItem): string {
 }
 
 function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): string {
+  void loopState
   const firstNode = graph.nodes.find((node) => node.id === graph.centerNodeId) ?? graph.nodes[0]
   return `
-<div class="cy-container" data-center-node="${escapeHtml(graph.centerNodeId ?? '')}"></div>
+<div class="cy-container" data-center-node="${escapeHtml(graph.centerNodeId ?? '')}"><button type="button" class="secondary" data-load-graph>載入探索圖</button></div>
 <div class="node-drawer graph-tab-drawer" style="display:${firstNode ? 'block' : 'none'}">
   <div class="sys-label">/// SELECTED NODE</div>
   <div class="graph-tab-drawer-content">
     ${firstNode ? `<div style="color:var(--accent);font-weight:bold;margin-bottom:4px">${escapeHtml(firstNode.title)}</div><div class="muted" style="font-size:10px">${graph.edges.filter((e) => e.from === firstNode.id || e.to === firstNode.id).length} 個關聯</div>` : ''}
   </div>
 </div>
-<script id="graph-data" type="application/json">${jsonForScript(graph)}</script>
-<script id="loop-data" type="application/json">${jsonForScript({ lastGraphAt: loopState.lastGraphAt ?? '', lastReportAt: loopState.lastReportAt ?? '' })}</script>
 <script>
 (function() {
-  var graphDataEl = document.getElementById('graph-data');
-  if (!graphDataEl) return;
-  var graph;
-  try { graph = JSON.parse(graphDataEl.textContent || '{}'); } catch { return; }
-  if (!graph || !Array.isArray(graph.nodes)) return;
+  if (window._graphTabBound) return;
+  window._graphTabBound = true;
+  var graph = null;
+  var graphPromise = null;
+
+  function esc(value) {
+    return String(value || '').replace(/[&<>]/g, function(c) { return c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;'; });
+  }
+
+  function showGraphMessage(message) {
+    document.querySelectorAll('.cy-container:not([data-cy-init])').forEach(function(c) {
+      if (c.offsetParent !== null) c.textContent = message;
+    });
+  }
+
+  function updateGraphSummary(g) {
+    var first = (g.nodes || []).find(function(node) { return node.id === g.centerNodeId; }) || (g.nodes || [])[0];
+    if (!first) return;
+    var edgeCount = (g.edges || []).filter(function(e) { return e.from === first.id || e.to === first.id; }).length;
+    document.querySelectorAll('.graph-tab-drawer').forEach(function(d) { d.style.display = 'block'; });
+    document.querySelectorAll('.graph-tab-drawer-content').forEach(function(d) {
+      d.innerHTML = '<div style="color:var(--accent);font-weight:bold;margin-bottom:4px">' + esc(first.title) + '</div><div class="muted" style="font-size:10px">' + edgeCount + ' 個關聯</div>';
+    });
+  }
+
+  function loadGraphData(force) {
+    if (graph && !force) return Promise.resolve(graph);
+    if (graphPromise && !force) return graphPromise;
+    showGraphMessage('載入探索圖…');
+    graphPromise = fetch('/api/graph', { cache: 'no-store' })
+      .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function(g) {
+        graph = g;
+        graphPromise = null;
+        if (!graph || !Array.isArray(graph.nodes)) throw new Error('invalid graph');
+        document.querySelectorAll('.cy-container').forEach(function(c) { c.setAttribute('data-center-node', graph.centerNodeId || ''); });
+        updateGraphSummary(graph);
+        return graph;
+      })
+      .catch(function(err) {
+        graphPromise = null;
+        showGraphMessage('探索圖載入失敗：' + (err && err.message ? err.message : String(err)));
+        throw err;
+      });
+    return graphPromise;
+  }
+  window._loadCyGraphData = loadGraphData;
 
   function truncateLabel(str, max) {
     return str && str.length > max ? str.slice(0, max - 1) + '\\u2026' : (str || '');
@@ -3233,27 +3276,32 @@ function renderGraphTab(graph: IdeaGraph, loopState: ObservationLoopState): stri
       hasVisible = true;
     });
     if (!hasVisible) return;
-    ensureCytoscape(function() {
-      document.querySelectorAll('.cy-container:not([data-cy-init])').forEach(function(container) {
-        if (container.offsetParent === null) return;
-        initContainer(container, window._cySavedPositions || savedPositions || {});
+    loadGraphData(false).then(function() {
+      ensureCytoscape(function() {
+        document.querySelectorAll('.cy-container:not([data-cy-init])').forEach(function(container) {
+          if (container.offsetParent === null) return;
+          initContainer(container, window._cySavedPositions || savedPositions || {});
+        });
       });
-    });
+    }).catch(function() {});
   }
-  window._initCyContainers = function() { initAllContainers(window._cySavedPositions || {}); };
-
-  fetch('/api/graph/positions')
-    .then(function(r) { return r.json(); })
-    .then(function(data) { initAllContainers((data && data.positions) ? data.positions : {}); })
-    .catch(function() { initAllContainers({}); });
+  window._initCyContainers = function() {
+    fetch('/api/graph/positions')
+      .then(function(r) { return r.json(); })
+      .then(function(data) { initAllContainers((data && data.positions) ? data.positions : {}); })
+      .catch(function() { initAllContainers({}); });
+  };
+  document.addEventListener('click', function(event) {
+    var target = event.target;
+    if (target && target.closest && target.closest('[data-load-graph]')) window._initCyContainers();
+  });
 })();
 
 function refreshCyGraph() {
-  fetch('/api/graph', { cache: 'no-store' })
-    .then(function(r) { return r.json(); })
+  var loadGraphData = window._loadCyGraphData;
+  if (typeof loadGraphData !== 'function') return;
+  loadGraphData(true)
     .then(function(graph) {
-      var graphDataEl = document.getElementById('graph-data');
-      if (graphDataEl) graphDataEl.textContent = JSON.stringify(graph).replaceAll('<', '\\u003c').replaceAll('&', '\\u0026');
       var toEls = window._cyToElements;
       var getStyle = window._cyGetStyle;
       var fitGraph = window._cyFitGraph;
