@@ -831,8 +831,8 @@ function inferPeople(snippet: string): string | undefined {
 function inferWorkflow(snippet: string): string | undefined {
   if (/報表|表格|excel|spreadsheet/i.test(snippet)) return '表格資料整理與回報'
   if (/截圖|screenshot/i.test(snippet)) return '截圖與證據傳遞'
-  if (/line|訊息|聊天/i.test(snippet)) return '訊息溝通與任務追蹤'
-  if (/上傳|下載|轉檔|file/i.test(snippet)) return '檔案轉換與平台搬運'
+  if (/LINE|訊息|聊天/.test(snippet)) return '訊息溝通與任務追蹤'
+  if (/上傳|下載|轉檔/.test(snippet)) return '檔案轉換與平台搬運'
   return undefined
 }
 

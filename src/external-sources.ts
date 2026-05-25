@@ -1,6 +1,13 @@
 import { createProblemSignal } from './problem-discovery.js'
 import type { ProblemSignal } from './types.js'
 
+function stripHtml(html: string): string {
+  return html
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&apos;/g, "'").replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/\s+/g, ' ').trim()
+}
+
 const HN_QUERIES = [
   'workflow broken manual hours',
   'tool missing automate annoying',
@@ -24,12 +31,12 @@ export async function fetchHackerNewsSignals(options: { timeout?: number } = {})
           const data = await res.json() as { hits?: unknown[] }
           for (const hit of data.hits ?? []) {
             const h = hit as Record<string, unknown>
-            const text = [String(h.story_text ?? ''), String(h.comment_text ?? '')].filter(Boolean).join(' ').trim()
+            const text = stripHtml([String(h.story_text ?? ''), String(h.comment_text ?? '')].filter(Boolean).join(' ').trim())
             if (text.length < 80) continue
             signals.push(createProblemSignal({
               sourceType: 'hacker-news',
               sourceName: `hacker-news:${String(h.objectID ?? 'unknown')}`,
-              title: String(h.title ?? query).slice(0, 180),
+              title: stripHtml(String(h.title ?? query)).slice(0, 180),
               snippet: text.slice(0, 1200),
               fetchedAt,
               url: `https://news.ycombinator.com/item?id=${String(h.objectID ?? '')}`,
