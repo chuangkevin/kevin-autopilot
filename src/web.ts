@@ -48,6 +48,7 @@ import { appendConversationMessage, listConversationMessages } from './conversat
 import { replyAsPatrol } from './patrol.js'
 import { isBoostRunning, runBoost } from './boost.js'
 import { isDeliberationRunning, loadLatestDeliberation, runDeliberation } from './deliberation.js'
+import { deliberateProblemCard, readProblemDeliberation } from './problem-deliberation.js'
 import { recomputePreferences } from './preferences.js'
 import { createProblemSignal, evaluateProblemCandidates, getDailyProblemDiscovery, isProblemFeedbackAction, listProblemBriefs, listProblemFeedback, recordProblemFeedback, upsertProblemSignals, visibleProblemBriefs } from './problem-discovery.js'
 import { createObservationLoop, readReflectionState, type ObservationLoop } from './observation-loop.js'
@@ -86,6 +87,7 @@ import { loadGraphPositions, saveGraphPositions, type GraphPositions } from './g
 
 const DEFAULT_PORT = 3023
 const MAX_REQUEST_BODY_BYTES = 64 * 1024
+const runningDeliberations = new Set<string>()
 const NO_STORE_HEADERS = {
   'cache-control': 'no-store, max-age=0',
   pragma: 'no-cache',
@@ -851,6 +853,44 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
     return
   }
 
+  const problemDeliberationMatch = url.pathname.match(/^\/api\/problem-deliberation\/([^/]+)$/)
+  if (problemDeliberationMatch) {
+    const briefId = decodeURIComponent(problemDeliberationMatch[1] ?? '')
+    if (request.method === 'GET') {
+      const cached = await readProblemDeliberation(config, briefId)
+      if (cached) {
+        writeJson(response, cached)
+      } else {
+        writeJson(response, { status: 'pending' }, 202)
+      }
+      return
+    }
+    if (request.method === 'POST') {
+      if (!isTrustedSettingsRequest(request)) {
+        writeText(response, 'Problem deliberation requires loopback, private LAN, Docker, or Tailscale access', 403)
+        return
+      }
+      const briefs = await listProblemBriefs(config)
+      const brief = briefs.find((item) => item.id === briefId)
+      if (!brief) {
+        writeText(response, 'Problem brief not found', 404)
+        return
+      }
+      if (runningDeliberations.has(briefId)) {
+        writeJson(response, { status: 'running' }, 202)
+        return
+      }
+      runningDeliberations.add(briefId)
+      deliberateProblemCard(config, brief).catch((err) => {
+        console.error(`problem-deliberation: error for ${briefId}:`, err instanceof Error ? err.message : String(err))
+      }).finally(() => {
+        runningDeliberations.delete(briefId)
+      })
+      writeJson(response, { status: 'started' }, 202)
+      return
+    }
+  }
+
   response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
   response.end('Not found')
 }
@@ -1262,6 +1302,13 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
 .patrol-chat-input { flex: 1; background: rgba(15,23,42,.7); border: 1px solid rgba(148,163,184,.2); border-radius: 12px; padding: 9px 13px; color: #e2e8f0; font-size: 14px; min-width: 0; }
 .patrol-chat-input::placeholder { color: #334155; }
 .patrol-chat-send { background: rgba(30,27,75,.4); border: 1px solid rgba(99,102,241,.4); border-radius: 12px; color: #a5b4fc; font-size: 13px; padding: 9px 16px; cursor: pointer; white-space: nowrap; }
+.ps-deliberation { margin-top: 10px; }
+.ps-deliberation-label { font-size: 12px; color: #475569; margin-bottom: 6px; }
+.ps-deliberation-loading { font-size: 13px; color: #475569; font-style: italic; }
+.ps-debate-message { padding: 6px 0; border-bottom: 1px solid rgba(148,163,184,.07); }
+.ps-debate-message:last-child { border-bottom: none; }
+.ps-debate-persona { font-size: 12px; font-weight: 600; color: #818cf8; margin-bottom: 2px; }
+.ps-debate-content { font-size: 13px; color: #cbd5e1; line-height: 1.5; }
 
 /* Labels */
 .sys-label { font-size: 16px; color: rgba(0,255,255,0.4); letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 6px; }
@@ -2414,6 +2461,10 @@ function renderPsCard(
       ${brief.evidence.slice(0, 3).map((entry) => `<div class="ps-evidence-quote">${escapeHtml(entry.quote.slice(0, 200))}<div class="ps-evidence-source">${escapeHtml(entry.sourceName)}${entry.url ? ` · <a href="${escapeHtmlAttr(entry.url)}" target="_blank" rel="noopener">連結</a>` : ''}</div></div>`).join('')}
     </div>` : ''}
     ${evaluation?.rankingRationale ? `<div class="ps-detail-box full" style="margin-top:6px"><strong>${isPick ? '為何今天選它' : '排序理由'}</strong>${escapeHtml(evaluation.rankingRationale)}</div>` : ''}
+    <div class="ps-deliberation" data-brief-id="${escapeHtmlAttr(brief.id)}">
+      <div class="ps-deliberation-label">多角色辯論</div>
+      <div class="ps-deliberation-content ps-deliberation-loading">載入中…</div>
+    </div>
   </div>`
 
   return `<div class="ps-card ${tierClass}" data-ps-card="${index}" data-ps-tier="${tierClass}" data-ps-brief-id="${brief.id}" data-ps-expand-trigger>
@@ -2531,7 +2582,7 @@ function renderPatrolChat(): string {
     }).catch(function() { input.disabled = false; btn.disabled = false; btn.textContent = '送出'; });
   }
 
-  if (psStack) psStack.addEventListener('ps-card-change', function(e) { loadForCard(e.detail.briefId); });
+  if (psStack) psStack.addEventListener('ps-card-change', function(e) { loadForCard(e.detail.briefId); loadDeliberation(e.detail.briefId); });
 
   if (btn) btn.addEventListener('click', send);
   if (input) input.addEventListener('keydown', function(e) {
@@ -2540,6 +2591,92 @@ function renderPatrolChat(): string {
 
   poll();
   setInterval(poll, POLL_MS);
+})();
+</script>
+<script>
+(function() {
+  var deliberationTimers = {};
+  var deliberationAttempts = {};
+  var MAX_POLLS = 10;
+  var POLL_INTERVAL = 3000;
+
+  function escapeHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function renderTranscript(transcript) {
+    return transcript.map(function(msg) {
+      return '<div class="ps-debate-message">' +
+        '<div class="ps-debate-persona">' + escapeHtml(msg.persona) + ' · 第' + escapeHtml(String(msg.round)) + '輪</div>' +
+        '<div class="ps-debate-content">' + escapeHtml(msg.content) + '</div>' +
+        '</div>';
+    }).join('');
+  }
+
+  function loadDeliberation(briefId) {
+    if (!briefId) return;
+    var el = document.querySelector('.ps-deliberation[data-brief-id="' + briefId + '"]');
+    if (!el) return;
+    var contentEl = el.querySelector('.ps-deliberation-content');
+    if (!contentEl) return;
+
+    if (deliberationTimers[briefId]) {
+      clearTimeout(deliberationTimers[briefId]);
+      delete deliberationTimers[briefId];
+    }
+    deliberationAttempts[briefId] = 0;
+    contentEl.className = 'ps-deliberation-content ps-deliberation-loading';
+    contentEl.textContent = '載入中…';
+
+    fetch('/api/problem-deliberation/' + encodeURIComponent(briefId))
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data && data.transcript && data.transcript.length > 0) {
+          contentEl.className = 'ps-deliberation-content';
+          contentEl.innerHTML = renderTranscript(data.transcript);
+          return;
+        }
+        triggerAndPoll(briefId, contentEl);
+      })
+      .catch(function() { triggerAndPoll(briefId, contentEl); });
+  }
+
+  function triggerAndPoll(briefId, contentEl) {
+    fetch('/api/problem-deliberation/' + encodeURIComponent(briefId), { method: 'POST' })
+      .catch(function() {});
+    schedulePoll(briefId, contentEl);
+  }
+
+  function schedulePoll(briefId, contentEl) {
+    deliberationAttempts[briefId] = (deliberationAttempts[briefId] || 0) + 1;
+    if (deliberationAttempts[briefId] > MAX_POLLS) {
+      contentEl.className = 'ps-deliberation-content ps-deliberation-loading';
+      contentEl.textContent = '辯論產生中，請稍後再開此卡片…';
+      return;
+    }
+    deliberationTimers[briefId] = setTimeout(function() {
+      fetch('/api/problem-deliberation/' + encodeURIComponent(briefId))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (data && data.transcript && data.transcript.length > 0) {
+            contentEl.className = 'ps-deliberation-content';
+            contentEl.innerHTML = renderTranscript(data.transcript);
+          } else {
+            schedulePoll(briefId, contentEl);
+          }
+        })
+        .catch(function() { schedulePoll(briefId, contentEl); });
+    }, POLL_INTERVAL);
+  }
+
+  window.loadDeliberation = loadDeliberation;
+
+  var psStacks = document.querySelectorAll('[data-ps-stack]');
+  psStacks.forEach(function(stack) {
+    var firstCard = stack.querySelector('[data-ps-card="0"]');
+    var firstBriefId = firstCard ? firstCard.getAttribute('data-ps-brief-id') : '';
+    if (firstBriefId) loadDeliberation(firstBriefId);
+  });
 })();
 </script>`
 }
