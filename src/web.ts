@@ -1392,12 +1392,34 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
 @media (min-width: 768px) { .idea-card { flex-basis: calc((100% - 20px) / 3); } }
 
 /* Desktop sidebar layout */
-.desktop-layout { display: grid; grid-template-columns: 300px 1fr 300px; gap: 16px; align-items: start; }
-@media (min-width: 768px) {
+.desktop-layout { display: grid; grid-template-columns: 260px 1fr 240px; gap: 12px; align-items: start; }
+
+/* 640px–1023px: expand mobile layout to full viewport width */
+@media (min-width: 640px) and (max-width: 1023px) {
+  main { max-width: 100%; }
+  .tab-bar { max-width: 100%; left: 0; transform: none; }
+}
+/* Desktop: 1024px+ */
+@media (min-width: 1024px) {
   main { max-width: 1400px; padding: 0 20px; }
   #mobile-panels { display: none; }
   #desktop-panels { display: grid !important; }
   .tab-bar { display: none; }
+}
+@media (min-width: 1300px) {
+  .desktop-layout { grid-template-columns: 300px 1fr 280px; gap: 16px; }
+}
+@media (min-width: 1600px) {
+  main { max-width: 1700px; }
+  .desktop-layout { grid-template-columns: 340px 1fr 320px; gap: 20px; }
+}
+@media (min-width: 1920px) {
+  main { max-width: 2000px; }
+  .desktop-layout { grid-template-columns: 380px 1fr 380px; gap: 24px; }
+}
+@media (min-width: 2560px) {
+  main { max-width: 2600px; }
+  .desktop-layout { grid-template-columns: 440px 1fr 440px; gap: 28px; }
 }
 
 /* Muted / utilities */
