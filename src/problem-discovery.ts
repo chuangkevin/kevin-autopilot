@@ -223,8 +223,6 @@ export function createProblemSignal(input: {
   }
 }
 
-const BRIEF_EXPIRY_MS = 14 * 24 * 60 * 60 * 1000
-
 export function buildProblemBriefs(signals: ProblemSignal[], existingBriefs: ProblemBrief[] = [], now: Date = new Date()): ProblemBrief[] {
   const byKey = new Map<string, ProblemBrief>()
   for (const brief of existingBriefs) {
@@ -241,7 +239,7 @@ export function buildProblemBriefs(signals: ProblemSignal[], existingBriefs: Pro
   }
 
   return [...byKey.values()]
-    .filter((brief) => touchedKeys.has(brief.dedupKey) || now.getTime() - new Date(brief.updatedAt).getTime() < BRIEF_EXPIRY_MS)
+    .filter((brief) => touchedKeys.has(brief.dedupKey))
     .sort((a, b) => b.score - a.score || b.updatedAt.localeCompare(a.updatedAt))
 }
 
