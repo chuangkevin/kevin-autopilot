@@ -66,10 +66,11 @@ interface ProblemPattern {
 
 export async function getDailyProblemDiscovery(
   config: AutopilotConfig,
-  options: { force?: boolean; report?: ObservationReport; now?: Date; externalSignals?: ProblemSignal[] } = {},
+  options: { force?: boolean; report?: ObservationReport; now?: Date; externalSignals?: ProblemSignal[]; includeSignals?: boolean } = {},
 ): Promise<DailyProblemDiscovery> {
   const now = options.now ?? new Date()
   const date = taipeiDateKey(now)
+  const includeSignals = options.includeSignals === true
 
   // Fast path: today's pick already exists and caller provides no new signals to ingest.
   // Skip signal collection, upsert, and brief rebuild — just read stored data.
@@ -77,18 +78,19 @@ export async function getDailyProblemDiscovery(
   if (!options.force && !options.report && !options.externalSignals?.length) {
     const stored = await readDailyPick(config)
     if (stored?.date === date) {
-      const [briefs, feedback, signals] = await Promise.all([
+      const [briefs, feedback, signals, signalCount] = await Promise.all([
         listProblemBriefs(config),
         listProblemFeedback(config),
-        listProblemSignals(config),
+        includeSignals ? listProblemSignals(config) : Promise.resolve([]),
+        includeSignals ? Promise.resolve(undefined) : countJsonRecords(problemSignalsDir(config)),
       ])
       const evaluations = evaluateProblemCandidates(briefs, feedback)
-      const rejectedSummary = buildRejectedProblemSummary(signals, briefs)
+      const rejectedSummary = includeSignals ? buildRejectedProblemSummary(signals, briefs) : []
       const storedBrief = stored.briefId ? briefs.find((b) => b.id === stored.briefId) ?? null : null
       const storedEvaluation = stored.briefId ? evaluations.find((e) => e.briefId === stored.briefId) : undefined
       if (!(stored.status === 'picked' && (!storedBrief || isProblemCandidateDismissed(storedEvaluation)))) {
-        const extSigs = signals.filter((s) => s.sourceType === 'reddit' || s.sourceType === 'hacker-news' || s.sourceType === 'threads-tw').sort((a, b) => b.fetchedAt.localeCompare(a.fetchedAt))
-        return { date, generatedAt: stored.generatedAt, pick: stored, brief: storedBrief, briefs, evaluations, rejectedSummary, signalCount: signals.length, signals: extSigs }
+        const extSigs = includeSignals ? signals.filter((s) => s.sourceType === 'reddit' || s.sourceType === 'hacker-news' || s.sourceType === 'threads-tw').sort((a, b) => b.fetchedAt.localeCompare(a.fetchedAt)) : []
+        return { date, generatedAt: stored.generatedAt, pick: stored, brief: storedBrief, briefs, evaluations, rejectedSummary, signalCount: signalCount ?? signals.length, signals: extSigs }
       }
     }
   }
@@ -886,6 +888,14 @@ async function readJsonRecords<T>(dir: string, guard: (value: unknown) => value 
     return records
   } catch {
     return []
+  }
+}
+
+async function countJsonRecords(dir: string): Promise<number> {
+  try {
+    return (await readdir(dir)).filter((file) => file.endsWith('.json')).length
+  } catch {
+    return 0
   }
 }
 

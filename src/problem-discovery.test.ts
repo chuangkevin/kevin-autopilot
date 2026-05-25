@@ -325,6 +325,39 @@ test('daily pick is stable for the same Taipei date unless forced', async () => 
   }
 })
 
+test('stored daily pick returns cheap signal count unless raw signals are requested', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-daily-problem-fast-'))
+  try {
+    const config = testConfig(dataDir)
+    await upsertProblemSignals(config, [createProblemSignal({
+      sourceType: 'reddit',
+      sourceName: 'reddit:workflow:1',
+      title: 'PM 用截圖和文件來回轉需求',
+      snippet: 'PM 每次都用截圖和文件描述需求，設計和工程靠手動對齊 prototype，來回很多次。',
+      fetchedAt: '2026-05-15T16:10:00.000Z',
+    })])
+    await getDailyProblemDiscovery(config, { force: true, now: new Date('2026-05-15T16:10:00.000Z') })
+    await upsertProblemSignals(config, [createProblemSignal({
+      sourceType: 'reddit',
+      sourceName: 'reddit:workflow:2',
+      title: '中古車業務 Excel LINE 刊登流程',
+      snippet: '中古車業務每次刊登都靠 Excel、LINE、截圖和手動複製貼上整理車輛資料，重複又容易漏。',
+      fetchedAt: '2026-05-15T17:00:00.000Z',
+    })])
+
+    const fast = await getDailyProblemDiscovery(config, { now: new Date('2026-05-15T23:30:00.000Z') })
+    assert.equal(fast.signalCount, 2)
+    assert.deepEqual(fast.signals, [])
+    assert.deepEqual(fast.rejectedSummary, [])
+
+    const withSignals = await getDailyProblemDiscovery(config, { now: new Date('2026-05-15T23:30:00.000Z'), includeSignals: true })
+    assert.equal(withSignals.signalCount, 2)
+    assert.equal(withSignals.signals.length, 2)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
 test('daily pick regenerates when same-day stored brief was retired', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-stale-daily-problem-'))
   try {

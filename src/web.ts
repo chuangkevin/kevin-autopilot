@@ -372,8 +372,8 @@ async function handleRequest(config: AutopilotConfig, request: IncomingMessage, 
   }
 
   if (url.pathname === '/api/problem-discovery/daily' && request.method === 'GET') {
-    const report = await getVisibleReport(config, observationLoop)
-    writeJson(response, toPublicDailyProblemDiscovery(await getDailyProblemDiscovery(config, { report })))
+    const includeSignals = url.searchParams.get('includeSignals') === '1'
+    writeJson(response, toPublicDailyProblemDiscovery(await getDailyProblemDiscovery(config, { includeSignals })))
     return
   }
 
