@@ -23,7 +23,7 @@ test('fetchHackerNewsSignals parses HN API response into ProblemSignals', async 
     assert.ok(s.url?.includes('news.ycombinator.com'), 'url should point to HN')
     assert.ok(s.snippet.length >= 80, 'snippet should be at least 80 chars')
     assert.ok(s.title.length > 0)
-    assert.ok(typeof s.dedupKey === 'string' && s.dedupKey.length > 0)
+    assert.ok(typeof s.id === 'string' && s.id.length > 0)
   } finally {
     globalThis.fetch = originalFetch
   }

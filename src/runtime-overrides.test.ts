@@ -16,16 +16,12 @@ function baseConfig(dataDir: string): AutopilotConfig {
   return {
     environment: 'test',
     dataDir,
-    aiReflection: { enabled: false, maxOutputTokens: 700, maxPendingAiIdeas: 5 },
-    backgroundObservation: { enabled: true, intervalMs: 300_000 },
-    ruleSources: [],
-    repositories: [],
-    services: [],
+    radarScan: { intervalMs: 4 * 60 * 60 * 1000 },
   }
 }
 
 test('loadRuntimeOverrides returns empty object when file is missing', async () => {
-  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-overrides-missing-'))
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-radar-overrides-missing-'))
   try {
     assert.deepEqual(await loadRuntimeOverrides(baseConfig(dataDir)), {})
   } finally {
@@ -33,93 +29,86 @@ test('loadRuntimeOverrides returns empty object when file is missing', async () 
   }
 })
 
-test('loadRuntimeOverrides drops invalid and unknown hand-edited fields', async () => {
-  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-overrides-invalid-'))
+test('saveRuntimeOverrides accepts radarScan keys', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-radar-overrides-save-'))
   try {
-    await writeFile(join(dataDir, 'runtime-overrides.json'), JSON.stringify({
-      aiReflection: {
-        enabled: true,
-        maxPendingAiIdeas: 'many',
-        maxOutputTokens: 80,
-      },
-      backgroundObservation: {
-        enabled: false,
-        intervalMs: 60_000,
-      },
-      repositories: [],
-    }), 'utf8')
-    assert.deepEqual(await loadRuntimeOverrides(baseConfig(dataDir)), {
-      aiReflection: { enabled: true },
-      backgroundObservation: { enabled: false, intervalMs: 60_000 },
+    const config = baseConfig(dataDir)
+    const saved = await saveRuntimeOverrides(config, {
+      'radarScan.enabled': true,
+      'radarScan.intervalMs': 600_000,
+    })
+    assert.deepEqual(saved, {
+      radarScan: { enabled: true, intervalMs: 600_000 },
+    })
+    assert.deepEqual(await loadRuntimeOverrides(config), {
+      radarScan: { enabled: true, intervalMs: 600_000 },
     })
   } finally {
     await rm(dataDir, { recursive: true, force: true })
   }
 })
 
-test('getEffectiveConfig merges whitelisted overrides without mutating file config', async () => {
-  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-overrides-effective-'))
+test('saveRuntimeOverrides rejects unknown keys', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-radar-overrides-reject-'))
   try {
     const config = baseConfig(dataDir)
-    await saveRuntimeOverrides(config, {
-      aiReflection: { enabled: true, maxPendingAiIdeas: 12 },
-      backgroundObservation: { intervalMs: 120_000 },
-    })
-    const effective = await getEffectiveConfig(config)
-    assert.equal(effective.aiReflection?.enabled, true)
-    assert.equal(effective.aiReflection?.maxOutputTokens, 700)
-    assert.equal(effective.aiReflection?.maxPendingAiIdeas, 12)
-    assert.equal(effective.backgroundObservation?.intervalMs, 120_000)
-    assert.equal(config.aiReflection?.enabled, false)
-    assert.equal(config.backgroundObservation?.intervalMs, 300_000)
-  } finally {
-    await rm(dataDir, { recursive: true, force: true })
-  }
-})
-
-test('saveRuntimeOverrides allows larger reflection JSON budgets', async () => {
-  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-overrides-reflection-budget-'))
-  try {
-    const config = baseConfig(dataDir)
-    await saveRuntimeOverrides(config, { aiReflection: { maxOutputTokens: 3000 } })
-    const effective = await getEffectiveConfig(config)
-    assert.equal(effective.aiReflection?.maxOutputTokens, 3000)
-  } finally {
-    await rm(dataDir, { recursive: true, force: true })
-  }
-})
-
-test('saveRuntimeOverrides rejects unknown keys and preserves existing overrides', async () => {
-  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-overrides-reject-'))
-  try {
-    const config = baseConfig(dataDir)
-    await saveRuntimeOverrides(config, { aiReflection: { enabled: true } })
     await assert.rejects(
-      () => saveRuntimeOverrides(config, { ai: { model: 'gemini-pro' } }),
-      (error: unknown) => error instanceof RuntimeOverrideError && error.code === 'not-in-whitelist' && error.key === 'ai.model',
+      () => saveRuntimeOverrides(config, { 'ai.model': 'gemini-pro' }),
+      (error: unknown) => error instanceof RuntimeOverrideError,
     )
-    assert.deepEqual(await loadRuntimeOverrides(config), { aiReflection: { enabled: true } })
   } finally {
     await rm(dataDir, { recursive: true, force: true })
   }
 })
 
-test('saveRuntimeOverrides treats null as removing an override', async () => {
-  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-overrides-null-'))
+test('saveRuntimeOverrides enforces intervalMs range', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-radar-overrides-range-'))
   try {
     const config = baseConfig(dataDir)
-    await saveRuntimeOverrides(config, { aiReflection: { enabled: true, maxPendingAiIdeas: 10 } })
-    assert.deepEqual(await saveRuntimeOverrides(config, { aiReflection: { enabled: null } }), {
-      aiReflection: { maxPendingAiIdeas: 10 },
-    })
+    await assert.rejects(
+      () => saveRuntimeOverrides(config, { 'radarScan.intervalMs': 100 }),
+      (error: unknown) => error instanceof RuntimeOverrideError,
+    )
+    await assert.rejects(
+      () => saveRuntimeOverrides(config, { 'radarScan.intervalMs': 99_999_999 }),
+      (error: unknown) => error instanceof RuntimeOverrideError,
+    )
   } finally {
     await rm(dataDir, { recursive: true, force: true })
   }
 })
 
-test('applyRuntimeOverrides accepts dotted keys through sanitized loaded overrides only', () => {
+test('saveRuntimeOverrides rejects non-boolean values for boolean fields', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-radar-overrides-bool-'))
+  try {
+    const config = baseConfig(dataDir)
+    await assert.rejects(
+      () => saveRuntimeOverrides(config, { 'radarScan.enabled': 'true' }),
+      (error: unknown) => error instanceof RuntimeOverrideError,
+    )
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('getEffectiveConfig merges overrides over base config', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'kevin-radar-overrides-effective-'))
+  try {
+    const config = baseConfig(dataDir)
+    await writeFile(join(dataDir, 'runtime-overrides.json'), JSON.stringify({
+      radarScan: { intervalMs: 600_000 },
+    }), 'utf8')
+    const effective = await getEffectiveConfig(config)
+    assert.equal(effective.radarScan?.intervalMs, 600_000)
+    assert.equal(config.radarScan?.intervalMs, 4 * 60 * 60 * 1000)
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('applyRuntimeOverrides merges radarScan partial', () => {
   const config = baseConfig('data')
-  const effective = applyRuntimeOverrides(config, { backgroundObservation: { enabled: false } })
-  assert.equal(effective.backgroundObservation?.enabled, false)
-  assert.equal(config.backgroundObservation?.enabled, true)
+  const effective = applyRuntimeOverrides(config, { radarScan: { enabled: false } })
+  assert.equal(effective.radarScan?.enabled, false)
+  assert.equal(effective.radarScan?.intervalMs, 4 * 60 * 60 * 1000)
 })

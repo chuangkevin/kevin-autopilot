@@ -1,88 +1,39 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { test } from 'node:test'
-import assert from 'node:assert/strict'
 import { loadConfig } from './config.js'
 
-test('loadConfig validates required arrays', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'kevin-autopilot-config-'))
+test('loadConfig validates required fields', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'radar-cfg-'))
   try {
-    const configPath = join(root, 'config.json')
-    await writeFile(configPath, JSON.stringify({ environment: 'test', dataDir: root }), 'utf8')
-    await assert.rejects(() => loadConfig(configPath), /Missing ruleSources array/)
+    const cfgPath = join(dir, 'config.json')
+    await writeFile(cfgPath, JSON.stringify({}))
+    await assert.rejects(() => loadConfig(cfgPath), /Missing environment/)
+
+    await writeFile(cfgPath, JSON.stringify({ environment: 'test' }))
+    await assert.rejects(() => loadConfig(cfgPath), /Missing dataDir/)
+
+    await writeFile(cfgPath, JSON.stringify({ environment: 'test', dataDir: dir }))
+    const cfg = await loadConfig(cfgPath)
+    assert.equal(cfg.environment, 'test')
+    assert.equal(cfg.dataDir, dir)
   } finally {
-    await rm(root, { recursive: true, force: true })
+    await rm(dir, { recursive: true, force: true })
   }
 })
 
-test('loadConfig validates background observation interval', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'kevin-autopilot-config-'))
+test('loadConfig validates radarScan.intervalMs', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'radar-cfg-'))
   try {
-    const configPath = join(root, 'config.json')
-    await writeFile(configPath, JSON.stringify({
-      environment: 'test',
-      dataDir: root,
-      backgroundObservation: { intervalMs: 1000 },
-      ruleSources: [],
-      repositories: [],
-      services: [],
-    }), 'utf8')
-    await assert.rejects(() => loadConfig(configPath), /backgroundObservation\.intervalMs/)
-  } finally {
-    await rm(root, { recursive: true, force: true })
-  }
-})
+    const cfgPath = join(dir, 'config.json')
+    await writeFile(cfgPath, JSON.stringify({ environment: 'test', dataDir: dir, radarScan: { intervalMs: 100 } }))
+    await assert.rejects(() => loadConfig(cfgPath), /intervalMs/)
 
-test('loadConfig validates background observation enabled type', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'kevin-autopilot-config-'))
-  try {
-    const configPath = join(root, 'config.json')
-    await writeFile(configPath, JSON.stringify({
-      environment: 'test',
-      dataDir: root,
-      backgroundObservation: { enabled: 'false' },
-      ruleSources: [],
-      repositories: [],
-      services: [],
-    }), 'utf8')
-    await assert.rejects(() => loadConfig(configPath), /backgroundObservation\.enabled/)
-  } finally {
-    await rm(root, { recursive: true, force: true })
-  }
-})
-
-test('loadConfig validates background observation object type', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'kevin-autopilot-config-'))
-  try {
-    const configPath = join(root, 'config.json')
-    await writeFile(configPath, JSON.stringify({
-      environment: 'test',
-      dataDir: root,
-      backgroundObservation: 'enabled',
-      ruleSources: [],
-      repositories: [],
-      services: [],
-    }), 'utf8')
-    await assert.rejects(() => loadConfig(configPath), /backgroundObservation must be an object/)
-  } finally {
-    await rm(root, { recursive: true, force: true })
-  }
-})
-
-test('loadConfig validates web research settings', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'kevin-autopilot-config-'))
-  const path = join(dir, 'config.json')
-  try {
-    await writeFile(path, JSON.stringify({
-      environment: 'test',
-      dataDir: dir,
-      webResearch: { enabled: 'yes' },
-      ruleSources: [],
-      repositories: [],
-      services: [],
-    }), 'utf8')
-    await assert.rejects(() => loadConfig(path), /webResearch.enabled must be a boolean/)
+    await writeFile(cfgPath, JSON.stringify({ environment: 'test', dataDir: dir, radarScan: { intervalMs: 3_600_000 } }))
+    const cfg = await loadConfig(cfgPath)
+    assert.equal(cfg.radarScan?.intervalMs, 3_600_000)
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

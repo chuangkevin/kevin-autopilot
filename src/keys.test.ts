@@ -159,8 +159,5 @@ function makeConfig(dataDir: string): AutopilotConfig {
   return {
     environment: 'test',
     dataDir,
-    ruleSources: [],
-    repositories: [],
-    services: [],
   }
 }

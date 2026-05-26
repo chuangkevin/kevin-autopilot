@@ -10,11 +10,11 @@ function createProblemSignal(input: {
   url?: string
   query?: string
 }): ProblemSignal {
-  const dedupKey = createHash('sha256')
+  const hash = createHash('sha256')
     .update(`${input.sourceType}\x00${input.sourceName}\x00${input.title.slice(0, 120)}`)
     .digest('hex')
     .slice(0, 16)
-  return { id: `sig-${dedupKey}`, dedupKey, ...input }
+  return { id: `sig-${hash}`, ...input }
 }
 
 function stripHtml(html: string): string {
