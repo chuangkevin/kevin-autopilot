@@ -1,6 +1,6 @@
 # World Problem Radar — Design Spec
 **Date:** 2026-05-26
-**Status:** Draft — awaiting approval
+**Status:** Shipped — v1.0.0 deployed 2026-05-26 (commit a69d7ff). Freeze tag `v-autopilot-freeze` preserves the prior Autopilot system.
 **Migration target:** kevin-autopilot (approach A: same repo, freeze + rebuild)
 
 ---
