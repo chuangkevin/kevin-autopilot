@@ -1,75 +1,54 @@
-import { createHash } from 'node:crypto'
+import { makeSignalId } from './problem-cards.js'
 import type { ProblemSignal } from './types.js'
 
-function createProblemSignal(input: {
-  sourceType: ProblemSignal['sourceType']
-  sourceName: string
-  title: string
-  snippet: string
-  fetchedAt: string
-  url?: string
-  query?: string
-}): ProblemSignal {
-  const hash = createHash('sha256')
-    .update(`${input.sourceType}\x00${input.sourceName}\x00${input.title.slice(0, 120)}`)
-    .digest('hex')
-    .slice(0, 16)
-  return { id: `sig-${hash}`, ...input }
-}
+const HN_BASE = 'https://hn.algolia.com/api/v1/search'
+const HN_TAGS: Array<'show_hn' | 'ask_hn'> = ['show_hn', 'ask_hn']
+const REDDIT_SUBREDDITS = ['programming', 'ExperiencedDevs', 'SaaS', 'startups']
+const REDDIT_AGENT = 'world-problem-radar/1.0 (personal research tool)'
 
 function stripHtml(html: string): string {
   return html
     .replace(/<[^>]+>/g, ' ')
-    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&apos;/g, "'").replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&#(\d+);/g, (_, c) => String.fromCharCode(Number(c)))
     .replace(/\s+/g, ' ').trim()
 }
-
-const HN_QUERIES = [
-  'workflow broken manual hours',
-  'tool missing automate annoying',
-  'frustrating repetitive process workaround',
-]
-const HN_TAGS = ['ask_hn', 'show_hn']
-const HN_BASE = 'https://hn.algolia.com/api/v1/search'
 
 export async function fetchHackerNewsSignals(options: { timeout?: number } = {}): Promise<ProblemSignal[]> {
   const timeout = options.timeout ?? 10_000
   const signals: ProblemSignal[] = []
   const fetchedAt = new Date().toISOString()
   for (const tag of HN_TAGS) {
-    for (const query of HN_QUERIES) {
+    try {
+      const ctrl = new AbortController()
+      const timer = setTimeout(() => ctrl.abort(), timeout)
       try {
-        const ctrl = new AbortController()
-        const timer = setTimeout(() => ctrl.abort(), timeout)
-        try {
-          const res = await fetch(`${HN_BASE}?query=${encodeURIComponent(query)}&tags=${tag}&hitsPerPage=10`, { signal: ctrl.signal })
-          if (!res.ok) continue
-          const data = await res.json() as { hits?: unknown[] }
-          for (const hit of data.hits ?? []) {
-            const h = hit as Record<string, unknown>
-            const text = stripHtml([String(h.story_text ?? ''), String(h.comment_text ?? '')].filter(Boolean).join(' ').trim())
-            if (text.length < 80) continue
-            signals.push(createProblemSignal({
-              sourceType: 'hacker-news',
-              sourceName: `hacker-news:${String(h.objectID ?? 'unknown')}`,
-              title: stripHtml(String(h.title ?? query)).slice(0, 180),
-              snippet: text.slice(0, 1200),
-              fetchedAt,
-              url: `https://news.ycombinator.com/item?id=${String(h.objectID ?? '')}`,
-              query,
-            }))
-          }
-        } finally {
-          clearTimeout(timer)
+        const res = await fetch(`${HN_BASE}?tags=${tag}&hitsPerPage=30`, { signal: ctrl.signal })
+        if (!res.ok) continue
+        const data = await res.json() as { hits?: unknown[] }
+        for (const hit of data.hits ?? []) {
+          const h = hit as Record<string, unknown>
+          const text = stripHtml([String(h.story_text ?? ''), String(h.comment_text ?? '')].filter(Boolean).join(' ').trim())
+          if (text.length < 80) continue
+          const title = stripHtml(String(h.title ?? '')).slice(0, 180)
+          if (!title) continue
+          const sourceName = `hn:${String(h.objectID ?? 'unknown')}`
+          signals.push({
+            id: makeSignalId('hacker-news', sourceName, title),
+            sourceType: 'hacker-news',
+            sourceName,
+            title,
+            snippet: text.slice(0, 1200),
+            url: `https://news.ycombinator.com/item?id=${String(h.objectID ?? '')}`,
+            fetchedAt,
+          })
         }
-      } catch { /* per-query failure: ignore and continue */ }
-    }
+      } finally {
+        clearTimeout(timer)
+      }
+    } catch { /* per-tag failure: ignore */ }
   }
   return signals
 }
-
-const REDDIT_SUBREDDITS = ['smallbusiness', 'freelance', 'productivity', 'SideProject']
-const REDDIT_AGENT = 'kevin-autopilot/1.0 (personal research tool)'
 
 export async function fetchRedditSignals(options: { timeout?: number } = {}): Promise<ProblemSignal[]> {
   const timeout = options.timeout ?? 10_000
@@ -91,15 +70,17 @@ export async function fetchRedditSignals(options: { timeout?: number } = {}): Pr
           if (!post) continue
           const text = String(post.selftext ?? '').trim()
           if (text.length < 80) continue
-          signals.push(createProblemSignal({
+          const title = String(post.title ?? '').slice(0, 180)
+          const sourceName = `reddit:${sub}:${String(post.id ?? 'unknown')}`
+          signals.push({
+            id: makeSignalId('reddit', sourceName, title),
             sourceType: 'reddit',
-            sourceName: `reddit:${sub}:${String(post.id ?? 'unknown')}`,
-            title: String(post.title ?? '').slice(0, 180),
+            sourceName,
+            title,
             snippet: text.slice(0, 1200),
-            fetchedAt,
             url: `https://www.reddit.com${String(post.permalink ?? '')}`,
-            query: sub,
-          }))
+            fetchedAt,
+          })
         }
       } finally {
         clearTimeout(timer)
@@ -109,8 +90,6 @@ export async function fetchRedditSignals(options: { timeout?: number } = {}): Pr
   return signals
 }
 
-// Note: threads-tw signals are not auto-fetched here (Meta Threads has no public API).
-// They enter via the manual-paste ingest endpoint (POST /api/problem-signal/ingest).
 export async function fetchExternalSignals(options: { timeout?: number } = {}): Promise<ProblemSignal[]> {
   const [hn, reddit] = await Promise.all([
     fetchHackerNewsSignals(options).catch((): ProblemSignal[] => []),

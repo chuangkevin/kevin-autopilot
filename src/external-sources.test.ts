@@ -19,7 +19,7 @@ test('fetchHackerNewsSignals parses HN API response into ProblemSignals', async 
     assert.ok(signals.length >= 1, 'expected at least one signal')
     const s = signals[0]
     assert.equal(s.sourceType, 'hacker-news')
-    assert.ok(s.sourceName.startsWith('hacker-news:'), `sourceName should start with hacker-news: — got ${s.sourceName}`)
+    assert.ok(s.sourceName.startsWith('hn:'), `sourceName should start with hn: — got ${s.sourceName}`)
     assert.ok(s.url?.includes('news.ycombinator.com'), 'url should point to HN')
     assert.ok(s.snippet.length >= 80, 'snippet should be at least 80 chars')
     assert.ok(s.title.length > 0)
