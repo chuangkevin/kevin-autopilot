@@ -68,9 +68,9 @@ test('dashboard shows a sanitized candidate problem pool', async () => {
     assert.equal(pageBody.includes('標記有訊號'), true) // thread cost signal feedback label
     assert.equal(pageBody.includes('非真實問題'), true) // thread cost signal feedback label
     assert.equal(pageBody.includes('暫時不追 / 已排除訊號'), false) // replaced by renderPsRejectedSummary
-    assert.equal(pageBody.includes('data-ps-stack'), true) // swipeable card stack present
-    assert.equal(pageBody.includes('data-ps-rail'), true) // native horizontal rail present when cards exist
-    assert.equal(pageBody.includes('左右滑動瀏覽各 thread 的代價分析'), true) // updated aria-label
+    assert.equal(pageBody.includes('data-thread-overview'), true) // thread overview section present
+    assert.equal(pageBody.includes('COST:'), true) // cost badge visible when threads exist
+    assert.equal(pageBody.includes('COUNTERFACTUAL VIEW'), true) // counterfactual section present when threads exist
     assert.equal(pageBody.includes('ps-paste-input'), true) // paste bar present
 
     const dailyProblem = await fetch(`${baseUrl}/api/problem-discovery/daily`)
@@ -186,7 +186,7 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(page.status, 200)
     assert.equal(page.headers.get('cache-control'), 'no-store, max-age=0')
     const pageBody = await page.text()
-    assert.equal(pageBody.includes('THREAD COST VIEW'), true) // thread cost view section label
+    assert.equal(pageBody.includes('/// THREADS'), true) // thread overview section label
     assert.equal(pageBody.includes('尚無 thread 可計算代價'), true) // thread cost empty state
     assert.equal(pageBody.includes('id="tab-problem"'), true)
     assert.equal(pageBody.includes('id="tab-graph" hidden'), true)

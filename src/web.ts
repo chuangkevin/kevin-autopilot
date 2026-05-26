@@ -1299,6 +1299,21 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
 .ps-paste-input::placeholder { color: #334155; }
 .ps-paste-btn { background: rgba(30,27,75,.4); border: 1px solid rgba(99,102,241,.4); border-radius: 12px; color: #a5b4fc; font-size: 13px; padding: 10px 16px; cursor: pointer; white-space: nowrap; }
 .ps-empty { padding: 28px 0; text-align: center; }
+.thread-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.thread-row { background: rgba(15,23,42,.7); border: 1px solid rgba(148,163,184,.12); border-radius: 16px; overflow: hidden; }
+.thread-row-header { display: flex; align-items: center; gap: 10px; padding: 12px 14px; cursor: pointer; user-select: none; }
+.thread-row-header:hover { background: rgba(30,27,75,.3); }
+.thread-row-info { flex: 1; min-width: 0; }
+.thread-row-name { font-size: 14px; font-weight: 600; color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.thread-row-lede { font-size: 12px; color: #64748b; margin-top: 2px; }
+.thread-row-arrow { font-size: 14px; color: #475569; flex-shrink: 0; }
+.tr-detail { padding: 0 14px 14px; }
+.cf-view { margin-top: 12px; background: rgba(2,6,23,.5); border: 1px solid rgba(99,102,241,.15); border-radius: 16px; padding: 12px 14px; }
+.cf-view-label { font-size: 10px; color: #6366f1; text-transform: uppercase; letter-spacing: .1em; margin-bottom: 10px; }
+.cf-if-only { margin-bottom: 10px; }
+.cf-if-only:last-child { margin-bottom: 0; }
+.cf-if-only-label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+.cf-if-only-body { font-size: 13px; color: #94a3b8; line-height: 1.5; }
 .ps-signals { margin-top: 8px; }
 .ps-signals summary { font-size: 12px; color: #475569; cursor: pointer; padding: 4px 0; }
 .ps-signal-item { display: flex; flex-direction: column; gap: 2px; padding: 8px 0; border-bottom: 1px solid rgba(148,163,184,.07); }
@@ -2357,21 +2372,18 @@ function switchTab(name) {
 
 function renderProblemStack(discovery: DailyProblemDiscovery): string {
   const evaluations = new Map(discovery.evaluations.map((e) => [e.briefId, e]))
-  const visible = visibleProblemCandidates(discovery)
-    .sort((a, b) => (evaluations.get(a.id)?.rank ?? 999) - (evaluations.get(b.id)?.rank ?? 999))
+  const allBriefs = visibleProblemCandidates(discovery)
+  const costOrder: Record<string, number> = { HIGH: 0, MED: 1, LOW: 2 }
+  const threads = allBriefs
+    .map((b) => ({ brief: b, thread: briefToThread(b, evaluations.get(b.id)), evaluation: evaluations.get(b.id) }))
+    .sort((a, b) =>
+      (costOrder[a.thread.cost.level] ?? 3) - (costOrder[b.thread.cost.level] ?? 3) ||
+      b.thread.cost.opportunityCost - a.thread.cost.opportunityCost,
+    )
 
-  const cards: Array<{ brief: DailyProblemDiscovery['briefs'][number]; evaluation: ProblemCandidateEvaluation | undefined; isPick: boolean }> = []
-  if (discovery.brief && discovery.pick.status === 'picked') {
-    cards.push({ brief: discovery.brief, evaluation: evaluations.get(discovery.brief.id), isPick: true })
-  }
-  for (const brief of visible) {
-    if (discovery.brief && brief.id === discovery.brief.id) continue
-    cards.push({ brief, evaluation: evaluations.get(brief.id), isPick: false })
-  }
-
-  if (cards.length === 0) {
-    return `<section class="cp-card problem-empty problem-stack" data-ps-stack>
-  <div class="sys-label">/// THREAD COST VIEW</div>
+  if (threads.length === 0) {
+    return `<section class="thread-overview" data-thread-overview>
+  <div class="sys-label">/// THREADS</div>
   <div class="ps-empty">
     <h2 class="problem-title" style="font-size:22px">尚無 thread 可計算代價</h2>
     <p class="muted">系統需要更多訊號才能建立 thread 的代價結構。每條 thread 的選擇成本與機會成本都會在這裡呈現。</p>
@@ -2386,25 +2398,15 @@ function renderProblemStack(discovery: DailyProblemDiscovery): string {
 </section>`
   }
 
-  const dotHtml = cards.map((c, i) => {
-    const tierClass = c.isPick ? 'tier-pick' : tierCssClass(c.evaluation?.tier)
-    return `<div class="ps-dot${i === 0 ? ` active ${tierClass}` : ''}" data-ps-dot="${i}"></div>`
-  }).join('')
+  const threadRowsHtml = threads.map(({ brief, thread, evaluation }, i) => renderThreadRow(brief, thread, evaluation, i)).join('\n')
+  const counterfactualHtml = renderCounterfactualSection(threads.map((t) => t.thread))
 
-  const cardHtml = cards.map((c, i) => renderPsCard(c.brief, c.evaluation, c.isPick, i)).join('\n')
-
-  return `<section class="problem-stack" data-ps-stack>
-  <div class="ps-nav">
-    <button class="ps-nav-btn" data-ps-prev disabled>‹ 上一條</button>
-    <div class="ps-status">
-      <div class="ps-dots">${dotHtml}</div>
-      <span class="ps-counter" data-ps-counter>1 / ${cards.length}</span>
-    </div>
-    <button class="ps-nav-btn" data-ps-next ${cards.length <= 1 ? 'disabled' : ''}>下一條 ›</button>
+  return `<section class="thread-overview" data-thread-overview>
+  <div class="sys-label">/// THREADS <span style="color:#475569;font-weight:400">${threads.length} ACTIVE</span></div>
+  <div class="thread-list">
+    ${threadRowsHtml}
   </div>
-  <div class="ps-card-wrap" data-ps-rail aria-label="左右滑動瀏覽各 thread 的代價分析">
-    ${cardHtml}
-  </div>
+  ${counterfactualHtml}
   ${renderPsRejectedSummary(discovery.rejectedSummary)}
   ${renderRawSignals(discovery.signals)}
   ${renderPsPasteBar()}
@@ -2412,64 +2414,19 @@ function renderProblemStack(discovery: DailyProblemDiscovery): string {
 </section>
 <script>
 (function() {
-  function initPsStack(stack) {
-    if (stack.dataset.psInit) return;
-    stack.dataset.psInit = '1';
-    var cards = stack.querySelectorAll('[data-ps-card]');
-    var dots = stack.querySelectorAll('[data-ps-dot]');
-    var prevBtn = stack.querySelector('[data-ps-prev]');
-    var nextBtn = stack.querySelector('[data-ps-next]');
-    var counter = stack.querySelector('[data-ps-counter]');
-    var rail = stack.querySelector('[data-ps-rail]');
-    var total = cards.length;
-    var current = 0;
-    var scrollTimer = 0;
-
-    function syncCard(index, shouldScroll) {
-      current = Math.max(0, Math.min(total - 1, index));
-      var newBriefId = cards[current] ? (cards[current].dataset.psBriefId || '') : '';
-      stack.dataset.psBriefId = newBriefId;
-      stack.dispatchEvent(new CustomEvent('ps-card-change', { detail: { briefId: newBriefId } }));
-      cards.forEach(function(card, i) { card.classList.toggle('ps-active', i === current); });
-      dots.forEach(function(dot, i) {
-        dot.className = 'ps-dot' + (i === current ? ' active ' + (cards[i] ? (cards[i].getAttribute('data-ps-tier') || '') : '') : '');
-      });
-      if (counter) counter.textContent = (current + 1) + ' / ' + total;
-      if (prevBtn) prevBtn.disabled = current === 0;
-      if (nextBtn) nextBtn.disabled = current === total - 1;
-      if (shouldScroll && cards[current]) cards[current].scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
+  function toggleThreadRow(index) {
+    var detail = document.getElementById('tr-detail-' + index);
+    var arrow = document.getElementById('tr-arrow-' + index);
+    if (!detail) return;
+    var open = detail.style.display !== 'none';
+    detail.style.display = open ? 'none' : 'block';
+    if (arrow) arrow.textContent = open ? '▾' : '▴';
+    if (!open) {
+      var briefId = detail.getAttribute('data-brief-id');
+      if (briefId) loadDeliberation(briefId);
     }
-
-    function showCard(index) {
-      syncCard(index, true);
-    }
-
-    if (prevBtn) prevBtn.addEventListener('click', function() { showCard(current - 1); });
-    if (nextBtn) nextBtn.addEventListener('click', function() { showCard(current + 1); });
-
-    if (rail) rail.addEventListener('scroll', function() {
-      window.clearTimeout(scrollTimer);
-      scrollTimer = window.setTimeout(function() {
-        var closest = current;
-        var best = Infinity;
-        cards.forEach(function(card, i) {
-          var distance = Math.abs(card.offsetLeft - rail.scrollLeft);
-          if (distance < best) { best = distance; closest = i; }
-        });
-        syncCard(closest, false);
-      }, 80);
-    }, { passive: true });
-
-    stack.addEventListener('click', function(e) {
-      var trigger = e.target.closest('[data-ps-expand-trigger]');
-      if (!trigger) return;
-      if (e.target.closest('[data-ps-no-expand]')) return;
-      trigger.classList.toggle('expanded');
-    });
-
-    syncCard(0, false);
   }
-  document.querySelectorAll('[data-ps-stack]').forEach(initPsStack);
+  window.toggleThreadRow = toggleThreadRow;
 })();
 </script>`
 }
@@ -2482,18 +2439,16 @@ function renderCostBar(label: string, value: number, colorClass: string): string
   return `<div class="ps-cost-row"><span class="ps-cost-label">${escapeHtml(label)}</span><span class="ps-cost-bar ${colorClass}">${bar}</span><span class="ps-cost-pct">${pct}%</span></div>`
 }
 
-function renderPsCard(
+function renderThreadRow(
   brief: DailyProblemDiscovery['briefs'][number],
+  thread: import('./types.js').Thread,
   evaluation: ProblemCandidateEvaluation | undefined,
-  isPick: boolean,
   index: number,
 ): string {
-  const thread = briefToThread(brief, evaluation)
   const costLevel = thread.cost.level
   const costClass = costLevel === 'HIGH' ? 'tier-worth' : costLevel === 'MED' ? 'tier-evidence' : 'tier-notnow'
-  const costLabel = `COST: ${costLevel}`
-  const sourceClass = sourceCssClass(brief.primarySourceType)
   const sourceLabel = sourceDisplayLabel(brief.primarySourceType)
+  const sourceClass = sourceCssClass(brief.primarySourceType)
   const momentumIcon = thread.momentum === 'rising' ? '↑' : thread.status === 'stale' ? '↓' : '→'
 
   const costBarsHtml = `<div class="ps-cost-bars">
@@ -2504,24 +2459,22 @@ function renderPsCard(
     ${renderCostBar('Context Switch', thread.cost.contextSwitchPenalty, 'cb-ctx')}
   </div>`
 
-  const counterfactualHtml = `<div class="ps-counterfactual">
-    <div class="ps-cf-block"><strong>IF ONLY this thread:</strong> ${escapeHtml(thread.counterfactual.ifOnly)}</div>
+  const cfHtml = `<div class="ps-counterfactual">
+    <div class="ps-cf-block"><strong>IF ONLY THIS:</strong> ${escapeHtml(thread.counterfactual.ifOnly)}</div>
     <div class="ps-cf-block"><strong>IF IGNORED:</strong> ${escapeHtml(thread.counterfactual.ifIgnored)}</div>
-    <div class="ps-cf-block"><strong>IF SPLIT ATTENTION:</strong> ${escapeHtml(thread.counterfactual.ifSplit)}</div>
   </div>`
 
-  const detailHtml = `<div class="ps-expand">
+  const detailHtml = `<div class="tr-detail" id="tr-detail-${index}" data-brief-id="${escapeHtmlAttr(brief.id)}" style="display:none">
     ${costBarsHtml}
-    ${counterfactualHtml}
-    <div class="ps-detail-grid">
+    ${cfHtml}
+    <div class="ps-detail-grid" style="margin-top:8px">
       <div class="ps-detail-box"><strong>誰在承受</strong>${escapeHtml(brief.people)}</div>
       <div class="ps-detail-box"><strong>瓶頸所在</strong>${escapeHtml(brief.pain)}</div>
       <div class="ps-detail-box"><strong>現有 workaround</strong>${escapeHtml(brief.workaround)}</div>
       <div class="ps-detail-box"><strong>最小驗證步驟</strong>${escapeHtml(brief.mvp)}</div>
-      <div class="ps-detail-box full"><strong>如何驗證假設</strong>${escapeHtml(brief.validationPlan)}</div>
     </div>
     ${thread.dependencies.length > 0 ? `<div class="ps-detail-box full" style="margin-top:6px"><strong>缺口（選前需補）</strong>${thread.dependencies.map((d) => escapeHtml(d)).join('；')}</div>` : ''}
-    ${brief.evidence.length > 0 ? `<div class="ps-evidence">
+    ${brief.evidence.length > 0 ? `<div class="ps-evidence" style="margin-top:6px">
       <div class="ps-evidence-label">訊號來源</div>
       ${brief.evidence.slice(0, 3).map((entry) => `<div class="ps-evidence-quote">${escapeHtml(entry.quote.slice(0, 200))}<div class="ps-evidence-source">${escapeHtml(entry.sourceName)}${entry.url ? ` · <a href="${escapeHtmlAttr(entry.url)}" target="_blank" rel="noopener">連結</a>` : ''}</div></div>`).join('')}
     </div>` : ''}
@@ -2529,24 +2482,44 @@ function renderPsCard(
       <div class="ps-deliberation-label">多角色代價辯論</div>
       <div class="ps-deliberation-content ps-deliberation-loading">載入中…</div>
     </div>
+    <div class="ps-feedback" style="margin-top:8px">
+      <button type="button" onclick="problemFeedback('${escapeHtmlAttr(brief.id)}','interesting',this)">標記有訊號 ${evaluation?.feedbackSummary.interesting ?? 0}</button>
+      <button type="button" onclick="problemFeedback('${escapeHtmlAttr(brief.id)}','boring',this)">訊號弱 ${evaluation?.feedbackSummary.boring ?? 0}</button>
+      <button type="button" onclick="problemFeedback('${escapeHtmlAttr(brief.id)}','not-a-problem',this)">非真實問題 ${evaluation?.feedbackSummary.notAProblem ?? 0}</button>
+      <button type="button" onclick="problemFeedback('${escapeHtmlAttr(brief.id)}','find-similar',this)">找更多相似訊號 ${evaluation?.feedbackSummary.findSimilar ?? 0}</button>
+    </div>
   </div>`
 
-  return `<div class="ps-card ${costClass}" data-ps-card="${index}" data-ps-tier="${costClass}" data-ps-brief-id="${brief.id}" data-ps-expand-trigger>
-  <div class="ps-badges">
-    <span class="ps-badge ${costClass}">${escapeHtml(costLabel)}</span>
-    ${sourceLabel ? `<span class="ps-badge ${sourceClass}">${escapeHtml(sourceLabel)}</span>` : ''}
-    <span class="ps-badge" style="background:transparent;border-color:rgba(148,163,184,.2);color:#64748b">${momentumIcon} ${escapeHtml(thread.status)}</span>
+  return `<div class="thread-row" data-thread-row="${index}" data-brief-id="${escapeHtmlAttr(brief.id)}">
+  <div class="thread-row-header" onclick="toggleThreadRow(${index})">
+    <span class="ps-badge ${costClass}">COST: ${costLevel}</span>
+    <div class="thread-row-info">
+      <div class="thread-row-name">${escapeHtml(brief.title)}</div>
+      <div class="thread-row-lede">${escapeHtml(brief.people)} · ${momentumIcon}${sourceLabel ? ` · ${sourceLabel}` : ''}</div>
+    </div>
+    <span class="thread-row-arrow" id="tr-arrow-${index}">▾</span>
   </div>
-  <h2 class="ps-title">${escapeHtml(brief.title)}</h2>
-  <p class="ps-lede">${escapeHtml(brief.people)} · ${escapeHtml(brief.workflow)}</p>
-  <div class="ps-score">${brief.evidence.length} signals · kevinFit ${brief.kevinFit.score}/100</div>
-  <div class="ps-expand-hint">↑ 點卡片看代價分析</div>
   ${detailHtml}
-  <div class="ps-feedback" data-ps-no-expand>
-    <button type="button" onclick="problemFeedback('${escapeHtmlAttr(brief.id)}','interesting',this)" style="border:1px solid rgba(148,163,184,.2);background:transparent;color:#64748b">標記有訊號 ${evaluation?.feedbackSummary.interesting ?? 0}</button>
-    <button type="button" onclick="problemFeedback('${escapeHtmlAttr(brief.id)}','boring',this)" style="border:1px solid rgba(148,163,184,.2);background:transparent;color:#64748b">訊號弱 ${evaluation?.feedbackSummary.boring ?? 0}</button>
-    <button type="button" onclick="problemFeedback('${escapeHtmlAttr(brief.id)}','not-a-problem',this)" style="border:1px solid rgba(148,163,184,.2);background:transparent;color:#64748b">非真實問題 ${evaluation?.feedbackSummary.notAProblem ?? 0}</button>
-    <button type="button" onclick="problemFeedback('${escapeHtmlAttr(brief.id)}','find-similar',this)" style="border:1px solid rgba(148,163,184,.2);background:transparent;color:#64748b">找更多相似訊號 ${evaluation?.feedbackSummary.findSimilar ?? 0}</button>
+</div>`
+}
+
+function renderCounterfactualSection(threads: import('./types.js').Thread[]): string {
+  if (threads.length === 0) return ''
+  const ifOnlyRows = threads.slice(0, 4).map((t) =>
+    `<div class="cf-if-only">
+      <div class="cf-if-only-label">IF ONLY <strong>${escapeHtml(t.name)}</strong></div>
+      <div class="cf-if-only-body">${escapeHtml(t.counterfactual.ifOnly)}</div>
+    </div>`,
+  ).join('')
+  const splitPenalties = threads.slice(0, 4)
+    .map((t) => `${escapeHtml(t.name)}: ctx switch ${Math.round(t.cost.contextSwitchPenalty * 100)}%`)
+    .join('；')
+  return `<div class="cf-view">
+  <div class="cf-view-label">COUNTERFACTUAL VIEW</div>
+  ${ifOnlyRows}
+  <div class="cf-if-only">
+    <div class="cf-if-only-label">IF SPLIT ATTENTION</div>
+    <div class="cf-if-only-body">${splitPenalties}；每條 thread 的驗證週期同時被拉長，沒有任何一條能在目標週期內完成。</div>
   </div>
 </div>`
 }
