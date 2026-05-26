@@ -1,5 +1,21 @@
-import { createProblemSignal } from './problem-discovery.js'
+import { createHash } from 'node:crypto'
 import type { ProblemSignal } from './types.js'
+
+function createProblemSignal(input: {
+  sourceType: ProblemSignal['sourceType']
+  sourceName: string
+  title: string
+  snippet: string
+  fetchedAt: string
+  url?: string
+  query?: string
+}): ProblemSignal {
+  const dedupKey = createHash('sha256')
+    .update(`${input.sourceType}\x00${input.sourceName}\x00${input.title.slice(0, 120)}`)
+    .digest('hex')
+    .slice(0, 16)
+  return { id: `sig-${dedupKey}`, dedupKey, ...input }
+}
 
 function stripHtml(html: string): string {
   return html
