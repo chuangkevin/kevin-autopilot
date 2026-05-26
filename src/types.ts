@@ -256,6 +256,34 @@ export interface RejectedProblemSummary {
   examples: RejectedProblemExample[]
 }
 
+export type ThreadCostLevel = 'HIGH' | 'MED' | 'LOW'
+
+export interface ThreadCost {
+  timeCost: number
+  cognitiveLoad: number
+  executionRisk: number
+  opportunityCost: number
+  contextSwitchPenalty: number
+  level: ThreadCostLevel
+}
+
+export interface ThreadCounterfactual {
+  ifOnly: string
+  ifIgnored: string
+  ifSplit: string
+}
+
+export interface Thread {
+  id: string
+  name: string
+  people: string
+  status: 'active' | 'stale'
+  momentum: 'rising' | 'stable' | 'declining'
+  cost: ThreadCost
+  dependencies: string[]
+  counterfactual: ThreadCounterfactual
+}
+
 export interface DailyProblemPick {
   date: string
   status: 'picked' | 'insufficient-evidence'

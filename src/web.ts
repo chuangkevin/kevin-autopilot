@@ -51,6 +51,7 @@ import { isDeliberationRunning, loadLatestDeliberation, runDeliberation } from '
 import { deliberateProblemCard, readProblemDeliberation } from './problem-deliberation.js'
 import { recomputePreferences } from './preferences.js'
 import { createProblemSignal, evaluateProblemCandidates, getDailyProblemDiscovery, isProblemFeedbackAction, listProblemBriefs, listProblemFeedback, recordProblemFeedback, upsertProblemSignals, visibleProblemBriefs } from './problem-discovery.js'
+import { briefToThread } from './thread-cost.js'
 import { createObservationLoop, readReflectionState, type ObservationLoop } from './observation-loop.js'
 import { isReflectionRewriteFresh } from './reflection.js'
 import { observe } from './observer.js'
@@ -1274,6 +1275,19 @@ main { position: relative; width: 100%; max-width: 480px; margin: 0 auto; min-he
 .ps-detail-box { background: rgba(2,6,23,.6); border: 1px solid rgba(148,163,184,.12); border-radius: 12px; padding: 10px; }
 .ps-detail-box strong { display: block; color: #64748b; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; font-weight: 400; }
 .ps-detail-box.full { grid-column: 1 / -1; }
+.ps-cost-bars { margin-top: 8px; background: rgba(2,6,23,.6); border: 1px solid rgba(148,163,184,.1); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 5px; }
+.ps-cost-row { display: grid; grid-template-columns: 110px 1fr 36px; gap: 6px; align-items: center; font-size: 11px; }
+.ps-cost-label { color: #64748b; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
+.ps-cost-bar { font-family: monospace; letter-spacing: -1px; font-size: 12px; }
+.ps-cost-bar.cb-time { color: #60a5fa; }
+.ps-cost-bar.cb-cog { color: #c084fc; }
+.ps-cost-bar.cb-risk { color: #f87171; }
+.ps-cost-bar.cb-opp { color: #4ade80; }
+.ps-cost-bar.cb-ctx { color: #fbbf24; }
+.ps-cost-pct { color: #475569; text-align: right; }
+.ps-counterfactual { margin-top: 8px; display: flex; flex-direction: column; gap: 5px; }
+.ps-cf-block { background: rgba(2,6,23,.5); border: 1px solid rgba(148,163,184,.1); border-radius: 10px; padding: 8px 10px; font-size: 12px; color: #94a3b8; line-height: 1.5; }
+.ps-cf-block strong { color: #64748b; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; display: block; margin-bottom: 3px; }
 .ps-evidence { margin-top: 8px; background: rgba(2,6,23,.5); border: 1px solid rgba(148,163,184,.1); border-radius: 12px; padding: 10px; }
 .ps-evidence-label { font-size: 10px; color: #475569; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
 .ps-evidence-quote { font-size: 12px; color: #94a3b8; line-height: 1.5; border-left: 2px solid rgba(99,102,241,.35); padding-left: 8px; margin-bottom: 6px; }
@@ -2357,10 +2371,10 @@ function renderProblemStack(discovery: DailyProblemDiscovery): string {
 
   if (cards.length === 0) {
     return `<section class="cp-card problem-empty problem-stack" data-ps-stack>
-  <div class="sys-label">/// 今日真實問題</div>
+  <div class="sys-label">/// THREAD COST VIEW</div>
   <div class="ps-empty">
-    <h2 class="problem-title" style="font-size:22px">還沒有足夠的真實問題證據</h2>
-    <p class="muted">今天哪群人的哪個流程正在被爛工具、人工繞路、資訊混亂、平台限制拖累？</p>
+    <h2 class="problem-title" style="font-size:22px">尚無 thread 可計算代價</h2>
+    <p class="muted">系統需要更多訊號才能建立 thread 的代價結構。每條 thread 的選擇成本與機會成本都會在這裡呈現。</p>
     <form onsubmit="event.preventDefault();fetch('/api/problem-discovery/run',{method:'POST'}).then(function(){location.reload();});">
       <button type="submit" class="secondary">重新整理 signals</button>
     </form>
@@ -2381,14 +2395,14 @@ function renderProblemStack(discovery: DailyProblemDiscovery): string {
 
   return `<section class="problem-stack" data-ps-stack>
   <div class="ps-nav">
-    <button class="ps-nav-btn" data-ps-prev disabled>‹ 上一個</button>
+    <button class="ps-nav-btn" data-ps-prev disabled>‹ 上一條</button>
     <div class="ps-status">
       <div class="ps-dots">${dotHtml}</div>
       <span class="ps-counter" data-ps-counter>1 / ${cards.length}</span>
     </div>
-    <button class="ps-nav-btn" data-ps-next ${cards.length <= 1 ? 'disabled' : ''}>下一個 ›</button>
+    <button class="ps-nav-btn" data-ps-next ${cards.length <= 1 ? 'disabled' : ''}>下一條 ›</button>
   </div>
-  <div class="ps-card-wrap" data-ps-rail aria-label="左右滑動瀏覽今日問題卡片">
+  <div class="ps-card-wrap" data-ps-rail aria-label="左右滑動瀏覽各 thread 的代價分析">
     ${cardHtml}
   </div>
   ${renderPsRejectedSummary(discovery.rejectedSummary)}
@@ -2460,52 +2474,79 @@ function renderProblemStack(discovery: DailyProblemDiscovery): string {
 </script>`
 }
 
+function renderCostBar(label: string, value: number, colorClass: string): string {
+  const pct = Math.round(value * 100)
+  const filled = Math.round(value * 10)
+  const empty = 10 - filled
+  const bar = '█'.repeat(filled) + '░'.repeat(empty)
+  return `<div class="ps-cost-row"><span class="ps-cost-label">${escapeHtml(label)}</span><span class="ps-cost-bar ${colorClass}">${bar}</span><span class="ps-cost-pct">${pct}%</span></div>`
+}
+
 function renderPsCard(
   brief: DailyProblemDiscovery['briefs'][number],
   evaluation: ProblemCandidateEvaluation | undefined,
   isPick: boolean,
   index: number,
 ): string {
-  const tier = evaluation?.tier
-  const tierClass = isPick ? 'tier-pick' : tierCssClass(tier)
-  const tierLabel = isPick ? '★ 今日精選' : (tier === 'worth_chasing' ? '值得追' : tier === 'not_now' ? '暫時不追' : '先補證據')
+  const thread = briefToThread(brief, evaluation)
+  const costLevel = thread.cost.level
+  const costClass = costLevel === 'HIGH' ? 'tier-worth' : costLevel === 'MED' ? 'tier-evidence' : 'tier-notnow'
+  const costLabel = `COST: ${costLevel}`
   const sourceClass = sourceCssClass(brief.primarySourceType)
   const sourceLabel = sourceDisplayLabel(brief.primarySourceType)
+  const momentumIcon = thread.momentum === 'rising' ? '↑' : thread.status === 'stale' ? '↓' : '→'
+
+  const costBarsHtml = `<div class="ps-cost-bars">
+    ${renderCostBar('Time Cost', thread.cost.timeCost, 'cb-time')}
+    ${renderCostBar('Cognitive Load', thread.cost.cognitiveLoad, 'cb-cog')}
+    ${renderCostBar('Execution Risk', thread.cost.executionRisk, 'cb-risk')}
+    ${renderCostBar('Opportunity Cost', thread.cost.opportunityCost, 'cb-opp')}
+    ${renderCostBar('Context Switch', thread.cost.contextSwitchPenalty, 'cb-ctx')}
+  </div>`
+
+  const counterfactualHtml = `<div class="ps-counterfactual">
+    <div class="ps-cf-block"><strong>IF ONLY this thread:</strong> ${escapeHtml(thread.counterfactual.ifOnly)}</div>
+    <div class="ps-cf-block"><strong>IF IGNORED:</strong> ${escapeHtml(thread.counterfactual.ifIgnored)}</div>
+    <div class="ps-cf-block"><strong>IF SPLIT ATTENTION:</strong> ${escapeHtml(thread.counterfactual.ifSplit)}</div>
+  </div>`
 
   const detailHtml = `<div class="ps-expand">
+    ${costBarsHtml}
+    ${counterfactualHtml}
     <div class="ps-detail-grid">
-      <div class="ps-detail-box"><strong>誰痛</strong>${escapeHtml(brief.people)}</div>
-      <div class="ps-detail-box"><strong>痛在哪</strong>${escapeHtml(brief.pain)}</div>
-      <div class="ps-detail-box"><strong>現在怎麼撐</strong>${escapeHtml(brief.workaround)}</div>
-      <div class="ps-detail-box"><strong>一週 MVP</strong>${escapeHtml(brief.mvp)}</div>
-      <div class="ps-detail-box full"><strong>驗證方式</strong>${escapeHtml(brief.validationPlan)}</div>
+      <div class="ps-detail-box"><strong>誰在承受</strong>${escapeHtml(brief.people)}</div>
+      <div class="ps-detail-box"><strong>瓶頸所在</strong>${escapeHtml(brief.pain)}</div>
+      <div class="ps-detail-box"><strong>現有 workaround</strong>${escapeHtml(brief.workaround)}</div>
+      <div class="ps-detail-box"><strong>最小驗證步驟</strong>${escapeHtml(brief.mvp)}</div>
+      <div class="ps-detail-box full"><strong>如何驗證假設</strong>${escapeHtml(brief.validationPlan)}</div>
     </div>
+    ${thread.dependencies.length > 0 ? `<div class="ps-detail-box full" style="margin-top:6px"><strong>缺口（選前需補）</strong>${thread.dependencies.map((d) => escapeHtml(d)).join('；')}</div>` : ''}
     ${brief.evidence.length > 0 ? `<div class="ps-evidence">
-      <div class="ps-evidence-label">證據片段</div>
+      <div class="ps-evidence-label">訊號來源</div>
       ${brief.evidence.slice(0, 3).map((entry) => `<div class="ps-evidence-quote">${escapeHtml(entry.quote.slice(0, 200))}<div class="ps-evidence-source">${escapeHtml(entry.sourceName)}${entry.url ? ` · <a href="${escapeHtmlAttr(entry.url)}" target="_blank" rel="noopener">連結</a>` : ''}</div></div>`).join('')}
     </div>` : ''}
-    ${evaluation?.rankingRationale ? `<div class="ps-detail-box full" style="margin-top:6px"><strong>${isPick ? '為何今天選它' : '排序理由'}</strong>${escapeHtml(evaluation.rankingRationale)}</div>` : ''}
     <div class="ps-deliberation" data-brief-id="${escapeHtmlAttr(brief.id)}">
-      <div class="ps-deliberation-label">多角色辯論</div>
+      <div class="ps-deliberation-label">多角色代價辯論</div>
       <div class="ps-deliberation-content ps-deliberation-loading">載入中…</div>
     </div>
   </div>`
 
-  return `<div class="ps-card ${tierClass}" data-ps-card="${index}" data-ps-tier="${tierClass}" data-ps-brief-id="${brief.id}" data-ps-expand-trigger>
+  return `<div class="ps-card ${costClass}" data-ps-card="${index}" data-ps-tier="${costClass}" data-ps-brief-id="${brief.id}" data-ps-expand-trigger>
   <div class="ps-badges">
-    <span class="ps-badge ${tierClass}">${escapeHtml(tierLabel)}</span>
+    <span class="ps-badge ${costClass}">${escapeHtml(costLabel)}</span>
     ${sourceLabel ? `<span class="ps-badge ${sourceClass}">${escapeHtml(sourceLabel)}</span>` : ''}
+    <span class="ps-badge" style="background:transparent;border-color:rgba(148,163,184,.2);color:#64748b">${momentumIcon} ${escapeHtml(thread.status)}</span>
   </div>
   <h2 class="ps-title">${escapeHtml(brief.title)}</h2>
-  <p class="ps-lede">${escapeHtml(brief.people)}正在處理「${escapeHtml(brief.workflow)}」被拖慢。</p>
-  <div class="ps-score">${brief.score}/100 · ${brief.evidence.length} evidence · ${escapeHtml(brief.confidence)}</div>
-  <div class="ps-expand-hint">↑ 點卡片看詳情</div>
+  <p class="ps-lede">${escapeHtml(brief.people)} · ${escapeHtml(brief.workflow)}</p>
+  <div class="ps-score">${brief.evidence.length} signals · kevinFit ${brief.kevinFit.score}/100</div>
+  <div class="ps-expand-hint">↑ 點卡片看代價分析</div>
   ${detailHtml}
   <div class="ps-feedback" data-ps-no-expand>
-    <button type="button" onclick="problemFeedback('${escapeHtmlAttr(brief.id)}','interesting',this)" style="border:1px solid rgba(74,222,128,.3);background:rgba(20,83,45,.2);color:#86efac">有趣 ★ ${evaluation?.feedbackSummary.interesting ?? 0}</button>
-    <button type="button" onclick="problemFeedback('${escapeHtmlAttr(brief.id)}','boring',this)" style="border:1px solid rgba(248,113,113,.3);background:rgba(127,29,29,.18);color:#fca5a5">無聊 ${evaluation?.feedbackSummary.boring ?? 0}</button>
-    <button type="button" onclick="problemFeedback('${escapeHtmlAttr(brief.id)}','not-a-problem',this)" style="border:1px solid rgba(148,163,184,.2);background:transparent;color:#94a3b8">不是問題 ${evaluation?.feedbackSummary.notAProblem ?? 0}</button>
-    <button type="button" onclick="problemFeedback('${escapeHtmlAttr(brief.id)}','find-similar',this)" style="border:1px solid rgba(148,163,184,.2);background:transparent;color:#94a3b8">再找類似 ${evaluation?.feedbackSummary.findSimilar ?? 0}</button>
+    <button type="button" onclick="problemFeedback('${escapeHtmlAttr(brief.id)}','interesting',this)" style="border:1px solid rgba(148,163,184,.2);background:transparent;color:#64748b">標記有訊號 ${evaluation?.feedbackSummary.interesting ?? 0}</button>
+    <button type="button" onclick="problemFeedback('${escapeHtmlAttr(brief.id)}','boring',this)" style="border:1px solid rgba(148,163,184,.2);background:transparent;color:#64748b">訊號弱 ${evaluation?.feedbackSummary.boring ?? 0}</button>
+    <button type="button" onclick="problemFeedback('${escapeHtmlAttr(brief.id)}','not-a-problem',this)" style="border:1px solid rgba(148,163,184,.2);background:transparent;color:#64748b">非真實問題 ${evaluation?.feedbackSummary.notAProblem ?? 0}</button>
+    <button type="button" onclick="problemFeedback('${escapeHtmlAttr(brief.id)}','find-similar',this)" style="border:1px solid rgba(148,163,184,.2);background:transparent;color:#64748b">找更多相似訊號 ${evaluation?.feedbackSummary.findSimilar ?? 0}</button>
   </div>
 </div>`
 }

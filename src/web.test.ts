@@ -65,12 +65,12 @@ test('dashboard shows a sanitized candidate problem pool', async () => {
     const pageBody = await page.text()
     assert.equal(pageBody.includes('候選問題池'), false) // replaced by swipeable card stack
     assert.equal(pageBody.includes('不是只看一個答案'), false) // replaced by swipeable card stack
-    assert.equal(pageBody.includes('有趣'), true)
-    assert.equal(pageBody.includes('不是問題'), true)
+    assert.equal(pageBody.includes('標記有訊號'), true) // thread cost signal feedback label
+    assert.equal(pageBody.includes('非真實問題'), true) // thread cost signal feedback label
     assert.equal(pageBody.includes('暫時不追 / 已排除訊號'), false) // replaced by renderPsRejectedSummary
     assert.equal(pageBody.includes('data-ps-stack'), true) // swipeable card stack present
     assert.equal(pageBody.includes('data-ps-rail'), true) // native horizontal rail present when cards exist
-    assert.equal(pageBody.includes('左右滑動瀏覽今日問題卡片'), true)
+    assert.equal(pageBody.includes('左右滑動瀏覽各 thread 的代價分析'), true) // updated aria-label
     assert.equal(pageBody.includes('ps-paste-input'), true) // paste bar present
 
     const dailyProblem = await fetch(`${baseUrl}/api/problem-discovery/daily`)
@@ -186,8 +186,8 @@ test('web server exposes health and idea intake', async () => {
     assert.equal(page.status, 200)
     assert.equal(page.headers.get('cache-control'), 'no-store, max-age=0')
     const pageBody = await page.text()
-    assert.equal(pageBody.includes('今日真實問題'), true)
-    assert.equal(pageBody.includes('今天哪群人的哪個流程正在被爛工具、人工繞路、資訊混亂、平台限制拖累？'), true)
+    assert.equal(pageBody.includes('THREAD COST VIEW'), true) // thread cost view section label
+    assert.equal(pageBody.includes('尚無 thread 可計算代價'), true) // thread cost empty state
     assert.equal(pageBody.includes('id="tab-problem"'), true)
     assert.equal(pageBody.includes('id="tab-graph" hidden'), true)
     // Cyberpunk tab-based dashboard — content that moved to stub tab panels is no longer rendered inline
