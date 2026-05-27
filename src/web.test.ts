@@ -114,6 +114,41 @@ test('POST /api/keys/import from loopback is permitted', async () => {
   }
 })
 
+test('POST /api/settings/opencode persists server URLs (round-trip)', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'radar-web-'))
+  const config: AutopilotConfig = { environment: 'test', dataDir }
+  const server = createWebServer(config)
+  try {
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const address = server.address()
+    assert.ok(address && typeof address === 'object' && 'port' in address)
+    const base = `http://127.0.0.1:${address.port}`
+
+    const saveRes = await fetch(`${base}/api/settings/opencode`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ servers: ['http://opencode.local:4096'], textModel: 'google/gemini-2.5-flash' }),
+    })
+    assert.equal(saveRes.status, 201)
+
+    const statusRes = await fetch(`${base}/api/settings/opencode`)
+    const status = await statusRes.json() as { servers: Array<{ baseUrl: string }>; serversSource: string; textModel: string }
+    assert.equal(status.servers.length, 1)
+    assert.equal(status.servers[0].baseUrl, 'http://opencode.local:4096')
+    assert.equal(status.serversSource, 'setting')
+    assert.equal(status.textModel, 'google/gemini-2.5-flash')
+
+    // The settings page must show the saved URL back in the textarea.
+    const pageRes = await fetch(`${base}/settings`)
+    const page = await pageRes.text()
+    assert.ok(page.includes('http://opencode.local:4096'))
+  } finally {
+    server.close()
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
 test('POST /api/radar/paste ingest manual signal', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'radar-web-'))
   const config: AutopilotConfig = { environment: 'test', dataDir }

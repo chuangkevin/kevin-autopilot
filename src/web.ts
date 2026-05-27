@@ -430,7 +430,12 @@ export function createWebServer(config: AutopilotConfig): Server {
       if (method === 'POST' && url === '/api/settings/opencode') {
         const body = JSON.parse(await readBody(req)) as { servers?: unknown; textModel?: unknown }
         if (body.servers !== undefined) {
-          const serialized = typeof body.servers === 'string' ? body.servers : JSON.stringify(body.servers)
+          // Store as a newline-delimited string. parseServers wraps each line
+          // in { baseUrl }. A JSON array of bare URL strings would NOT survive
+          // parseServers (it expects objects), so never JSON.stringify here.
+          const serialized = Array.isArray(body.servers)
+            ? body.servers.map((s) => String(s).trim()).filter(Boolean).join('\n')
+            : String(body.servers ?? '')
           await setSetting(config, 'opencode_servers', serialized)
           await setSetting(config, 'opencode_url', '')
         }
