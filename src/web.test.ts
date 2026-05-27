@@ -70,6 +70,50 @@ test('GET /api/radar/cards returns JSON array', async () => {
   }
 })
 
+test('GET /settings returns AI config page', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'radar-web-'))
+  const config: AutopilotConfig = { environment: 'test', dataDir }
+  const server = createWebServer(config)
+  try {
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const address = server.address()
+    assert.ok(address && typeof address === 'object' && 'port' in address)
+    const res = await fetch(`http://127.0.0.1:${address.port}/settings`)
+    assert.equal(res.status, 200)
+    const body = await res.text()
+    assert.ok(body.includes('RADAR SETTINGS'))
+    assert.ok(body.includes('Gemini Keys'))
+    assert.ok(body.includes('OpenCode'))
+    assert.ok(body.includes('Radar Scan'))
+  } finally {
+    server.close()
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('POST /api/keys/import from loopback is permitted', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'radar-web-'))
+  const config: AutopilotConfig = { environment: 'test', dataDir }
+  const server = createWebServer(config)
+  try {
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    const address = server.address()
+    assert.ok(address && typeof address === 'object' && 'port' in address)
+    // 127.0.0.1 is trusted; an empty key list returns 400 (not 403), proving the guard passed.
+    const res = await fetch(`http://127.0.0.1:${address.port}/api/keys/import`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ keys: '' }),
+    })
+    assert.equal(res.status, 400)
+  } finally {
+    server.close()
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
 test('POST /api/radar/paste ingest manual signal', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'radar-web-'))
   const config: AutopilotConfig = { environment: 'test', dataDir }
