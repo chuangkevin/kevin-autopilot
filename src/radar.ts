@@ -13,7 +13,7 @@ const STRUCTURE_TIMEOUT_MS = 20_000
 // silently drops every signal — keep these generous.
 const EXTRACT_MAX_TOKENS = 256
 const STRUCTURE_MAX_TOKENS = 1024
-const SEEDS_MAX_TOKENS = 512
+const SEEDS_MAX_TOKENS = 1024
 
 interface AiProvider {
   generateContent(opts: { model: string; maxOutputTokens: number; systemInstruction: string; prompt: string }): Promise<{ text: string }>
@@ -105,7 +105,7 @@ Rules: who_is_in_pain in English only. All other fields in Chinese. No judgment.
 
 async function generateIdeaSeeds(config: AutopilotConfig, card: StructuredCard, provider: AiProvider): Promise<string[]> {
   const model = config.ai!.model
-  const prompt = `List 2-4 possible product directions. No scoring, no ranking, no "best".
+  const prompt = `List 2-4 possible product directions. No scoring, no ranking, no "best". Each direction max 6 words.
 
 Who: ${card.whoIsInPain}
 Pain: ${card.pain}
