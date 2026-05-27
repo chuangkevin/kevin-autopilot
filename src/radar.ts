@@ -7,6 +7,14 @@ import type { DatabaseSync } from 'node:sqlite'
 const EXTRACT_TIMEOUT_MS = 15_000
 const STRUCTURE_TIMEOUT_MS = 20_000
 
+// Token budgets must leave room for the model wrapping JSON in a ```json
+// code fence (and, on thinking models like gemini-2.5-flash, any preamble).
+// A tiny budget truncates the JSON mid-value and the parse fails, which
+// silently drops every signal — keep these generous.
+const EXTRACT_MAX_TOKENS = 256
+const STRUCTURE_MAX_TOKENS = 1024
+const SEEDS_MAX_TOKENS = 512
+
 interface AiProvider {
   generateContent(opts: { model: string; maxOutputTokens: number; systemInstruction: string; prompt: string }): Promise<{ text: string }>
 }
@@ -46,7 +54,7 @@ Text: ${signal.snippet.slice(0, 600)}`
 
   try {
     const result = await withTimeout(
-      provider.generateContent({ model, maxOutputTokens: 32, systemInstruction: 'You are a pain signal classifier. Reply only with JSON.', prompt }),
+      provider.generateContent({ model, maxOutputTokens: EXTRACT_MAX_TOKENS, systemInstruction: 'You are a pain signal classifier. Reply only with JSON.', prompt }),
       EXTRACT_TIMEOUT_MS,
     )
     const parsed = parseJson<{ keep: boolean }>(result.text)
@@ -78,7 +86,7 @@ Rules: who_is_in_pain in English only. All other fields in Chinese. No judgment.
 
   try {
     const result = await withTimeout(
-      provider.generateContent({ model, maxOutputTokens: 512, systemInstruction: 'You extract structured problem cards. Reply only with JSON.', prompt }),
+      provider.generateContent({ model, maxOutputTokens: STRUCTURE_MAX_TOKENS, systemInstruction: 'You extract structured problem cards. Reply only with JSON.', prompt }),
       STRUCTURE_TIMEOUT_MS,
     )
     const parsed = parseJson<Record<string, string>>(result.text)
@@ -107,7 +115,7 @@ Reply ONLY with a JSON array of short strings. Example: ["direction A", "directi
 
   try {
     const result = await withTimeout(
-      provider.generateContent({ model, maxOutputTokens: 256, systemInstruction: 'You generate product direction ideas. Reply only with a JSON array of strings.', prompt }),
+      provider.generateContent({ model, maxOutputTokens: SEEDS_MAX_TOKENS, systemInstruction: 'You generate product direction ideas. Reply only with a JSON array of strings.', prompt }),
       STRUCTURE_TIMEOUT_MS,
     )
     const parsed = parseJson<string[]>(result.text)

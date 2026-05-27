@@ -55,15 +55,18 @@ test('runRadarPipeline: AI enabled, provider mocked — card created', async () 
     }
     const mockSeeds = ['drift detection system', 'config audit tool']
 
+    // Wrap every response in a ```json code fence — this is how
+    // gemini-2.5-flash actually replies, and the pipeline must still parse it.
+    const fence = (obj: unknown) => '```json\n' + JSON.stringify(obj) + '\n```'
     const mockProvider = {
       generateContent: mock.fn(async ({ prompt }: { prompt: string }) => {
         if (prompt.includes('{"keep":true}') || prompt.includes('"keep":true')) {
-          return { text: '{"keep":true}' }
+          return { text: fence({ keep: true }) }
         }
         if (prompt.includes('who_is_in_pain')) {
-          return { text: JSON.stringify(mockCard) }
+          return { text: fence(mockCard) }
         }
-        return { text: JSON.stringify(mockSeeds) }
+        return { text: fence(mockSeeds) }
       }),
     }
 
