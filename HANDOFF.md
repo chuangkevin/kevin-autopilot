@@ -187,6 +187,7 @@ Commit 前的 build gate：`npx tsc --noEmit` exit 0 + 改到的範圍 `npm test
 | **Phases 1–3 of goal.md 未實作** | `docs/goal.md` 描述 Thread model / Cost Engine / Counterfactual View（Phases 1–3）+ external signal ingestion（Phase 4）。Phase 4 = radar 已實作，Phases 1–3 沒有對應 code。要補是個尚未決定的產品方向問題。goal.md 頂端已加 status banner 標明此狀態。 |
 | **設定相關 API 沒有 application-layer trust gate（accepted risk, 2026-05-28）** | `/api/runtime-overrides`、`/api/settings/opencode*` 沒掛 `isTrustedSettingsRequest`。**明確選擇**：靠 docker port 綁 `100.83.112.20:3023`（Tailscale-only）當網路層邊界，不加應用層 gate。前提：port 不會被改成 `0.0.0.0`、tailnet 上不會有不受信任裝置。若哪天前提變了，硬化方式就是每個敏感 handler 開頭補一行 `if (!isTrustedSettingsRequest(req)) return json(res, 403, {...})`。 |
 | **大規模重寫沒走 OpenSpec cycle** | 2026-05-26 radar 重寫沒走 OpenSpec propose→apply→archive 流程，是用 docs/ 推的，事後 (2026-05-28) 才補上 reconciliation。新規定（`CLAUDE.md`、`openspec_workflow_expectations` memory）要求非小型功能要走完整 OpenSpec cycle。 |
+| **ai-core 沒有 session reuse / prompt caching**（in `@kevinsisi/ai-core`, not radar） | OpenCodeProviderAdapter.generateContent 每次都 `POST /session` → `POST /session/{id}/message` → `DELETE /session/{id}`，3 HTTP round-trip。一次 scan ~800 calls = ~2400 HTTP，~1600 是 session 開關。session 生命週期硬寫在 generateContent 內，沒 keepSession/reuseSession API。也沒 `cache_control` plumbing — 同樣的 system instruction 每 scan 重複 495 次，上游沒辦法 cache。要省 latency / 上游 token 成本，要去 ai-core repo 補：(a) `cache_control` plumbing（cost 大、實作小），(b) managed session mode（latency 中、實作中）。先量目前一 scan 跑多久 + OpenCode 上游帳單再決定值不值得做。 |
 
 ---
 
