@@ -1,3 +1,13 @@
+> **狀態 (2026-05-28)**
+> 本檔是 **產品哲學 + 長線藍圖**，不是當前實作。
+>
+> - **已實作 = Phase 4**「external signal scraping / Reddit + HN ingestion / idea pipeline」 → **World Problem Radar v1.0.0** (`openspec/specs/world-problem-radar/spec.md`)。權威執行細節看 `HANDOFF.md`。
+> - **未實作 = Phases 1–3**「Thread model / Event ingestion / Cost Engine / Counterfactual / Memory graph」。本檔記載的 Thread Overview / Cost Breakdown / Counterfactual View UI 在 `src/` 裡**還沒有**對應 code。
+>
+> radar 共享本檔的核心哲學（不推薦、不排名、不替使用者收斂），但只是其中一塊。要不要把 Phases 1–3 補完，是還沒做的產品決策。
+
+---
+
 📄 1. 專案總目標
 
 建立一個 AI 系統，用來：

@@ -16,6 +16,13 @@ keep / skip  →  結構化 pain card  →  2–4 個想法方向（unordered）
 
 產出一個**反時間序、不評分、不排名**的痛點卡片流。系統明確不做的事：不打分、不挑「最佳」、不推薦方向、不收斂注意力。Idea seeds 是並列的選項，不是建議。
 
+### 產品哲學（從 `docs/goal.md` 繼承）
+
+> **不做的事**：不推薦你做什麼 · 不排序最優解 · 不說「應該做這個」 · 不替你收斂人生方向
+> **只做的事**：把人類的痛點原始證據攤在你面前，讓代價不可忽略，由你決定追哪一個。
+
+radar 是 `docs/goal.md` 整個藍圖的 **Phase 4**（external signal scraping / Reddit + HN ingestion / idea pipeline）。藍圖前段的 Thread Cost Engine / Counterfactual View（Phases 1–3）目前**沒有實作**——是否要補是個尚未決定的產品問題，本檔只描述「現在 code 做了什麼」。
+
 權威 spec：`openspec/specs/world-problem-radar/spec.md`（v1.0.0 起為 OpenSpec 唯一正本，2 個 active capability：`world-problem-radar` + `runtime-overrides`）。
 
 ---
@@ -177,10 +184,9 @@ Commit 前的 build gate：`npx tsc --noEmit` exit 0 + 改到的範圍 `npm test
 
 | 項目 | 狀況 |
 |---|---|
-| **`docs/goal.md` 描述的是另一個產品** | goal.md (5/26) 寫的是 PCCS Thread Overview / Cost Engine / Counterfactual View 的多執行緒成本追蹤器。現行 code = 痛點雷達（HN/Reddit → 痛點卡）。如果 thread-cost 才是真的目標方向，spec 要重寫，code 要重做；現在 spec 寫的是「code 實際做了什麼」。 |
-| **`radarScan.enabled = false` 不會真的停掉 scan** | `applyRuntimeOverrides` 會把值 merge 進 effective config，但 `index.ts` 的 `setInterval` 沒有讀這個 flag——所以這個 override 目前無效。要修就在 `runScan` 開頭加 `if (!effective.radarScan?.enabled) return`。 |
+| **Phases 1–3 of goal.md 未實作** | `docs/goal.md` 描述 Thread model / Cost Engine / Counterfactual View（Phases 1–3）+ external signal ingestion（Phase 4）。Phase 4 = radar 已實作，Phases 1–3 沒有對應 code。要補是個尚未決定的產品方向問題。goal.md 頂端已加 status banner 標明此狀態。 |
 | **設定相關 API 沒有 trust gate** | `/api/runtime-overrides`、`/api/settings/opencode*` 任何能連到 port 3023 的客戶端都能改。靠 Tailscale-only 綁定撐邊界。要硬化補上 `isTrustedSettingsRequest` 即可。 |
-| **`docs/goal.md` 與 OpenSpec 不同步** | 整個 radar 重寫沒走 OpenSpec propose→apply→archive 流程，是用 docs/ 推的。新規定（`CLAUDE.md`、`openspec_workflow_expectations` memory）要求非小型功能要走完整 OpenSpec cycle。 |
+| **大規模重寫沒走 OpenSpec cycle** | 2026-05-26 radar 重寫沒走 OpenSpec propose→apply→archive 流程，是用 docs/ 推的，事後 (2026-05-28) 才補上 reconciliation。新規定（`CLAUDE.md`、`openspec_workflow_expectations` memory）要求非小型功能要走完整 OpenSpec cycle。 |
 
 ---
 
