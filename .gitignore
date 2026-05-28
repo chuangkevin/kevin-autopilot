@@ -7,3 +7,21 @@ data/
 .turbo/
 .ai-review/pre-commit-review.json
 .superpowers/
+
+# Local-only files
+
+# Corporate-proxy npm-ci workaround (see AGENTS.md)
+Dockerfile.local
+
+# Playwright MCP scratch dir
+.playwright-mcp/
+
+# Claude scheduled-task lock
+.claude/scheduled_tasks.lock
+
+# mingw/bash crash dumps
+*.stackdump
+
+# Root-level QA screenshots (subdir PNGs are still tracked)
+/*.png
+
