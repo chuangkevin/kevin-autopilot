@@ -41,6 +41,52 @@ test('shouldRunScan: returns false only when radarScan.enabled is explicitly fal
   assert.equal(shouldRunScan({ environment: 'test', dataDir: '/tmp', radarScan: { enabled: false } }), false)
 })
 
+test('runRadarPipeline: processes signals concurrently up to the concurrency cap', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'radar-pipe-'))
+  try {
+    const config = testConfig(dir)
+
+    // Track in-flight calls to verify concurrency really kicks in.
+    let inFlight = 0
+    let peakInFlight = 0
+    const fence = (obj: unknown) => '```json\n' + JSON.stringify(obj) + '\n```'
+    const mockProvider = {
+      generateContent: mock.fn(async ({ prompt }: { prompt: string }) => {
+        inFlight++
+        peakInFlight = Math.max(peakInFlight, inFlight)
+        // Tiny delay so concurrent calls actually overlap.
+        await new Promise((r) => setTimeout(r, 20))
+        inFlight--
+        if (prompt.includes('"keep":true')) return { text: fence({ keep: true }) }
+        if (prompt.includes('who_is_in_pain')) {
+          return { text: fence({ who_is_in_pain: 'g', pain: 'p', context: 'c', current_workaround: 'w', urgency_signal: 'u' }) }
+        }
+        return { text: fence(['a']) }
+      }),
+    }
+
+    // 8 distinct signals so a concurrency cap of 3 must overlap ≥ 2.
+    const signals: ProblemSignal[] = Array.from({ length: 8 }, (_, i) => ({
+      id: makeSignalId('hacker-news', `hn:${i}`, `Signal ${i}`),
+      sourceType: 'hacker-news',
+      sourceName: `hn:${i}`,
+      title: `Signal ${i}`,
+      snippet: 'A real recurring workflow pain point that the AI keep classifier should accept.',
+      url: `https://news.ycombinator.com/item?id=${i}`,
+      fetchedAt: new Date().toISOString(),
+    }))
+
+    const db = openRadarDatabase(config)
+    await runRadarPipeline(config, db, signals, mockProvider as never, { concurrency: 3 })
+    db.close()
+
+    assert.ok(peakInFlight >= 2, `peak in-flight should reflect concurrency (got ${peakInFlight})`)
+    assert.ok(peakInFlight <= 3, `peak in-flight must not exceed cap (got ${peakInFlight})`)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 test('runRadarPipeline: AI disabled — signals stored, no cards created', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'radar-pipe-'))
   try {

@@ -7,6 +7,14 @@ import type { DatabaseSync } from 'node:sqlite'
 const EXTRACT_TIMEOUT_MS = 15_000
 const STRUCTURE_TIMEOUT_MS = 20_000
 
+// Per-signal stages (extract → structure → seeds) stay sequential because they
+// depend on each other. But signals themselves are independent, so the scan
+// processes them with bounded concurrency to cut wall-clock time from minutes
+// (sequential ~800 calls) to seconds. Keep low enough to not melt the upstream
+// AI provider — 5 is conservative against OpenCode's session capacity and the
+// Gemini key pool's typical 4–8 active keys.
+const SIGNAL_CONCURRENCY = 5
+
 // Token budgets must leave room for the model wrapping JSON in a ```json
 // code fence (and, on thinking models like gemini-2.5-flash, any preamble).
 // A tiny budget truncates the JSON mid-value and the parse fails, which
@@ -144,47 +152,76 @@ async function resolveProvider(config: AutopilotConfig, override: AiProvider | u
   return getProvider(config) as unknown as AiProvider
 }
 
+/**
+ * Process a single signal through extract → structure → seeds. Stages stay
+ * sequential because each depends on the previous one's output. Side effects
+ * (upsertRawSignal, markSignalProcessed, insertProblemCard) write directly to
+ * the SQLite DB which serializes its own writes — safe to call from concurrent
+ * tasks.
+ *
+ * Returns the produced card, or null if the signal was filtered/skipped.
+ */
+async function processSignal(
+  config: AutopilotConfig,
+  db: DatabaseSync,
+  signal: ProblemSignal,
+  provider: AiProvider | null,
+): Promise<ProblemCard | null> {
+  upsertRawSignal(db, signal)
+  if (!provider) {
+    markSignalProcessed(db, signal.id, 'skipped')
+    return null
+  }
+
+  const keep = await extractSignal(config, signal, provider)
+  if (!keep) {
+    markSignalProcessed(db, signal.id, 'skipped')
+    return null
+  }
+
+  const structured = await structureCard(config, signal, provider)
+  if (!structured) {
+    markSignalProcessed(db, signal.id, 'skipped')
+    return null
+  }
+
+  const seeds = await generateIdeaSeeds(config, structured, provider)
+  const card: ProblemCard = {
+    id: makeCardId(signal.id),
+    signalId: signal.id,
+    ...structured,
+    ideaSeeds: seeds,
+    sourceUrl: signal.url,
+    createdAt: new Date().toISOString(),
+  }
+
+  insertProblemCard(db, card)
+  markSignalProcessed(db, signal.id, 'done')
+  return card
+}
+
 export async function runRadarPipeline(
   config: AutopilotConfig,
   db: DatabaseSync,
   signals: ProblemSignal[],
   providerOverride?: AiProvider,
+  options: { concurrency?: number } = {},
 ): Promise<ProblemCard[]> {
   const provider = await resolveProvider(config, providerOverride)
+  const concurrency = Math.max(1, options.concurrency ?? SIGNAL_CONCURRENCY)
   const cards: ProblemCard[] = []
 
-  for (const signal of signals) {
-    upsertRawSignal(db, signal)
-    if (!provider) {
-      markSignalProcessed(db, signal.id, 'skipped')
-      continue
+  // Process signals in batches of `concurrency`. Each batch resolves in parallel;
+  // we wait for the whole batch before moving on so the DB write order is
+  // bounded and a slow signal can't block the next batch from starting.
+  for (let i = 0; i < signals.length; i += concurrency) {
+    const batch = signals.slice(i, i + concurrency)
+    const results = await Promise.all(
+      batch.map((signal) => processSignal(config, db, signal, provider)),
+    )
+    for (const card of results) {
+      if (card) cards.push(card)
     }
-
-    const keep = await extractSignal(config, signal, provider)
-    if (!keep) {
-      markSignalProcessed(db, signal.id, 'skipped')
-      continue
-    }
-
-    const structured = await structureCard(config, signal, provider)
-    if (!structured) {
-      markSignalProcessed(db, signal.id, 'skipped')
-      continue
-    }
-
-    const seeds = await generateIdeaSeeds(config, structured, provider)
-    const card: ProblemCard = {
-      id: makeCardId(signal.id),
-      signalId: signal.id,
-      ...structured,
-      ideaSeeds: seeds,
-      sourceUrl: signal.url,
-      createdAt: new Date().toISOString(),
-    }
-
-    insertProblemCard(db, card)
-    markSignalProcessed(db, signal.id, 'done')
-    cards.push(card)
   }
 
   return cards
