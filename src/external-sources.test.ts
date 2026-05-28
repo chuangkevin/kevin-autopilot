@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { fetchHackerNewsSignals, fetchRedditSignals, fetchExternalSignals } from './external-sources.js'
+import { fetchHackerNewsSignals, fetchRedditSignals, fetchDcardSignals, fetchExternalSignals } from './external-sources.js'
 
 test('fetchHackerNewsSignals parses HN API response into ProblemSignals', async () => {
   const originalFetch = globalThis.fetch
@@ -85,22 +85,75 @@ test('fetchRedditSignals returns empty array on network failure', async () => {
   }
 })
 
-test('fetchExternalSignals combines HN and Reddit results', async () => {
+test('fetchDcardSignals parses Dcard _api response and combines title + excerpt', async () => {
   const originalFetch = globalThis.fetch
-  let callCount = 0
+  globalThis.fetch = async () => new Response(JSON.stringify([
+    {
+      id: 1234567,
+      title: '勞健保自己保到底要付多少？跑了好幾個窗口都得到不同答案',
+      excerpt: '從上週開始我為了搞清楚自己自費勞健保的計算方式跑了三個地方，每個櫃台講的金額都不一樣，有人說我要付這個級距、有人說那個級距、第三個直接告訴我官網查不到請我打電話，到底要相信誰，整個流程沒有一個清楚的對外說明',
+    },
+    { id: 7, title: '短', excerpt: '太短' },
+  ]), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  try {
+    const signals = await fetchDcardSignals({ timeout: 5000 })
+    assert.ok(signals.length >= 1, 'expected at least one signal')
+    const s = signals[0]
+    assert.equal(s.sourceType, 'dcard')
+    assert.ok(s.sourceName.startsWith('dcard:'), `sourceName should start with dcard: — got ${s.sourceName}`)
+    assert.ok(s.url?.includes('dcard.tw/f/'))
+    assert.ok(s.snippet.length >= 80)
+    assert.ok(s.snippet.includes(s.title), 'snippet should include title (combined text)')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('fetchDcardSignals returns empty array on network failure', async () => {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async () => { throw new Error('network error') }
+  try {
+    const signals = await fetchDcardSignals({ timeout: 5000 })
+    assert.deepEqual(signals, [])
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('fetchDcardSignals returns empty array when API returns non-200', async () => {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async () => new Response('', { status: 403 })
+  try {
+    const signals = await fetchDcardSignals({ timeout: 5000 })
+    assert.deepEqual(signals, [])
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('fetchExternalSignals combines HN + Reddit + Dcard results', async () => {
+  const originalFetch = globalThis.fetch
+  const calls = { hn: 0, reddit: 0, dcard: 0 }
   globalThis.fetch = async (input: Parameters<typeof fetch>[0]) => {
-    callCount++
     const url = String(input)
     if (url.includes('hn.algolia.com')) {
+      calls.hn++
       return new Response(JSON.stringify({ hits: [{ objectID: 'x1', title: 'Ask HN: broken workflow', story_text: 'I spend three hours daily doing repetitive manual work because the tools available do not support automation. The current workaround is error-prone scripting that breaks regularly and nobody wants to maintain.' }] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
     }
+    if (url.includes('dcard.tw')) {
+      calls.dcard++
+      return new Response(JSON.stringify([{ id: 42, title: '報稅程式每次都當機到底要怎麼搞', excerpt: '我每年到了報稅季都要花一整個下午跟那個老舊的網頁奮戰，今年它又當在送出最後一頁，已經第三次從頭重填整份資料，連客服都打不通，根本不知道是不是只有我這樣' }]), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+    calls.reddit++
     return new Response(JSON.stringify({ data: { children: [] } }), { status: 200, headers: { 'Content-Type': 'application/json' } })
   }
   try {
     const signals = await fetchExternalSignals({ timeout: 5000 })
-    assert.ok(callCount > 0, 'fetch should have been called')
-    const hnSignals = signals.filter((s) => s.sourceType === 'hacker-news')
-    assert.ok(hnSignals.length >= 1)
+    assert.ok(calls.hn > 0, 'HN should have been called')
+    assert.ok(calls.reddit > 0, 'Reddit should have been called')
+    assert.ok(calls.dcard > 0, 'Dcard should have been called')
+    assert.ok(signals.some((s) => s.sourceType === 'hacker-news'), 'should have HN signals')
+    assert.ok(signals.some((s) => s.sourceType === 'dcard'), 'should have Dcard signals')
   } finally {
     globalThis.fetch = originalFetch
   }

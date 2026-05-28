@@ -35,7 +35,7 @@ export interface RuntimeOverrideFieldSchema {
 
 export type RuntimeOverrideSchema = Record<string, RuntimeOverrideFieldSchema>
 
-export type ProblemSignalSourceType = 'hacker-news' | 'reddit' | 'manual'
+export type ProblemSignalSourceType = 'hacker-news' | 'reddit' | 'dcard' | 'manual'
 
 export interface ProblemSignal {
   id: string

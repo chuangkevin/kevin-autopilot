@@ -10,12 +10,19 @@ The radar deliberately **does not score, rank, or recommend**. Idea seeds are un
 
 ### Requirement: Public Signal Ingestion
 
-World Problem Radar SHALL fetch posts from public Hacker News (Show HN, Ask HN via the Algolia API) and Reddit (curated subreddit list), normalize each into a `ProblemSignal`, and deduplicate by a stable hash of `(sourceType, sourceName, title-prefix)`.
+World Problem Radar SHALL fetch posts from public Hacker News (Show HN, Ask HN via the Algolia API), Reddit (curated subreddit list mixing tech and non-tech everyday-life pain), and Dcard (Taiwan-primary forum, curated forum list), normalize each into a `ProblemSignal`, and deduplicate by a stable hash of `(sourceType, sourceName, title-prefix)`.
 
-#### Scenario: Hacker News and Reddit are fetched in parallel
+The source mix is deliberately weighted to balance against tech-only signals: Taiwan-local Dcard forums are a primary source so the feed reflects ordinary Taiwanese life pain (workplace, money, daily logistics, pets, food), not just English-speaking founder/engineer pain.
+
+#### Scenario: All three sources are fetched in parallel
 
 - **WHEN** a scan starts
-- **THEN** World Problem Radar SHALL call the HN and Reddit fetchers concurrently and merge their results into a single signal list.
+- **THEN** World Problem Radar SHALL call the HN, Reddit, and Dcard fetchers concurrently via `Promise.all` and merge their results into a single signal list.
+
+#### Scenario: Dcard short excerpts use combined title + excerpt text
+
+- **WHEN** a Dcard post has a short excerpt (commonly ~70–120 chars)
+- **THEN** the fetcher SHALL combine `title + excerpt` as the text used for the 80-character minimum check and as the AI snippet, so posts with short bodies are not dropped and the AI keep/skip stage has enough context.
 
 #### Scenario: One source failing does not block the other
 
