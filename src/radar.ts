@@ -125,6 +125,16 @@ Reply ONLY with a JSON array of short strings. Example: ["direction A", "directi
   }
 }
 
+/**
+ * shouldRunScan — whether the radar scan loop should proceed for the given
+ * effective config. Returns `false` only when `radarScan.enabled` is
+ * explicitly set to `false`; an absent or `undefined` flag is treated as
+ * enabled-by-default so existing config files without the field keep working.
+ */
+export function shouldRunScan(config: AutopilotConfig): boolean {
+  return config.radarScan?.enabled !== false
+}
+
 async function resolveProvider(config: AutopilotConfig, override: AiProvider | undefined): Promise<AiProvider | null> {
   if (override) return override
   if (!config.ai?.enabled) return null

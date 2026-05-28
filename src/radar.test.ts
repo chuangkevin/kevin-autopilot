@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { makeSignalId, openRadarDatabase, listProblemCards, listPendingSignals } from './problem-cards.js'
-import { runRadarPipeline } from './radar.js'
+import { runRadarPipeline, shouldRunScan } from './radar.js'
 import type { AutopilotConfig, ProblemSignal } from './types.js'
 
 function testConfig(dataDir: string): AutopilotConfig {
@@ -24,6 +24,22 @@ const signal: ProblemSignal = {
   url: 'https://news.ycombinator.com/item?id=1',
   fetchedAt: new Date().toISOString(),
 }
+
+test('shouldRunScan: returns true when radarScan is absent (default enabled)', () => {
+  assert.equal(shouldRunScan({ environment: 'test', dataDir: '/tmp' }), true)
+})
+
+test('shouldRunScan: returns true when radarScan.enabled is undefined', () => {
+  assert.equal(shouldRunScan({ environment: 'test', dataDir: '/tmp', radarScan: {} }), true)
+})
+
+test('shouldRunScan: returns true when radarScan.enabled is true', () => {
+  assert.equal(shouldRunScan({ environment: 'test', dataDir: '/tmp', radarScan: { enabled: true } }), true)
+})
+
+test('shouldRunScan: returns false only when radarScan.enabled is explicitly false', () => {
+  assert.equal(shouldRunScan({ environment: 'test', dataDir: '/tmp', radarScan: { enabled: false } }), false)
+})
 
 test('runRadarPipeline: AI disabled — signals stored, no cards created', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'radar-pipe-'))

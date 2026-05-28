@@ -3,7 +3,7 @@ import { startWebServer } from './web.js'
 import { getEffectiveConfig } from './runtime-overrides.js'
 import { fetchExternalSignals } from './external-sources.js'
 import { openRadarDatabase } from './problem-cards.js'
-import { runRadarPipeline } from './radar.js'
+import { runRadarPipeline, shouldRunScan } from './radar.js'
 import { APP_VERSION } from './version.js'
 
 const DEFAULT_CONFIG_PATH = '/config/config.json'
@@ -13,6 +13,10 @@ async function runScan(configPath: string): Promise<void> {
   try {
     const baseConfig = await loadConfig(configPath)
     const config = await getEffectiveConfig(baseConfig)
+    if (!shouldRunScan(config)) {
+      console.log(`[radar] scan skipped — radarScan.enabled=false override`)
+      return
+    }
     console.log(`[radar] scan start — ${new Date().toISOString()}`)
     const signals = await fetchExternalSignals()
     console.log(`[radar] fetched ${signals.length} signals`)

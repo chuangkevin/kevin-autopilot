@@ -24,7 +24,10 @@ test('openRadarDatabase creates tables idempotently', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'radar-db-'))
   try {
     const db = openRadarDatabase(testConfig(dir))
-    openRadarDatabase(testConfig(dir)) // idempotent
+    const db2 = openRadarDatabase(testConfig(dir)) // idempotent: second open MUST NOT throw
+    // close both handles before rm — leaking the second handle holds a file
+    // lock on Windows and makes the cleanup race against the lock release.
+    db2.close()
     db.close()
   } finally {
     await rm(dir, { recursive: true, force: true })

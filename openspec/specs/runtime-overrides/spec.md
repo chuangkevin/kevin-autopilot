@@ -57,10 +57,15 @@ Overrides SHALL be persisted as JSON to `${dataDir}/runtime-overrides.json`. The
 
 World Problem Radar SHALL read the effective config (file config merged with current overrides) at the start of every scan and at process start so cadence changes take effect on the next scan boundary without a restart.
 
-#### Scenario: Disabled scan respects the toggle
+#### Scenario: Disabled scan returns early
 
 - **WHEN** `radarScan.enabled = false` is in the overrides
-- **THEN** subsequent scans SHALL still respect the override path through `getEffectiveConfig`. (Note: v1.0.0 currently runs scans unconditionally on the interval; toggle wiring is implemented in `applyRuntimeOverrides` but the scan caller does not branch on it yet — see HANDOFF.md "known gaps.")
+- **THEN** `runScan` SHALL load the effective config, check `shouldRunScan(config)`, log a "scan skipped" notice, and return without fetching external signals, opening the radar database, or invoking the AI pipeline. The recurring `setInterval` SHALL keep firing on the configured cadence — the override is honored per-scan, not by tearing down the scheduler.
+
+#### Scenario: Absent enabled flag defaults to enabled
+
+- **WHEN** `radarScan.enabled` is absent or `undefined` (the common case for fresh configs)
+- **THEN** `shouldRunScan` SHALL return `true` so existing config files without the explicit flag continue to scan.
 
 ### Requirement: HTTP API Surface
 
